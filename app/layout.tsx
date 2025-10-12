@@ -13,6 +13,15 @@ export const metadata = {
   },
   description:
     'We come to you for full synthetic oil changes—sedans, SUVs, trucks & European vehicles. Transparent pricing and easy booking across HRM.',
+    icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+    other: [
+      { rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#0b5cff" }
+    ]
+  },
+   manifest: "/site.webmanifest",
+  themeColor: "#0b5cff",
   alternates: {
     canonical: 'https://oilchangeonthespot.ca',
   },
@@ -24,7 +33,6 @@ export const metadata = {
       'Mobile oil changes in Halifax/Dartmouth/Bedford—book online and we come to you.',
     images: [{ url: '/og.jpg', width: 1200, height: 630, alt: 'Oil Change On The Spot' }],
   },
-  icons: { icon: '/favicon.ico' },
 };
 
 
@@ -34,6 +42,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       {/* 👇 This line is the key: make the whole page a flex column that fills the viewport */}
       <body className="min-h-dvh flex flex-col overflow-x-hidden">
         <NavBar />
+         {/* Optional PWA/iOS helpers */}
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="mobile-web-app-capable" content="yes" />
+
         {/* fills the space between navbar and footer */}
         <main className="flex-1">{children}</main>
 
