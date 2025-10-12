@@ -55,7 +55,7 @@ export const metadata = {
               <h3 className="text-lg font-semibold">Harsh Bahorun</h3>
               <p className="text-slate-600 text-sm">
                 Co-founder & technician. Friendly and efficient—Harsh keeps the workflow smooth
-                and the service spotless. Ask him anything about oil specs and filters.
+                and the service spotless. Ask him anything about oil specs and filters, Dont worry your car is in safe hands.
               </p>
             </div>
           </article>
