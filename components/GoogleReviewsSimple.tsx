@@ -2,15 +2,18 @@
 
 export default function GoogleReviewsSimple() {
   // TODO: set your real Place ID here
-  const PLACE_ID = 'ChIJ9cSoEbAJCYsRzkA_wz2oLgw';
+  const PLACE_ID = process.env.NEXT_PUBLIC_GOOGLE_PLACE_ID;
+  const cid     = process.env.NEXT_PUBLIC_GOOGLE_CID;
 
   const writeReviewUrl = PLACE_ID
     ? `https://search.google.com/local/writereview?placeid=${PLACE_ID}`
     : 'https://www.google.com/search?q=Oil+Change+On+The+Spot+Halifax';
 
   const readReviewsUrl = PLACE_ID
-    ? `https://www.google.com/maps/place/?q=place_id:${PLACE_ID}`
-    : 'https://www.google.com/search?q=Oil+Change+On+The+Spot+Halifax';
+    ? `https://search.google.com/local/reviews?placeid=${PLACE_ID}`
+  : cid
+  ? `https://maps.google.com/?cid=${cid}`
+  : 'https://maps.google.com'; // final fallback
 
   return (
     <section className="container py-12">

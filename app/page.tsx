@@ -26,9 +26,12 @@ export default function Home() {
     <Link href="/services" className="px-6 py-3 rounded-lg border border-slate-300 text-slate-800 hover:bg-slate-50">
       Services & Pricing
     </Link>
-    <Link href="/contact" className="px-6 py-3 rounded-lg border border-slate-300 text-slate-800 hover:bg-slate-50">
-      Contact
-    </Link>
+    <Link
+    href="/contact"
+    className="px-6 py-3 rounded-lg bg-yellow-400 text-blue-900 font-bold shadow-sm hover:bg-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-300"
+  >
+    Our Contact Info
+  </Link>
   </div>
 </section>
       <TrustBadges />
