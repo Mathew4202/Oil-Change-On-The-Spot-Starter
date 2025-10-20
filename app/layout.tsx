@@ -14,10 +14,14 @@ export const metadata = {
   description:
     'We come to you for full synthetic oil changes—sedans, SUVs, trucks & European vehicles. Transparent pricing and easy booking across HRM.',
     icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+    ],
     apple: "/apple-touch-icon.png",
     other: [
-      { rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#0b5cff" }
+      { rel: "mask-icon", url: "/favicon.svg", color: "#0b5cff" }
     ]
   },
    manifest: "/site.webmanifest",
