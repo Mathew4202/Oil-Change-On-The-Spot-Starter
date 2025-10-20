@@ -21,7 +21,7 @@ export const metadata = {
     ],
     apple: "/apple-touch-icon.png",
     other: [
-      { rel: "mask-icon", url: "/favicon.svg", color: "#0b5cff" }
+      { rel: "mask-icon", url: "/safari-pinned-tab.svg", color: "#0b5cff" }
     ]
   },
    manifest: "/site.webmanifest",
