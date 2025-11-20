@@ -8,8 +8,8 @@ export const metadata = {
       <div className="container py-12 space-y-6">
         <h1 className="text-3xl font-bold">About Oil Change On The Spot</h1>
         <p className="text-slate-700">
-          We’re a Halifax-based mobile oil change service. No waiting rooms, no upsells —
-          we come to your driveway or workplace with the right oil and filter for your vehicle.
+          We’re a Halifax-based auto mobile service. No waiting rooms, no upsells —
+          we come to your driveway or workplace with the right Part for your vehicle.
         </p>
         <p className="text-slate-700">
           Our promise: clear and cheaper pricing than dealers and mechanic shops, clean work, and fast confirmations. We service sedans,
@@ -32,7 +32,7 @@ export const metadata = {
           {/* You */}
           <article className="flex gap-4 rounded-xl border bg-white p-5 shadow-sm">
             <img
-              src="/images/team/matt.jpg"   // put your photo at public/images/team/matt.jpg
+              src="/images/team/matt.png"   // put your photo at public/images/team/matt.jpg
               alt="Mathew – Technician"
               className="h-28 w-28 rounded-xl object-cover"
             />
@@ -47,7 +47,7 @@ export const metadata = {
           {/* Harsh */}
           <article className="flex gap-4 rounded-xl border bg-white p-5 shadow-sm">
             <img
-              src="/images/team/harsh.jpg"   // put Harsh’s photo at public/images/team/harsh.jpg
+              src="/images/team/harsh.png"   // put Harsh’s photo at public/images/team/harsh.jpg
               alt="Harsh – Technician"
               className="h-28 w-28 rounded-xl object-cover"
             />

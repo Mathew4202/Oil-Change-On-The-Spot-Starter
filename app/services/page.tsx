@@ -1,7 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
 
-type ServiceKey = "sedan" | "suv" | "large" | "truck" | "sports";
+type ServiceKey =
+  | "oil_change"
+  | "tire_change"
+  | "serpentine_belt"
+  | "spark_plugs"
+  | "ignition_coil"
+  | "battery";
 
 type ServiceCard = {
   key: ServiceKey;
@@ -16,62 +22,80 @@ type ServiceCard = {
 export default function Services() {
   const services: ServiceCard[] = [
     {
-      key: "sedan",
-      title: "Sedans (Full Synthetic)",
+      key: "oil_change",
+      title: "Oil Change Services",
+      price:
+        "Sedan $80 · SUV $90 · Large SUV $100 · Truck $110 · Euro varies (VW $120 · BMW/Mercedes $140)",
+      img: "/serviceimages/oilchange.webp",
+      alt: "Oil change service",
+      desc: "Full synthetic oil & filter with eco-friendly disposal. Pricing varies by vehicle class and European brand.",
+      byo: [
+        "Bring oil + filter: Sedan $50, SUV $55, Large SUV $60, Truck $70 (Euro varies)",
+        "Bring oil only: Sedan $55, SUV $60, Large SUV $65, Truck $80 (Euro varies)",
+        "Bring filter only: Sedan $75, SUV $85, Large SUV $95, Truck $105 (Euro varies)",
+      ],
+    },
+    {
+      key: "tire_change",
+      title: "Tire Change",
       price: "From $80",
-      img: "/images/sedan.png",
-      alt: "Sedan",
-      desc:
-        "Affordable oil change for compact and mid-size sedans. Includes premium full synthetic oil, filter, and disposal.",
-      byo: ["Bring oil + filter: $50", "Bring oil only: $55", "Bring filter only: $75"],
+      img: "/serviceimages/tirechange.webp",
+      alt: "Tire change",
+      desc: "Swap tires already mounted on rims. Torque to spec and tire pressure set. *Note: Tire has to already be on rim, dont offer rimless tire changes at the moment",
+      byo: [],
     },
     {
-      key: "suv",
-      title: "SUVs & Crossovers (Full Synthetic)",
-      price: "From $90",
-      img: "/images/suv.png",
-      alt: "Mid-Size SUV",
-      desc:
-        "Reliable oil change for small and mid-size SUVs/crossovers. Full synthetic oil, filter, and eco-friendly disposal.",
-      byo: ["Bring oil + filter: $55", "Bring oil only: $60", "Bring filter only: $85"],
+      key: "serpentine_belt",
+      title: "Serpentine Belt Replacement",
+      price: "From $140 labour + part cost",
+      img: "/serviceimages/serpertinebelt.jpg",
+      alt: "Serpentine belt",
+      desc: "Replace worn accessory belt(s) to restore proper charging/cooling performance.",
+      byo: [
+        "Bring part: Sedan $140, SUV $150, Large SUV $170, Truck $180 Sports/Euro: $190",
+      ],
     },
     {
-      key: "large",
-      title: "Large SUVs (Full Synthetic)",
-      price: "From $100",
-      img: "/images/large-suv.png",
-      alt: "Large 7-seater SUV",
-      desc:
-        "For larger 7-seater SUVs with higher oil capacity. Includes full synthetic oil, filter, and disposal.",
-      byo: ["Bring oil + filter: $60", "Bring oil only: $65", "Bring filter only: $95"],
+      key: "spark_plugs",
+      title: "Spark Plug Replacement",
+      price: "From $160 labour + part cost",
+      img: "/serviceimages/spark-plugs.jpg",
+      alt: "Spark plugs",
+      desc: "New plugs installed to improve performance and fuel economy. Price varies by cylinder count and access.",
+      byo: [
+        "Bring part: Sedan $160, SUV $150, Large SUV $170, Truck $180 Sports/Euro: $200",
+      ],
     },
     {
-      key: "truck",
-      title: "Heavy Duty Trucks / V8 Engines",
-      price: "From $110",
-      img: "/images/truck.png",
-      alt: "Pickup truck",
-      desc:
-        "Professional oil change for pickup trucks and V8 engines. Premium synthetic oil and filter service.",
-      byo: ["Bring oil + filter: $70", "Bring oil only: $80", "Bring filter only: $105"],
+      key: "ignition_coil",
+      title: "Ignition Coil Replacement",
+      price: "From $160 labour + part cost",
+      img: "/serviceimages/ignition-coil.webp",
+      alt: "Ignition coil",
+      desc: "Diagnose and replace faulty coil(s) for smooth running. Price depends on number of coils.",
+      byo: [
+        "Bring part: Sedan $160, SUV $170, Large SUV $180, Truck $200 Sports/Euro: $280",
+      ],
     },
     {
-      key: "sports",
-      title: "Performance & European Vehicles",
-      price: "Varies (VW from $120 · BMW from $140)",
-      img: "/images/euro.png",
-      alt: "European performance car",
-      desc:
-        "Specialized service for VW, Audi, BMW, Mercedes, etc. Premium oil/filters tailored for high-performance engines.",
-      byo: ["Bring oil + filter: $70", "Bring oil only: $80", "Bring filter only: varies"],
+      key: "battery",
+      title: "Battery Test & Replacement",
+      price: "From $30 labour + battery cost if needed",
+      img: "/serviceimages/battery.jpg",
+      alt: "Battery service",
+      desc: "Test and replace the battery if needed. We will confirm the correct spec for your vehicle.",
+      byo: [
+        "Bring part: Sedan $30, SUV $40, Large SUV $50, Truck $60 Sports/Euro: $50",
+      ],
     },
   ];
 
   return (
     <div className="container py-12">
-      <h1 className="text-3xl font-bold mb-8 text-center">Services & Pricing</h1>
+      <h1 className="text-3xl font-bold mb-8 text-center">
+        Services & Pricing
+      </h1>
 
-      {/* Add-ons info */}
       <div className="mb-8 rounded-lg border bg-white p-4 text-slate-700">
         <h2 className="text-lg font-semibold mb-2">Popular add-ons</h2>
         <ul className="list-disc ml-5 space-y-1">
@@ -90,9 +114,14 @@ export default function Services() {
             key={s.key}
             className="flex flex-col justify-between rounded-xl border shadow-sm overflow-hidden bg-white hover:shadow-md transition"
           >
-            {/* Use next/image for perf (make sure /images/* exist) */}
             <div className="relative w-full h-48">
-              <Image src={s.img} alt={s.alt} fill className="object-cover" priority />
+              <Image
+                src={s.img}
+                alt={s.alt}
+                fill
+                className="object-cover"
+                priority
+              />
             </div>
 
             <div className="p-4 flex-1 space-y-2">
@@ -100,9 +129,10 @@ export default function Services() {
               <p className="text-blue-700 font-medium">{s.price}</p>
               <p className="text-slate-600 text-sm">{s.desc}</p>
 
-              {/* BYO block */}
               <div className="mt-2">
-                <p className="text-sm font-semibold text-slate-800">Bring your own:</p>
+                <p className="text-sm font-semibold text-slate-800">
+                  Bring your own:
+                </p>
                 <ul className="text-sm text-slate-600 list-disc pl-4 space-y-1 mt-1">
                   {s.byo.map((line, i) => (
                     <li key={i}>{line}</li>
@@ -113,7 +143,7 @@ export default function Services() {
 
             <div className="p-4 border-t bg-slate-50">
               <Link
-                href={`/request?class=${s.key}`}
+                href={{ pathname: "/request", query: { service: s.key } }}
                 className="block text-center w-full bg-blue-700 text-white font-semibold py-2 px-4 rounded hover:bg-blue-800 transition"
                 aria-label={`Book ${s.title} now`}
               >
@@ -125,7 +155,8 @@ export default function Services() {
       </div>
 
       <div className="mt-8 text-center text-slate-600">
-        Final price may vary by oil capacity and filter cost. Book to get an instant quote.
+        Final price may vary based on parts cost, and vehicle type. Book to get
+        an full instant quote.
       </div>
     </div>
   );
