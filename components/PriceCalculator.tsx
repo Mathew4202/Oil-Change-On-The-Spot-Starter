@@ -75,7 +75,7 @@ export default function PriceCalculator() {
 
   const quote = useMemo(() => {
     if (!f.make || !f.vehicleClass) return null;
-    return computeQuote({ make: f.make, vehicleClass: f.vehicleClass });
+    return computeQuote({ service: "oil_change", make: f.make, vehicleClass: f.vehicleClass });
   }, [f.make, f.vehicleClass]);
 
   const update = <K extends keyof FormState>(k: K, v: FormState[K]) =>
