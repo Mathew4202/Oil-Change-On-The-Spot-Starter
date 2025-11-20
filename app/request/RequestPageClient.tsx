@@ -13,6 +13,23 @@ import { getVariants } from '@/data/variants';
 import { track } from '@/lib/analytics';
 
 const CHRISTMAS_PROMO_ACTIVE = true; // set to false when promo ends
+
+function isChristmasDate(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr + "T12:00:00");
+  if (Number.isNaN(d.getTime())) return false;
+
+  const month = d.getMonth(); // 0 = Jan, 11 = Dec
+  const day = d.getDate();
+
+  // Dec 1 to Dec 31
+  if (month === 11 && day >= 1 && day <= 31) return true;
+  // Jan 1
+  if (month === 0 && day === 1) return true;
+
+  return false;
+}
+
 const CHRISTMAS_PROMO_AMOUNT = 10; // flat $10 off
 type Quote = ReturnType<typeof computeQuote> & {
   base: number;
@@ -318,37 +335,36 @@ export default function RequestQuotePage() {
   }, [f.date]);
 
   // price
-  const quote: Quote = useMemo(() => {
-  const q = computeQuote({
-    service: f.service,
-    make: f.make,
-    vehicleClass: f.vehicleClass || undefined,
-  });
+    const quote = useMemo(() => {
+    const q = computeQuote({
+      service: f.service,
+      make: f.make,
+      vehicleClass: f.vehicleClass || undefined,
+    });
 
-  const addons =
-    (f.addonCabin ? ADDON_PRICES.cabin : 0) +
-    (f.addonWipers ? ADDON_PRICES.wipers : 0) +
-    (f.addonTirePressure ? ADDON_PRICES.tire : 0);
+    const addons =
+      (f.addonCabin ? ADDON_PRICES.cabin : 0) +
+      (f.addonWipers ? ADDON_PRICES.wipers : 0) +
+      (f.addonTirePressure ? ADDON_PRICES.tire : 0);
 
-  const base = q.base;
-  const subtotal = base + addons;
+    const base = q.base;
 
-  const discount =
-    CHRISTMAS_PROMO_ACTIVE && subtotal > 0
-      ? Math.min(CHRISTMAS_PROMO_AMOUNT, subtotal)
-      : 0;
+    const discountActive =
+      CHRISTMAS_PROMO_ACTIVE && isChristmasDate(f.date);
+    const discount = discountActive ? 10 : 0; // $10 off
 
-  const total = subtotal - discount;
+    const total = Math.max(0, base + addons - discount);
 
-  return { ...q, base, addons, discount, total };
-}, [
-  f.service,
-  f.make,
-  f.vehicleClass,
-  f.addonCabin,
-  f.addonWipers,
-  f.addonTirePressure,
-]);
+    return { ...q, base, addons, total, discount, discountActive };
+  }, [
+    f.service,
+    f.make,
+    f.vehicleClass,
+    f.addonCabin,
+    f.addonWipers,
+    f.addonTirePressure,
+    f.date, // dependency for date based discount
+  ]);
 
   
 
@@ -377,6 +393,7 @@ export default function RequestQuotePage() {
     fd.set('service', f.service);
     fd.set('price_base', String(quote.base));
     fd.set('price_addons', String(quote.addons));
+    fd.set('price_discount', String(quote.discount));
     fd.set('price_total', String(quote.total));
 
     try {
@@ -587,21 +604,31 @@ export default function RequestQuotePage() {
                 Type: <strong>{f.vehicleClass || '—'}</strong>
               </div>
               <div className="text-sm text-slate-500">
-                Base: ${quote.base.toFixed(2)}
-                {quote.addons > 0 && <> · Add ons: ${quote.addons.toFixed(2)}</>}
-              </div>
+  Base: ${quote.base.toFixed(2)}
+  {quote.addons > 0 && <> · Add ons: ${quote.addons.toFixed(2)}</>}
+  {quote.discountActive && (
+    <> · Christmas discount: -${quote.discount.toFixed(2)}</>
+  )}
+</div>
+
               {quote.discount > 0 && (
 
             <div className="text-sm text-green-600"> Christmas promo: -${quote.discount.toFixed(2)} </div> )}
             </div>
             <div className="text-right">
-              <div className="text-xs uppercase tracking-wide text-slate-500">
-                Estimated Total
-              </div>
-              <div className="text-2xl font-extrabold">
-                ${quote.total.toFixed(2)}
-              </div>
-            </div>
+  <div className="text-xs uppercase tracking-wide text-slate-500">
+    Estimated Total
+  </div>
+  <div className="text-2xl font-extrabold">
+    ${quote.total.toFixed(2)}
+  </div>
+  {quote.discountActive && (
+    <div className="text-xs text-green-600 mt-1">
+      Christmas promo: $10 off applied
+    </div>
+  )}
+</div>
+
           </div>
         </div>
 
@@ -671,7 +698,7 @@ export default function RequestQuotePage() {
           <input type="hidden" name="price" value={String(quote.base)} />
           <input type="hidden" name="price_base" value={String(quote.base)} />
           <input type="hidden" name="price_addons" value={String(quote.addons)} />
-          <input type="hidden" name="price_discount" value={String(quote.discount || 0)} />
+          <input type="hidden" name="price_discount" value={String(quote.discount)} />
           <input type="hidden" name="price_total" value={String(quote.total)} />
           <input
             type="hidden"

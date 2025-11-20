@@ -50,7 +50,7 @@ export default function Home() {
                 Christmas special, $10 off your next service
               </h2>
               <p className="text-slate-200 mb-4">
-                Limited time offer for bookings made in December.
+                Limited time offer for bookings made from December 1st - January 1st.
               </p>
               <Link
                 href="/request"
