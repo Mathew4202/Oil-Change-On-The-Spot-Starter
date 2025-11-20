@@ -12,7 +12,7 @@ import { detectClassFromModel } from '@/data/vehicleClass';
 import { getVariants } from '@/data/variants';
 import { track } from '@/lib/analytics';
 
-const CHRISTMAS_PROMO_ACTIVE = false; // set to false when promo ends
+const CHRISTMAS_PROMO_ACTIVE = true; // set to false when promo ends
 const CHRISTMAS_PROMO_AMOUNT = 10; // flat $10 off
 type Quote = ReturnType<typeof computeQuote> & {
   base: number;
