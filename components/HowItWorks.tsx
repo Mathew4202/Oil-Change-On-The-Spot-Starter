@@ -2,7 +2,7 @@ export default function HowItWorks() {
     const items = [
       { title: 'Request a Quote', text: 'Tell us your vehicle and pick a time that works.' },
       { title: 'We Come to You', text: 'Home, work, or parking lot — fully mobile service.' },
-      { title: 'You’re Done', text: 'Fresh oil, new filter, eco-friendly disposal included.' },
+      { title: 'You’re Done', text: 'Brand New Parts, and working vehicle again, Fresh oil, new filter, eco-friendly disposal included.' },
     ];
   
     return (

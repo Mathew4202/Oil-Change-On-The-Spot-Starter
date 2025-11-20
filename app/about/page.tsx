@@ -8,19 +8,24 @@ export const metadata = {
       <div className="container py-12 space-y-6">
         <h1 className="text-3xl font-bold">About Oil Change On The Spot</h1>
         <p className="text-slate-700">
-          We’re a Halifax-based auto mobile service. No waiting rooms, no upsells —
-          we come to your driveway or workplace with the right Part for your vehicle.
+          We are a Halifax-based mobile auto service. We come to your driveway or workplace 
+          so you avoid waiting rooms and lineups. We serve cars, SUVs, trucks, and performance vehicles across HRM.
         </p>
         <p className="text-slate-700">
-          Our promise: clear and cheaper pricing than dealers and mechanic shops, clean work, and fast confirmations. We service sedans,
-          SUVs, trucks, and performance cars across HRM in the evenings and weekends.
+          We give you clear pricing and honest service. No upsells, 
+          no pressure. We come to your home or workplace at a time that 
+          fits your schedule. You get clean work, fast response, and reliable 
+          communication. Our focus is convenience, safety, and quality for your vehicle.
         </p>
   
         <div className="rounded-xl border bg-white p-5">
           <h2 className="text-xl font-semibold mb-2">Our Story</h2>
           <p className="text-slate-700">
-            Oil Change On The Spot started with a simple idea: routine maintenance shouldn’t waste your day.
-            We’re local, friendly, and focused on convenience and quality.
+           Oil Change On The Spot started with a simple idea. Routine car care should not waste your day. We began with mobile oil changes in Halifax. We focused on clear pricing, honest work, and fast service at your home or workplace.
+
+As demand grew, customers asked for more. We listened. We expanded from oil changes into a wider set of auto services. This includes tire work, basic maintenance, inspections, and light repairs. Our goal is to give you convenient service without long waits or dealership costs.
+
+We stay focused on quality, safety, and your experience. Our team delivers reliable work and clear communication every time. We look after your car the same way we look after ours.
           </p>
         </div>
 
@@ -39,8 +44,8 @@ export const metadata = {
             <div className="space-y-1">
               <h3 className="text-lg font-semibold">Mathew Akunyili</h3>
               <p className="text-slate-600 text-sm">
-                Co-founder & lead technician. Detail-oriented, punctual, and always focused on
-                doing things right the first time. I’ll treat your car like it’s mine.
+                Co-founder and lead technician. Detail oriented and focused on doing the job right the first time. 
+                Mathew handles each car with care and treats your service like it is his own.
               </p>
             </div>
           </article>
@@ -54,8 +59,8 @@ export const metadata = {
             <div className="space-y-1">
               <h3 className="text-lg font-semibold">Harsh Bahorun</h3>
               <p className="text-slate-600 text-sm">
-                Co-founder & technician. Friendly and efficient—Harsh keeps the workflow smooth
-                and the service spotless. Ask him anything about oil specs and filters, Dont worry your car is in safe hands.
+                Co-founder and technician. Friendly and efficient. Harsh keeps the workflow 
+                smooth and the service consistent. He handles filters, oil, and other basic maintenance with steady and reliable work.
               </p>
             </div>
           </article>

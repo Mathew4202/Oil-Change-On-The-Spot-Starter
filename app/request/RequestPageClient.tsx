@@ -12,6 +12,14 @@ import { detectClassFromModel } from '@/data/vehicleClass';
 import { getVariants } from '@/data/variants';
 import { track } from '@/lib/analytics';
 
+const CHRISTMAS_PROMO_ACTIVE = false; // set to false when promo ends
+const CHRISTMAS_PROMO_AMOUNT = 10; // flat $10 off
+type Quote = ReturnType<typeof computeQuote> & {
+  base: number;
+  addons: number;
+  discount: number;
+  total: number;
+};
 // slots
 type Slot = { value: string; label: string };
 
@@ -310,30 +318,38 @@ export default function RequestQuotePage() {
   }, [f.date]);
 
   // price
-  const quote = useMemo(() => {
-    const q = computeQuote({
-      service: f.service,
-      make: f.make,
-      vehicleClass: f.vehicleClass || undefined,
-    });
+  const quote: Quote = useMemo(() => {
+  const q = computeQuote({
+    service: f.service,
+    make: f.make,
+    vehicleClass: f.vehicleClass || undefined,
+  });
 
-    const addons =
-      (f.addonCabin ? ADDON_PRICES.cabin : 0) +
-      (f.addonWipers ? ADDON_PRICES.wipers : 0) +
-      (f.addonTirePressure ? ADDON_PRICES.tire : 0);
+  const addons =
+    (f.addonCabin ? ADDON_PRICES.cabin : 0) +
+    (f.addonWipers ? ADDON_PRICES.wipers : 0) +
+    (f.addonTirePressure ? ADDON_PRICES.tire : 0);
 
-    const base = q.base;
-    const total = base + addons;
+  const base = q.base;
+  const subtotal = base + addons;
 
-    return { ...q, base, addons, total };
-  }, [
-    f.service,
-    f.make,
-    f.vehicleClass,
-    f.addonCabin,
-    f.addonWipers,
-    f.addonTirePressure,
-  ]);
+  const discount =
+    CHRISTMAS_PROMO_ACTIVE && subtotal > 0
+      ? Math.min(CHRISTMAS_PROMO_AMOUNT, subtotal)
+      : 0;
+
+  const total = subtotal - discount;
+
+  return { ...q, base, addons, discount, total };
+}, [
+  f.service,
+  f.make,
+  f.vehicleClass,
+  f.addonCabin,
+  f.addonWipers,
+  f.addonTirePressure,
+]);
+
   
 
   const update = <K extends keyof FormState>(k: K, v: FormState[K]) =>
@@ -574,6 +590,9 @@ export default function RequestQuotePage() {
                 Base: ${quote.base.toFixed(2)}
                 {quote.addons > 0 && <> · Add ons: ${quote.addons.toFixed(2)}</>}
               </div>
+              {quote.discount > 0 && (
+
+            <div className="text-sm text-green-600"> Christmas promo: -${quote.discount.toFixed(2)} </div> )}
             </div>
             <div className="text-right">
               <div className="text-xs uppercase tracking-wide text-slate-500">
@@ -652,6 +671,7 @@ export default function RequestQuotePage() {
           <input type="hidden" name="price" value={String(quote.base)} />
           <input type="hidden" name="price_base" value={String(quote.base)} />
           <input type="hidden" name="price_addons" value={String(quote.addons)} />
+          <input type="hidden" name="price_discount" value={String(quote.discount || 0)} />
           <input type="hidden" name="price_total" value={String(quote.total)} />
           <input
             type="hidden"
