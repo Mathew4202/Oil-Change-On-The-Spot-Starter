@@ -11,8 +11,9 @@ export type ServiceType =
 
 // Add on prices
 export const ADDON_PRICES = {
-  cabin: 20,   // Cabin filter +$10
-  wipers: 40,  // Wiper blades +$40 (blades are 20-30 each)
+  cabin: 10,   // Cabin filter +$10
+  engine: 10,
+  wipers: 15,  // Wiper blades +$40 (blades are 20-30 each)
   tire: 5,     // Tire pressure check +$5
 } as const;
 
@@ -40,11 +41,11 @@ const EURO_OIL_PRICE: Record<string, number> = {
 const SERVICE_BASE: Record<ServiceType, Record<VehicleClass, number>> = {
   oil_change: OIL_BASE,
 
-  tire_change: {
-    Sedan: 80,           // 4 tires, basic sedan
-    'SUV/Crossover': 90,
-    'Large SUV': 100,
-    Truck: 120,
+   tire_change: {           // fallback
+    'Sedan': 80,           // 4-door, hatch, coupe
+    'SUV/Crossover': 90,   // 5-seater SUV
+    'Large SUV': 100,      // 7-seater / big SUV
+    'Truck': 120,
     'Sports Car': 100,
   },
 

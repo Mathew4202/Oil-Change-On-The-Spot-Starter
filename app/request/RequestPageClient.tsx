@@ -129,6 +129,7 @@ type FormState = {
   outOfArea: boolean;
 
   addonCabin: boolean;
+  addonEngine: boolean;
   addonWipers: boolean;
   addonTirePressure: boolean;
 };
@@ -166,6 +167,7 @@ export default function RequestQuotePage() {
     outOfArea: false,
 
     addonCabin: false,
+    addonEngine: false,
     addonWipers: false,
     addonTirePressure: false,
   });
@@ -344,6 +346,7 @@ export default function RequestQuotePage() {
 
     const addons =
       (f.addonCabin ? ADDON_PRICES.cabin : 0) +
+      (f.addonEngine ? ADDON_PRICES.engine : 0) +
       (f.addonWipers ? ADDON_PRICES.wipers : 0) +
       (f.addonTirePressure ? ADDON_PRICES.tire : 0);
 
@@ -372,14 +375,22 @@ export default function RequestQuotePage() {
     setF(p => ({ ...p, [k]: v }));
 
   const onPostalChange = (v: string) => {
-    const cleaned = v.toUpperCase().replace(/\s+/g, '');
-    let out = false;
-    if (CA_POSTAL_RE.test(cleaned)) {
-      const fsa = cleaned.slice(0, 3);
-      out = !HRM_FSAS.includes(fsa);
-    }
-    setF(p => ({ ...p, postal: v, outOfArea: out }));
-  };
+  const cleaned = v.toUpperCase().replace(/\s+/g, "");
+  let out = false;
+
+  if (CA_POSTAL_RE.test(cleaned)) {
+    const fsa = cleaned.slice(0, 3);
+    // out of area when FSA is not one of the HRM codes
+    out = !HRM_FSAS.includes(fsa);
+  } else {
+    // invalid format stays in-area flag, but user still sees browser
+    // validation when they submit because field is required
+    out = false;
+  }
+
+  setF(p => ({ ...p, postal: v, outOfArea: out }));
+};
+
 
   async function submitRequest(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -634,7 +645,7 @@ export default function RequestQuotePage() {
 
         {/* Add ons */}
         <div className="mt-3">
-          <label className="block text-sm font-medium">Add ons</label>
+          <label className="block text-sm font-medium">Add ons (*Note these are labour cost*)</label>
           <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
             <label className="inline-flex items-center gap-2">
               <input
@@ -643,8 +654,18 @@ export default function RequestQuotePage() {
                 checked={f.addonCabin}
                 onChange={e => update('addonCabin', e.target.checked)}
               />
-              Cabin filter (+${ADDON_PRICES.cabin})
+              Cabin air filter (+${ADDON_PRICES.cabin})
             </label>
+            <label className="inline-flex items-center gap-2">
+  <input
+    type="checkbox"
+    name="addonEngine"
+    checked={f.addonEngine}
+    onChange={e => update("addonEngine", e.target.checked)}
+  />
+  Engine air filter (+${ADDON_PRICES.engine})
+</label>
+
             <label className="inline-flex items-center gap-2">
               <input
                 type="checkbox"
@@ -691,26 +712,43 @@ export default function RequestQuotePage() {
           className="space-y-4 max-w-xl"
         >
           <input type="hidden" name="service" value={f.service} />
-          <input type="hidden" name="year" value={String(f.year || '')} />
-          <input type="hidden" name="make" value={f.make} />
-          <input type="hidden" name="model" value={f.model} />
-          <input type="hidden" name="vehicleClass" value={f.vehicleClass || ''} />
-          <input type="hidden" name="price" value={String(quote.base)} />
-          <input type="hidden" name="price_base" value={String(quote.base)} />
-          <input type="hidden" name="price_addons" value={String(quote.addons)} />
-          <input type="hidden" name="price_discount" value={String(quote.discount)} />
-          <input type="hidden" name="price_total" value={String(quote.total)} />
-          <input
-            type="hidden"
-            name="engine"
-            value={f.engines.length ? f.engine : f.engineFree}
-          />
-          <input
-            type="hidden"
-            name="trim"
-            value={f.trims.length ? f.trim : f.trimFree}
-          />
-          <input type="hidden" name="ts" value={ts} />
+<input type="hidden" name="year" value={String(f.year || '')} />
+<input type="hidden" name="make" value={f.make} />
+<input type="hidden" name="model" value={f.model} />
+<input type="hidden" name="vehicleClass" value={f.vehicleClass || ''} />
+<input type="hidden" name="price" value={String(quote.base)} />
+<input type="hidden" name="price_base" value={String(quote.base)} />
+<input type="hidden" name="price_addons" value={String(quote.addons)} />
+<input type="hidden" name="discount" value={String(quote.discount || 0)} />
+<input type="hidden" name="price_total" value={String(quote.total)} />
+
+{/* NEW: send human-readable add-ons list */}
+<input
+  type="hidden"
+  name="addons"
+  value={[
+    f.addonCabin ? "Cabin air filter" : "",
+    f.addonEngine ? "Engine air filter" : "",
+    f.addonWipers ? "Wiper blades" : "",
+    f.addonTirePressure ? "Tire pressure check" : "",
+  ]
+    .filter(Boolean)
+    .join(", ")}
+/>
+
+
+<input
+  type="hidden"
+  name="engine"
+  value={f.engines.length ? f.engine : f.engineFree}
+/>
+<input
+  type="hidden"
+  name="trim"
+  value={f.trims.length ? f.trim : f.trimFree}
+/>
+<input type="hidden" name="ts" value={ts} />
+
 
           <div className="hidden" aria-hidden="true">
             <label>Company</label>
