@@ -8,11 +8,11 @@ import Script from "next/script";
 export const metadata = {
   metadataBase: new URL('https://oilchangeonthespot.ca'),
   title: {
-    default: 'Oil Change On The Spot – Mobile Oil Changes in HRM',
+    default: 'Oil Change On The Spot | Mobile Auto Service HRM',
     template: '%s | Oil Change On The Spot'
   },
   description:
-    'We come to you for full synthetic oil changes—sedans, SUVs, trucks & European vehicles. Transparent pricing and easy booking across HRM.',
+    'Fast mobile auto services across HRM. Full synthetic oil changes, tire changes on rims, serpentine belt replacement, spark plugs, ignition coils, battery testing and replacement, fluid changes, and more. We come to your home, work, or parking lot with transparent pricing and fast booking.',
     icons: {
     icon: [
       { url: '/favicon.ico' },
@@ -32,9 +32,9 @@ export const metadata = {
   openGraph: {
     type: 'website',
     url: 'https://oilchangeonthespot.ca',
-    title: 'Oil Change On The Spot',
+    title: 'Oil Change On The Spot | Mobile Auto Service HRM',
     description:
-      'Mobile oil changes in Halifax/Dartmouth/Bedford—book online and we come to you.',
+      'Fast mobile auto services across HRM. Full synthetic oil changes, tire changes on rims, serpentine belt replacement, spark plugs, ignition coils, battery testing and replacement, fluid changes, and more.',
     images: [{ url: '/og.jpg', width: 1200, height: 630, alt: 'Oil Change On The Spot' }],
   },
 };
