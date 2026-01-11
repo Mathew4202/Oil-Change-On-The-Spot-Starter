@@ -798,8 +798,13 @@ export default function RequestQuotePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium">Notes (optional)</label>
-            <textarea name="notes" rows={3} className="w-full border rounded px-3 py-2" />
+            <label className="block text-sm font-medium">What needs service? (optional)</label>
+            <textarea
+              name="service_issue"
+              rows={4}
+              className="w-full border rounded px-3 py-2"
+              placeholder="If your service is not listed above, describe the problem. Example: car won’t start, coolant leak, etc."
+            />
           </div>
 
           <button className="w-full px-5 py-2.5 rounded-lg bg-brand text-white font-semibold hover:bg-brand-light">
