@@ -7,7 +7,7 @@ import ServiceArea from "@/components/ServiceArea";
 import GoogleReviewsSimple from "@/components/GoogleReviewsSimple";
 
 // Christmas promo toggle – set to false or comment out after Christmas
-const CHRISTMAS_PROMO_ACTIVE = true;
+const CHRISTMAS_PROMO_ACTIVE = false;
 
 export default function Home() {
   return (
@@ -32,11 +32,18 @@ export default function Home() {
           >
             Services & Pricing
           </Link>
+          
           <Link
             href="/contact"
             className="px-6 py-3 rounded-lg bg-yellow-400 text-blue-900 font-bold shadow-sm hover:bg-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-300"
           >
             Our Contact Info
+          </Link>
+          <Link
+            href="/memberships"
+            className="px-6 py-3 rounded-lg border text-blue-900 font-bold shadow-sm bg-green-400 shadow-sm hover:bg-green-500 border-slate-300 text-slate-800 hover:bg-slate-50"
+          >
+            Membership Plans
           </Link>
         </div>
       </section>

@@ -28,7 +28,7 @@ export default function Services() {
         "Sedan $80 · SUV $90 · Large SUV $100 · Truck $110 · Euro varies (VW $120 · BMW/Mercedes $140)",
       img: "/serviceimages/oilchange.webp",
       alt: "Oil change service",
-      desc: "Full synthetic oil & filter with eco-friendly disposal. Pricing varies by vehicle class and European brand.",
+      desc: "Full synthetic oil and filter with eco-friendly disposal. Pricing varies by vehicle class and European brand.",
       byo: [
         "Bring oil + filter: Sedan $50, SUV $55, Large SUV $60, Truck $70 (Euro varies)",
         "Bring oil only: Sedan $55, SUV $60, Large SUV $65, Truck $80 (Euro varies)",
@@ -41,7 +41,7 @@ export default function Services() {
       price: "From $80",
       img: "/serviceimages/tirechange.webp",
       alt: "Tire change",
-      desc: "Swap tires already mounted on rims. Torque to spec and tire pressure set. *Note: Tire has to already be on rim, dont offer rimless tire changes at the moment",
+      desc: "Swap tires already mounted on rims. Torque to spec and set tire pressure. Tire must already be on the rim.",
       byo: [],
     },
     {
@@ -50,7 +50,7 @@ export default function Services() {
       price: "From $140 labour + part cost",
       img: "/serviceimages/serpertinebelt.jpg",
       alt: "Serpentine belt",
-      desc: "Replace worn accessory belt(s) to restore proper charging/cooling performance.",
+      desc: "Replace worn accessory belt(s) to restore proper charging and cooling performance.",
       byo: [
         "Bring part: Sedan $140, SUV $150, Large SUV $170, Truck $180 Sports/Euro: $190",
       ],
@@ -61,7 +61,7 @@ export default function Services() {
       price: "From $160 labour + part cost",
       img: "/serviceimages/spark-plugs.jpg",
       alt: "Spark plugs",
-      desc: "New plugs installed to improve performance and fuel economy. Price varies by cylinder count and access.",
+      desc: "Install new plugs to improve performance and fuel economy. Price varies by cylinder count and access.",
       byo: [
         "Bring part: Sedan $160, SUV $150, Large SUV $170, Truck $180 Sports/Euro: $200",
       ],
@@ -83,7 +83,7 @@ export default function Services() {
       price: "From $30 labour + battery cost if needed",
       img: "/serviceimages/battery.jpg",
       alt: "Battery service",
-      desc: "Test and replace the battery if needed. We will confirm the correct spec for your vehicle.",
+      desc: "Test and replace the battery if needed. We confirm the correct spec for your vehicle.",
       byo: [
         "Bring part: Sedan $30, SUV $40, Large SUV $50, Truck $60 Sports/Euro: $50",
       ],
@@ -92,9 +92,34 @@ export default function Services() {
 
   return (
     <div className="container py-12">
-      <h1 className="text-3xl font-bold mb-8 text-center">
+      <h1 className="text-3xl font-bold mb-4 text-center">
         Services & Pricing
       </h1>
+
+      <div className="mb-8 rounded-xl border bg-white p-5">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <p className="font-semibold text-slate-900">
+              Save with a maintenance membership
+            </p>
+            <p className="text-slate-700">
+              First 10 customers get $10 off per month for 24 months. Applies to
+              any plan. While spots last.
+            </p>
+            <p className="text-slate-500 text-sm mt-1">
+              Limited to the first 10 paid signups. One per customer. Starts at
+              signup date. Not transferable.
+            </p>
+          </div>
+
+          <Link
+            href="/memberships"
+            className="inline-flex items-center justify-center rounded-lg bg-blue-700 text-white font-semibold px-5 py-3 hover:bg-blue-800 transition"
+          >
+            View memberships
+          </Link>
+        </div>
+      </div>
 
       <div className="mb-8 rounded-lg border bg-white p-4 text-slate-700">
         <h2 className="text-lg font-semibold mb-2">Popular add-ons</h2>
@@ -104,7 +129,7 @@ export default function Services() {
           <li>Tire pressure check</li>
         </ul>
         <p className="text-slate-600 mt-2 text-sm">
-          You can select these on the Request page before submitting.
+          You select these on the Request page before submitting.
         </p>
       </div>
 
@@ -155,8 +180,8 @@ export default function Services() {
       </div>
 
       <div className="mt-8 text-center text-slate-600">
-        Final price may vary based on parts cost, and vehicle type. Book to get
-        an full instant quote.
+        Final price varies based on parts cost and vehicle type. Book to get a
+        full instant quote.
       </div>
     </div>
   );

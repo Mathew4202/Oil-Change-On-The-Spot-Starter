@@ -14,17 +14,23 @@ export default function NavBar() {
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-6">
-          <Link href="/contact" className="text-slate-700 hover:text-slate-900">Contact</Link>
-          <Link href="/services" className="text-slate-700 hover:text-slate-900">Services</Link>
+          <Link href="/contact" className="hover:underline">Contact</Link>
+          <Link href="/services" className="hover:underline">Services</Link>
           <Link href="/about" className="hover:underline">About Us</Link>
           <Link href="/privacy" className="hover:underline">Privacy</Link>
           <Link href="/terms" className="hover:underline">Terms</Link>
           {/* In NavBar links */}
-<Link href="/gallery" className="hover:underline">Gallery</Link>
+          <Link href="/gallery" className="hover:underline">Gallery</Link>
+          <Link href="/memberships" className="mt-1 inline-flex w-max px-3 py-1 rounded-lg bg-brand hover:bg-brand-light text-white font-semibold">
+            Memberships
+          </Link>
+
 
           <Link href="/request" className="px-3 py-1 rounded-lg bg-brand text-white font-semibold hover:bg-brand-light">
             Request a Quote
           </Link>
+
+          
           
 
         </nav>
@@ -47,18 +53,21 @@ export default function NavBar() {
       {open && (
         <div className="md:hidden border-t border-slate-200 bg-white">
           <nav className="container py-3 flex flex-col gap-3">
-            <Link href="/contact" onClick={() => setOpen(false)} className="text-slate-800">Contact</Link>
-            <Link href="/services" onClick={() => setOpen(false)} className="text-slate-800">Services</Link>
+            <Link href="/contact" onClick={() => setOpen(false)} className="hover:underline">Contact</Link>
+            <Link href="/services" onClick={() => setOpen(false)} className="hover:underline">Services</Link>
             <Link href="/about" className="hover:underline">About Us</Link>
           <Link href="/privacy" className="hover:underline">Privacy</Link>
           <Link href="/terms" className="hover:underline">Terms</Link>
           {/* In NavBar links */}
 <Link href="/gallery" className="hover:underline">Gallery</Link>
 
+<Link href="/memberships" className="mt-1 inline-flex w-max px-3 py-1 rounded-lg bg-brand hover:bg-brand-light text-white font-semibold">
+            Memberships
+          </Link>
             <Link
               href="/request"
               onClick={() => setOpen(false)}
-              className="mt-1 inline-flex w-max px-3 py-1 rounded-lg bg-brand text-white font-semibold"
+              className="mt-1 inline-flex w-max px-3 py-1 rounded-lg bg-brand hover:bg-brand-light text-white font-semibold"
             >
               Request a Quote
             </Link>
