@@ -109,14 +109,17 @@ const PLANS: Plan[] = [
   },
 ];
 
-function money(n: number) {
+function money2(n: number) {
   return n.toFixed(2);
+}
+
+function tax14(n: number) {
+  return Math.round(n * 0.14 * 100) / 100;
 }
 
 export default function MembershipsPage() {
   return (
     <div className="container py-12 space-y-8">
-    
       <div className="text-center space-y-2">
         <h1 className="text-3xl font-bold">Maintenance Memberships</h1>
         <p className="text-slate-600">
@@ -131,13 +134,13 @@ export default function MembershipsPage() {
         </p>
         <p className="text-slate-500 text-sm mt-1">{PROMO_FINE_PRINT}</p>
       </div>
+
       <section className="rounded-xl border bg-white p-6 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
           <div className="space-y-1">
             <h2 className="text-2xl font-bold">Fleet</h2>
             <p className="text-slate-700">
-              Fleet pricing uses the same membership plan pricing, multiplied by
-              number of vehicles.
+              Fleet pricing uses the same membership plan pricing, multiplied by number of vehicles.
             </p>
           </div>
 
@@ -151,66 +154,70 @@ export default function MembershipsPage() {
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {PLANS.map((p) => (
-          <article
-            key={p.id}
-            className="rounded-xl border bg-white shadow-sm overflow-hidden"
-          >
-            <div className="p-5 space-y-2">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-xl font-semibold">{p.tier}</h2>
-                  <p className="text-slate-600 text-sm">{p.oilBrand}</p>
+        {PLANS.map((p) => {
+          const hst = tax14(p.monthly);
+          const totalMonthly = p.monthly + hst;
+
+          return (
+            <article
+              key={p.id}
+              className="rounded-xl border bg-white shadow-sm overflow-hidden"
+            >
+              <div className="p-5 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-semibold">{p.tier}</h2>
+                    <p className="text-slate-600 text-sm">{p.oilBrand}</p>
+                  </div>
+
+                  {p.badge ? (
+                    <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-800">
+                      {p.badge}
+                    </span>
+                  ) : null}
                 </div>
 
-                {p.badge ? (
-                  <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-800">
-                    {p.badge}
-                  </span>
-                ) : null}
+                <div className="pt-2">
+                  <div className="text-slate-500 text-xs uppercase tracking-wide">
+                    Monthly price
+                  </div>
+
+                  <div className="text-3xl font-extrabold">
+                    ${money2(p.monthly)}
+                    <span className="text-base font-semibold text-slate-500"> / month</span>
+                  </div>
+
+                  <div className="text-sm text-slate-600 mt-1">
+                    HST (14%): ${money2(hst)} · Total: ${money2(totalMonthly)} / month
+                  </div>
+                </div>
+
+                <ul className="list-disc ml-5 text-slate-700 space-y-1 pt-2">
+                  {p.bullets.map((b, i) => (
+                    <li key={i}>{b}</li>
+                  ))}
+                </ul>
               </div>
 
-              <div className="pt-2">
-                <div className="text-slate-500 text-xs uppercase tracking-wide">
-                  Monthly price
-                </div>
-                <div className="text-3xl font-extrabold">
-                  ${money(p.monthly)}
-                  <span className="text-base font-semibold text-slate-500">
-                    {" "}
-                    / month
-                  </span>
-                </div>
+              <div className="p-5 border-t bg-slate-50">
+                <Link
+                  href={{
+                    pathname: "/membership-request",
+                    query: { membership: p.id },
+                  }}
+                  className="block w-full text-center rounded-lg bg-blue-700 text-white font-semibold px-4 py-2 hover:bg-blue-800 transition"
+                >
+                  Request this membership
+                </Link>
+
+                <p className="text-xs text-slate-500 mt-2">
+                  You will pick a date and time for your first visit on the next page.
+                </p>
               </div>
-
-              <ul className="list-disc ml-5 text-slate-700 space-y-1 pt-2">
-                {p.bullets.map((b, i) => (
-                  <li key={i}>{b}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="p-5 border-t bg-slate-50">
-              <Link
-                href={{
-                  pathname: "/membership-request",
-                  query: { membership: p.id },
-                }}
-                className="block w-full text-center rounded-lg bg-blue-700 text-white font-semibold px-4 py-2 hover:bg-blue-800 transition"
-              >
-                Request this membership
-              </Link>
-
-              <p className="text-xs text-slate-500 mt-2">
-                You will pick a date and time for your first visit on the next
-                page.
-              </p>
-            </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
-
-      
     </div>
   );
 }

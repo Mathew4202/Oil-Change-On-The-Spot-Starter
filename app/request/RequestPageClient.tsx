@@ -1,4 +1,3 @@
-// app/request/RequestPageClient.tsx
 "use client";
 
 import Link from "next/link";
@@ -6,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   computeQuote,
+  computeTax,
   type VehicleClass,
   type ServiceType,
   ADDON_PRICES,
@@ -37,6 +37,20 @@ type Slot = { value: string; label: string };
 
 function m(h: number, min: number) {
   return h * 60 + min;
+}
+
+function isEuroMake(make: string) {
+  const k = (make || "").trim().toLowerCase();
+  return (
+    k === "volkswagen" ||
+    k === "vw" ||
+    k === "audi" ||
+    k === "volvo" ||
+    k === "mercedes-benz" ||
+    k === "mercedes" ||
+    k === "bmw" ||
+    k === "porsche"
+  );
 }
 
 function buildSlotsForDate(dateStr: string): Slot[] {
@@ -266,7 +280,7 @@ export default function RequestQuotePage() {
       engineFree: "",
       trimFree: "",
     }));
-  }, [f.model]);
+  }, [f.model, f.make, f.year]);
 
   useEffect(() => {
     async function checkAvailability() {
@@ -339,9 +353,11 @@ export default function RequestQuotePage() {
     const discountActive = CHRISTMAS_PROMO_ACTIVE && isChristmasDate(f.date);
     const discount = discountActive ? 10 : 0;
 
-    const total = Math.max(0, base + addons - discount);
+    const subtotal = Math.max(0, base + addons - discount);
+    const tax = computeTax(subtotal);
+    const total = Math.max(0, subtotal + tax);
 
-    return { ...q, base, addons, total, discount, discountActive };
+    return { ...q, base, addons, subtotal, tax, total, discount, discountActive };
   }, [
     f.service,
     f.make,
@@ -378,9 +394,12 @@ export default function RequestQuotePage() {
     fd.set("postal", f.postal);
     fd.set("outOfArea", f.outOfArea ? "true" : "false");
     fd.set("service", f.service);
+
     fd.set("price_base", String(quote.base));
     fd.set("price_addons", String(quote.addons));
     fd.set("price_discount", String(quote.discount));
+    fd.set("price_subtotal", String(quote.subtotal));
+    fd.set("price_tax", String(quote.tax));
     fd.set("price_total", String(quote.total));
 
     try {
@@ -599,13 +618,15 @@ export default function RequestQuotePage() {
                 </strong>
               </div>
               <div>
-                Type: <strong>{f.vehicleClass || "—"}</strong>
+                Type: <strong>{isEuroMake(f.make) ? "Euro" : f.vehicleClass || "—"}</strong>
               </div>
 
               <div className="text-sm text-slate-500">
                 Base: ${quote.base.toFixed(2)}
                 {quote.addons > 0 && <> · Add ons: ${quote.addons.toFixed(2)}</>}
-                {quote.discountActive && <> · Christmas discount: -${quote.discount.toFixed(2)}</>}
+                {quote.discountActive && <> · Discount: -${quote.discount.toFixed(2)}</>}
+                <> · Tax (14%): ${quote.tax.toFixed(2)}</>
+                <> · Subtotal: ${quote.total.toFixed(2)}</>
               </div>
 
               {quote.discount > 0 && (
@@ -692,10 +713,11 @@ export default function RequestQuotePage() {
           <input type="hidden" name="model" value={f.model} />
           <input type="hidden" name="vehicleClass" value={f.vehicleClass || ""} />
 
-          <input type="hidden" name="price" value={String(quote.base)} />
           <input type="hidden" name="price_base" value={String(quote.base)} />
           <input type="hidden" name="price_addons" value={String(quote.addons)} />
           <input type="hidden" name="discount" value={String(quote.discount || 0)} />
+          <input type="hidden" name="price_subtotal" value={String(quote.subtotal)} />
+          <input type="hidden" name="price_tax" value={String(quote.tax)} />
           <input type="hidden" name="price_total" value={String(quote.total)} />
 
           <input
@@ -803,7 +825,17 @@ export default function RequestQuotePage() {
               name="service_issue"
               rows={4}
               className="w-full border rounded px-3 py-2"
-              placeholder="If your service is not listed above, describe the problem. Example: car won’t start, coolant leak, etc."
+              placeholder="Describe the problem if the service is not listed. Example: car won’t start, coolant leak."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">Notes (optional)</label>
+            <textarea
+              name="notes"
+              rows={3}
+              className="w-full border rounded px-3 py-2"
+              placeholder="Any extra details. Example: loud squeak, check engine light, parts already bought."
             />
           </div>
 

@@ -144,7 +144,9 @@ export async function POST(req: NextRequest) {
     const outOfArea = String(data.outOfArea || "") === "true";
     const address = String(data.address || "").trim();
     const postal = String(data.postal || "").trim();
+
     const notes = String(data.notes || "").trim();
+    const serviceIssue = String(data.service_issue || "").trim();
 
     const preferredDate = String(data.preferred_date || "").trim();
     const preferredTime = String(data.preferred_time || "").trim();
@@ -153,7 +155,6 @@ export async function POST(req: NextRequest) {
     const membershipPlanLabel = String(data.membership_plan_label || "").trim();
     const membershipMonthlyRaw = data.membership_monthly;
     const membershipPromoText = String(data.membership_promo_text || "").trim();
-
     const membershipSelected = Boolean(membershipPlanId && membershipPlanLabel);
 
     const fleetPlanId = String(data.fleet_plan_id || "").trim();
@@ -163,7 +164,6 @@ export async function POST(req: NextRequest) {
     const fleetTotalMonthlyRaw = data.fleet_total_monthly;
     const fleetVehicleList = String(data.fleet_vehicle_list || "").trim();
     const companyName = String(data.company_name || "").trim();
-
     const fleetSelected = Boolean(fleetPlanId && fleetPlanLabel);
 
     const year = String(data.year || "").trim();
@@ -186,11 +186,16 @@ export async function POST(req: NextRequest) {
     const priceTotNum = moneyFromAny(data.price_total);
     const priceDiscountNum = discountRaw > 0 ? moneyFromAny(discountRaw) : "";
 
+    const priceSubtotalNum = moneyFromAny(data.price_subtotal);
+    const priceTaxNum = moneyFromAny(data.price_tax);
+
     const membershipMonthlyDisplay = moneyFromAny(membershipMonthlyRaw);
+
     const fleetCount = Math.max(1, Math.min(999, Math.floor(Number(fleetCountRaw || 1))));
     const fleetVehicleMonthlyDisplay = moneyFromAny(fleetVehicleMonthlyRaw);
     const fleetTotalMonthlyDisplay =
-      moneyFromAny(fleetTotalMonthlyRaw) || money2((Number(fleetVehicleMonthlyRaw || 0) || 0) * fleetCount);
+      moneyFromAny(fleetTotalMonthlyRaw) ||
+      money2((Number(fleetVehicleMonthlyRaw || 0) || 0) * fleetCount);
 
     const membershipShort = membershipShortFromLabel(membershipPlanLabel);
 
@@ -249,20 +254,12 @@ export async function POST(req: NextRequest) {
             : ""
         }
 
-        ${
-          showServiceLine
-            ? `<p><b>Service:</b> ${escapeHtml(servicePicked)}</p>`
-            : ""
-        }
+        ${showServiceLine ? `<p><b>Service:</b> ${escapeHtml(servicePicked)}</p>` : ""}
 
         ${
           requestType === "single"
             ? `<p><b>Vehicle:</b> ${escapeHtml(vehicle || "—")}</p>`
-            : ""
-        }
-
-        ${
-          requestType !== "single" && (vehicle.trim().length > 0)
+            : vehicle.trim().length > 0
             ? `<p><b>Vehicle:</b> ${escapeHtml(vehicle)}</p>`
             : ""
         }
@@ -289,11 +286,7 @@ export async function POST(req: NextRequest) {
           ${outOfArea ? ' <span style="color:#b45309">(OUT OF AREA)</span>' : ""}
         </p>
 
-        ${
-          outOfArea
-            ? `<p><b>Service area note:</b> Outside normal area. Follow up needed.</p>`
-            : ""
-        }
+        ${outOfArea ? `<p><b>Service area note:</b> Outside normal area. Follow up needed.</p>` : ""}
 
         ${
           showAddonsLine
@@ -312,6 +305,8 @@ export async function POST(req: NextRequest) {
                     ? `<tr><td style="padding:6px;border:1px solid #ccc">Discount: -$${escapeHtml(priceDiscountNum)}</td></tr>`
                     : ""
                 }
+                <tr><td style="padding:6px;border:1px solid #ccc">Subtotal: $${escapeHtml(priceSubtotalNum || "—")}</td></tr>
+                <tr><td style="padding:6px;border:1px solid #ccc">Tax (14%): $${escapeHtml(priceTaxNum || "—")}</td></tr>
                 <tr><td style="padding:6px;border:1px solid #ccc;font-weight:600">Total: $${escapeHtml(priceTotNum || "—")}</td></tr>
               </table>
             `
@@ -342,6 +337,7 @@ export async function POST(req: NextRequest) {
             : ""
         }
 
+        ${serviceIssue ? `<p><b>What needs service:</b> ${escapeHtml(serviceIssue)}</p>` : ""}
         ${notes ? `<p><b>Notes:</b> ${escapeHtml(notes)}</p>` : ""}
       </div>
     `;
@@ -401,6 +397,8 @@ export async function POST(req: NextRequest) {
                     ? `Discount: -$${escapeHtml(priceDiscountNum)}<br/>`
                     : ""
                 }
+                Subtotal: $${escapeHtml(priceSubtotalNum || "—")}<br/>
+                Tax (14%): $${escapeHtml(priceTaxNum || "—")}<br/>
                 Total: $${escapeHtml(priceTotNum || "—")}
               </p>
             `
@@ -416,11 +414,10 @@ export async function POST(req: NextRequest) {
             : ""
         }
 
-        ${
-          outOfArea
-            ? `<p style="color:#b45309"><b>Note:</b> Outside our normal area. We will follow up.</p>`
-            : ""
-        }
+        ${serviceIssue ? `<p><b>What needs service:</b> ${escapeHtml(serviceIssue)}</p>` : ""}
+        ${notes ? `<p><b>Notes:</b> ${escapeHtml(notes)}</p>` : ""}
+
+        ${outOfArea ? `<p style="color:#b45309"><b>Note:</b> Outside our normal area. We will follow up.</p>` : ""}
 
         <p style="color:#64748b">${escapeHtml(brand)}</p>
       </div>
@@ -432,11 +429,7 @@ export async function POST(req: NextRequest) {
 
     const from = process.env.EMAIL_FROM || "Oil Change <onboarding@resend.dev>";
 
-    const notifyTo =
-      process.env.NOTIFY_TO ||
-      process.env.EMAIL_TO ||
-      "";
-
+    const notifyTo = process.env.NOTIFY_TO || process.env.EMAIL_TO || "";
     if (!notifyTo) {
       throw new Error("NOTIFY_TO is missing. Set NOTIFY_TO to your business inbox.");
     }

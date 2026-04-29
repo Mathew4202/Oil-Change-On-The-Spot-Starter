@@ -25,7 +25,7 @@ export default function Services() {
       key: "oil_change",
       title: "Oil Change Services",
       price:
-        "Sedan $80 · SUV $90 · Large SUV $100 · Truck $110 · Euro varies (VW $120 · BMW/Mercedes $140)",
+        "Sedan $90.00 · SUV $110.00 · Large SUV $110.00 · Truck $130.00 · Sports $150.00 · Euro varies (BMW $159.99 · VW/Audi/Volvo/Mercedes $169.99 · Porsche $189.99) + 14% tax",
       img: "/serviceimages/oilchange.webp",
       alt: "Oil change service",
       desc: "Full synthetic oil and filter with eco-friendly disposal. Pricing varies by vehicle class and European brand.",
@@ -92,9 +92,7 @@ export default function Services() {
 
   return (
     <div className="container py-12">
-      <h1 className="text-3xl font-bold mb-4 text-center">
-        Services & Pricing
-      </h1>
+      <h1 className="text-3xl font-bold mb-4 text-center">Services & Pricing</h1>
 
       <div className="mb-8 rounded-xl border bg-white p-5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -140,13 +138,7 @@ export default function Services() {
             className="flex flex-col justify-between rounded-xl border shadow-sm overflow-hidden bg-white hover:shadow-md transition"
           >
             <div className="relative w-full h-48">
-              <Image
-                src={s.img}
-                alt={s.alt}
-                fill
-                className="object-cover"
-                priority
-              />
+              <Image src={s.img} alt={s.alt} fill className="object-cover" priority />
             </div>
 
             <div className="p-4 flex-1 space-y-2">
@@ -155,9 +147,7 @@ export default function Services() {
               <p className="text-slate-600 text-sm">{s.desc}</p>
 
               <div className="mt-2">
-                <p className="text-sm font-semibold text-slate-800">
-                  Bring your own:
-                </p>
+                <p className="text-sm font-semibold text-slate-800">Bring your own:</p>
                 <ul className="text-sm text-slate-600 list-disc pl-4 space-y-1 mt-1">
                   {s.byo.map((line, i) => (
                     <li key={i}>{line}</li>
@@ -180,8 +170,7 @@ export default function Services() {
       </div>
 
       <div className="mt-8 text-center text-slate-600">
-        Final price varies based on parts cost and vehicle type. Book to get a
-        full instant quote.
+        Final price varies based on parts cost and vehicle type. Tax is added at checkout.
       </div>
     </div>
   );

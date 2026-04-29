@@ -1,33 +1,22 @@
-// data/vehicleClass.ts
 import { type VehicleClass } from "@/lib/pricing";
 
-/**
- * Best-effort guess of vehicle class from the model name.
- * Returns "" if we cannot guess.
- */
 export function detectClassFromModel(rawModel: string | null | undefined): VehicleClass | "" {
   if (!rawModel) return "";
   const model = rawModel.toLowerCase().trim();
   if (!model) return "";
 
- // 1. Hard overrides for known tricky models
-// You add more entries here as needed.
-if (model.includes("santa fe xl")) {
-// 3-row Santa Fe XL
-return "Large SUV";
-}
+  if (model.includes("santa fe xl")) {
+    return "Large SUV";
+  }
 
-if (model.includes("santa fe")) {
-// covers "santa fe", "santa fe sport", typos etc.
-return "SUV/Crossover";
-}
+  if (model.includes("santa fe")) {
+    return "SUV/Crossover";
+  }
 
-if (model.includes("commander")) {
-// Jeep Commander
-return "Large SUV";
-}
+  if (model.includes("commander")) {
+    return "Large SUV";
+  }
 
-  // 2. Sports cars / performance
   const sportsKeywords = [
     "gr86",
     "86",
@@ -38,9 +27,6 @@ return "Large SUV";
     "corvette",
     "challenger",
     "charger",
-    "m3",
-    "m4",
-    "amg",
     "srt",
     "sti",
     "type r",
@@ -49,11 +35,10 @@ return "Large SUV";
     "frs",
     "wrx",
   ];
-  if (sportsKeywords.some(k => model.includes(k))) {
+  if (sportsKeywords.some((k) => model.includes(k))) {
     return "Sports Car";
   }
 
-  // 3. Trucks
   const truckKeywords = [
     "f-150",
     "f150",
@@ -70,37 +55,35 @@ return "Large SUV";
     "ranger",
     "canyon",
   ];
-  if (truckKeywords.some(k => model.includes(k))) {
+  if (truckKeywords.some((k) => model.includes(k))) {
     return "Truck";
   }
 
-  // 4. Large SUVs (3-row / XL)
- const largeSuvKeywords = [
-"suburban",
-"expedition",
-"yukon",
-"yukon xl",
-"escalade",
-"palisade",
-"telluride",
-"atlas",
-"highlander",
-"sequoia",
-"pilot",
-"ascent",
-"traverse",
-"enclave",
-"armada",
-"pathfinder",
-"commander",
-"xl",
-"max",
-];
-  if (largeSuvKeywords.some(k => model.includes(k))) {
+  const largeSuvKeywords = [
+    "suburban",
+    "expedition",
+    "yukon",
+    "yukon xl",
+    "escalade",
+    "palisade",
+    "telluride",
+    "atlas",
+    "highlander",
+    "sequoia",
+    "pilot",
+    "ascent",
+    "traverse",
+    "enclave",
+    "armada",
+    "pathfinder",
+    "commander",
+    "xl",
+    "max",
+  ];
+  if (largeSuvKeywords.some((k) => model.includes(k))) {
     return "Large SUV";
   }
 
-  // 5. Normal SUVs / crossovers
   const suvKeywords = [
     "suv",
     "crossover",
@@ -121,9 +104,8 @@ return "Large SUV";
     "cx30",
     "seltos",
     "kona",
-    "sante fe", // catch misspelling
-    "santa fe", // safety
-    "venue",
+    "sante fe",
+    "santa fe",
     "venue",
     "sorento",
     "forester",
@@ -143,11 +125,10 @@ return "Large SUV";
     "gv70",
     "gv80",
   ];
-  if (suvKeywords.some(k => model.includes(k))) {
+  if (suvKeywords.some((k) => model.includes(k))) {
     return "SUV/Crossover";
   }
 
-  // 6. Default to Sedan if it looks like a car model
   const sedanHints = [
     "sedan",
     "civic",
@@ -183,10 +164,9 @@ return "Large SUV";
     "s60",
     "s80",
   ];
-  if (sedanHints.some(k => model.includes(k))) {
+  if (sedanHints.some((k) => model.includes(k))) {
     return "Sedan";
   }
 
-  // 7. Fallback: return "" so UI stays as "—"
   return "";
 }
