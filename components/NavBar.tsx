@@ -22,7 +22,7 @@ export default function NavBar() {
           {/* In NavBar links */}
           <Link href="/gallery" className="hover:underline">Gallery</Link>
           <Link href="/memberships" className="mt-1 inline-flex w-max px-3 py-1 rounded-lg bg-brand hover:bg-brand-light text-white font-semibold">
-            Memberships
+            Maintenance Plans
           </Link>
 
 
@@ -62,7 +62,7 @@ export default function NavBar() {
 <Link href="/gallery" className="hover:underline">Gallery</Link>
 
 <Link href="/memberships" className="mt-1 inline-flex w-max px-3 py-1 rounded-lg bg-brand hover:bg-brand-light text-white font-semibold">
-            Memberships
+            Maintenance Plans
           </Link>
             <Link
               href="/request"

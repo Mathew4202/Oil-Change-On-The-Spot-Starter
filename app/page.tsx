@@ -43,7 +43,7 @@ export default function Home() {
             href="/memberships"
             className="px-6 py-3 rounded-lg border text-blue-900 font-bold shadow-sm bg-green-400 shadow-sm hover:bg-green-500 border-slate-300 text-slate-800 hover:bg-slate-50"
           >
-            Membership Plans
+            Maintenance Plans
           </Link>
         </div>
       </section>

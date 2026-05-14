@@ -7,10 +7,24 @@ export const metadata = {
     // Put your files in /public/gallery/
     { src: '/gallery/work-01.webp', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'On-site oil change' },
     { src: '/gallery/work-02.webp', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'Filter replacement' },
+    { src: '/gallery/work-03.webp', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'Filter replacement' },
     { src: '/gallery/work-05.webp', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'Sedan service' },
     { src: '/gallery/work-06.webp', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'SUV service' },
     { src: '/gallery/work-07.webp', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'Truck service' },
     { src: '/gallery/work-08.webp', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-09.JPG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-11.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-12.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-13.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-14.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-15.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src:'/gallery/work-16.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-17.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-18.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-19.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-20.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-21.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
+    { src: '/gallery/work-22.PNG', w: 1600, h: 1067, blur: "data:image/jpeg;base64,/9j/4AAQSk...", alt: 'European service' },
   ];
   
   export default function GalleryPage() {

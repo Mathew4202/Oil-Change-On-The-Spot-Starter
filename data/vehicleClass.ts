@@ -1,3 +1,4 @@
+// data/vehicleClass.ts
 import { type VehicleClass } from "@/lib/pricing";
 
 export function detectClassFromModel(rawModel: string | null | undefined): VehicleClass | "" {
@@ -5,18 +6,16 @@ export function detectClassFromModel(rawModel: string | null | undefined): Vehic
   const model = rawModel.toLowerCase().trim();
   if (!model) return "";
 
-  if (model.includes("santa fe xl")) {
-    return "Large SUV";
-  }
+  // Hard overrides
+  if (model.includes("santa fe xl")) return "Large SUV";
+  if (model.includes("santa fe")) return "SUV/Crossover";
+  if (model.includes("commander")) return "Large SUV";
 
-  if (model.includes("santa fe")) {
-    return "SUV/Crossover";
-  }
+  // Fixes requested
+  if (model.includes("acadia")) return "Large SUV";
+  if (model.includes("sienna")) return "Large SUV";
 
-  if (model.includes("commander")) {
-    return "Large SUV";
-  }
-
+  // Sports cars / performance
   const sportsKeywords = [
     "gr86",
     "86",
@@ -35,10 +34,9 @@ export function detectClassFromModel(rawModel: string | null | undefined): Vehic
     "frs",
     "wrx",
   ];
-  if (sportsKeywords.some((k) => model.includes(k))) {
-    return "Sports Car";
-  }
+  if (sportsKeywords.some((k) => model.includes(k))) return "Sports Car";
 
+  // Trucks
   const truckKeywords = [
     "f-150",
     "f150",
@@ -55,10 +53,9 @@ export function detectClassFromModel(rawModel: string | null | undefined): Vehic
     "ranger",
     "canyon",
   ];
-  if (truckKeywords.some((k) => model.includes(k))) {
-    return "Truck";
-  }
+  if (truckKeywords.some((k) => model.includes(k))) return "Truck";
 
+  // Large SUVs (3-row / XL)
   const largeSuvKeywords = [
     "suburban",
     "expedition",
@@ -77,13 +74,15 @@ export function detectClassFromModel(rawModel: string | null | undefined): Vehic
     "armada",
     "pathfinder",
     "commander",
+    "acadia",
+    "sienna",
     "xl",
     "max",
+    "4runner",
   ];
-  if (largeSuvKeywords.some((k) => model.includes(k))) {
-    return "Large SUV";
-  }
+  if (largeSuvKeywords.some((k) => model.includes(k))) return "Large SUV";
 
+  // Normal SUVs / crossovers
   const suvKeywords = [
     "suv",
     "crossover",
@@ -105,8 +104,6 @@ export function detectClassFromModel(rawModel: string | null | undefined): Vehic
     "seltos",
     "kona",
     "sante fe",
-    "santa fe",
-    "venue",
     "sorento",
     "forester",
     "outback",
@@ -125,10 +122,9 @@ export function detectClassFromModel(rawModel: string | null | undefined): Vehic
     "gv70",
     "gv80",
   ];
-  if (suvKeywords.some((k) => model.includes(k))) {
-    return "SUV/Crossover";
-  }
+  if (suvKeywords.some((k) => model.includes(k))) return "SUV/Crossover";
 
+  // Sedans
   const sedanHints = [
     "sedan",
     "civic",
@@ -141,17 +137,8 @@ export function detectClassFromModel(rawModel: string | null | undefined): Vehic
     "impala",
     "jetta",
     "passat",
-    "a4",
-    "a3",
-    "a6",
-    "3 series",
-    "5 series",
     "altima",
     "maxima",
-    "mazda3",
-    "mazda 3",
-    "mazda6",
-    "mazda 6",
     "versa",
     "yaris",
     "sentra",
@@ -159,14 +146,8 @@ export function detectClassFromModel(rawModel: string | null | undefined): Vehic
     "fusion",
     "legacy",
     "impreza",
-    "c-class",
-    "e-class",
-    "s60",
-    "s80",
   ];
-  if (sedanHints.some((k) => model.includes(k))) {
-    return "Sedan";
-  }
+  if (sedanHints.some((k) => model.includes(k))) return "Sedan";
 
   return "";
 }

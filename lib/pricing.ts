@@ -30,7 +30,7 @@ export const ADDON_PRICES = {
 const OIL_BASE: Record<VehicleClass, number> = {
   Sedan: 90.0,
   "SUV/Crossover": 110.0,
-  "Large SUV": 110.0,
+  "Large SUV": 120.0,
   Truck: 130.0,
 
   // Non-euro performance cars default

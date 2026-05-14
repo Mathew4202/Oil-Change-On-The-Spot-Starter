@@ -93,9 +93,7 @@ function money2(n: number) {
 function moneyFromAny(v: unknown): string {
   if (v === null || v === undefined) return "";
   const n =
-    typeof v === "number"
-      ? v
-      : Number(String(v).replace(/[^0-9.\-]/g, ""));
+    typeof v === "number" ? v : Number(String(v).replace(/[^0-9.\-]/g, ""));
   if (!Number.isFinite(n)) return "";
   return money2(n);
 }
@@ -112,7 +110,7 @@ export async function POST(req: NextRequest) {
     if (!allow(ip)) {
       return Response.json(
         { error: "Too many requests. Try again soon." },
-        { status: 429 }
+        { status: 429 },
       );
     }
 
@@ -125,7 +123,7 @@ export async function POST(req: NextRequest) {
     if (!name || !isEmail(email) || !isPhone(phone)) {
       return Response.json(
         { error: "Please enter a valid name, email, and phone." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -151,21 +149,34 @@ export async function POST(req: NextRequest) {
     const preferredDate = String(data.preferred_date || "").trim();
     const preferredTime = String(data.preferred_time || "").trim();
 
+    // Membership request fields
     const membershipPlanId = String(data.membership_plan_id || "").trim();
     const membershipPlanLabel = String(data.membership_plan_label || "").trim();
     const membershipMonthlyRaw = data.membership_monthly;
     const membershipPromoText = String(data.membership_promo_text || "").trim();
     const membershipSelected = Boolean(membershipPlanId && membershipPlanLabel);
 
+    // Fleet request fields (consultative)
     const fleetPlanId = String(data.fleet_plan_id || "").trim();
     const fleetPlanLabel = String(data.fleet_plan_label || "").trim();
     const fleetCountRaw = data.fleet_count;
-    const fleetVehicleMonthlyRaw = data.fleet_vehicle_monthly;
-    const fleetTotalMonthlyRaw = data.fleet_total_monthly;
-    const fleetVehicleList = String(data.fleet_vehicle_list || "").trim();
     const companyName = String(data.company_name || "").trim();
     const fleetSelected = Boolean(fleetPlanId && fleetPlanLabel);
 
+    const fleetVehicleTypes = String(data.fleet_vehicle_types || "").trim();
+    const fleetAvgMonthlyMileage = String(data.fleet_avg_monthly_mileage || "").trim();
+    const fleetServiceFrequency = String(data.fleet_service_frequency || "").trim();
+    const fleetOperatingHours = String(data.fleet_operating_hours || "").trim();
+    const fleetPreferredLocation = String(data.fleet_preferred_location || "").trim();
+    const fleetMaintenanceChallenges = String(data.fleet_maintenance_challenges || "").trim();
+    const fleetServicesInterested = String(data.fleet_services_interested || "").trim();
+    const fleetNeeds = String(data.fleet_needs || "").trim();
+    const isCustomPlan = String(data.custom_plan_request || "") === "true";
+
+    // Backward compatible (older fleet page)
+    const fleetVehicleList = String(data.fleet_vehicle_list || "").trim();
+
+    // Vehicle
     const year = String(data.year || "").trim();
     const make = String(data.make || "").trim();
     const model = String(data.model || "").trim();
@@ -178,38 +189,45 @@ export async function POST(req: NextRequest) {
       (trim ? ` • ${trim}` : "");
 
     const servicePicked = labelForService(String(data.service || "").trim());
-
     const discountRaw = Number(data.discount || 0);
 
+    // Single appointment pricing
     const priceBaseNum = moneyFromAny(data.price_base);
     const priceAddNum = moneyFromAny(data.price_addons);
     const priceTotNum = moneyFromAny(data.price_total);
     const priceDiscountNum = discountRaw > 0 ? moneyFromAny(discountRaw) : "";
-
     const priceSubtotalNum = moneyFromAny(data.price_subtotal);
     const priceTaxNum = moneyFromAny(data.price_tax);
 
     const membershipMonthlyDisplay = moneyFromAny(membershipMonthlyRaw);
 
-    const fleetCount = Math.max(1, Math.min(999, Math.floor(Number(fleetCountRaw || 1))));
-    const fleetVehicleMonthlyDisplay = moneyFromAny(fleetVehicleMonthlyRaw);
-    const fleetTotalMonthlyDisplay =
-      moneyFromAny(fleetTotalMonthlyRaw) ||
-      money2((Number(fleetVehicleMonthlyRaw || 0) || 0) * fleetCount);
+    const fleetCount = Math.max(
+      1,
+      Math.min(999, Math.floor(Number(fleetCountRaw || 1))),
+    );
 
     const membershipShort = membershipShortFromLabel(membershipPlanLabel);
 
-    const requestType = fleetSelected ? "fleet" : membershipSelected ? "membership" : "single";
+    const requestType = fleetSelected
+      ? "fleet"
+      : membershipSelected
+      ? "membership"
+      : isCustomPlan
+      ? "custom"
+      : "single";
 
     const businessSubject =
-      requestType === "fleet"
-        ? `New request, Fleet, ${membershipShortFromLabel(fleetPlanLabel) || "Plan selected"}`
-        : requestType === "membership"
-        ? `New request, Membership, ${membershipShort || "Plan selected"}`
-        : `New quote request, ${servicePicked}`;
+  requestType === "fleet"
+      ? `New request, Fleet`
+      : requestType === "membership"
+      ? `New request, Maintenance Plan`
+      : requestType === "custom"
+      ? `New request, Custom Maintenance Plan`
+      : `New quote request, ${servicePicked}`;
 
     const showServiceLine = requestType === "single";
     const showAddonsLine = requestType === "single";
+    const showPricingTable = requestType === "single";
 
     const whenLine =
       requestType === "single"
@@ -227,12 +245,31 @@ export async function POST(req: NextRequest) {
         </p>
 
         ${
+          requestType === "custom"
+            ? `
+              <p><b>Custom plan request</b></p>
+              ${String(data.custom_oil_changes || "").trim() ? `<p><b>Oil changes per year:</b> ${escapeHtml(String(data.custom_oil_changes))}</p>` : ""}
+              ${String(data.custom_inspections || "").trim() ? `<p><b>Inspections per year:</b> ${escapeHtml(String(data.custom_inspections))}</p>` : ""}
+              ${String(data.custom_vehicle_count || "").trim() ? `<p><b>Vehicle count:</b> ${escapeHtml(String(data.custom_vehicle_count))}</p>` : ""}
+            `
+            : ""
+        }
+
+        ${
           requestType === "membership"
             ? `
               <p>
-                <b>Membership:</b> ${escapeHtml(membershipPlanLabel)}<br/>
-                ${membershipMonthlyDisplay ? `<b>Monthly:</b> $${escapeHtml(membershipMonthlyDisplay)}<br/>` : ""}
-                ${membershipPromoText ? `<b>Promo shown on site:</b> ${escapeHtml(membershipPromoText)}` : ""}
+                <b>Maintenance plan:</b> ${escapeHtml(membershipPlanLabel)}<br/>
+                ${
+                  membershipMonthlyDisplay
+                    ? `<b>Monthly:</b> $${escapeHtml(membershipMonthlyDisplay)}<br/>`
+                    : ""
+                }
+                ${
+                  membershipPromoText
+                    ? `<b>Promo shown on site:</b> ${escapeHtml(membershipPromoText)}`
+                    : ""
+                }
               </p>
               <p><b>Next step:</b> Review details, then reply with the Square subscription link.</p>
             `
@@ -243,13 +280,21 @@ export async function POST(req: NextRequest) {
           requestType === "fleet"
             ? `
               <p>
-                <b>Fleet:</b> ${escapeHtml(fleetPlanLabel)}<br/>
+                <b>Fleet request:</b> ${escapeHtml(fleetPlanLabel || "Fleet maintenance program request")}<br/>
                 <b>Vehicles:</b> ${fleetCount}<br/>
                 ${companyName ? `<b>Company name:</b> ${escapeHtml(companyName)}<br/>` : ""}
-                ${fleetVehicleMonthlyDisplay ? `<b>Per vehicle monthly:</b> $${escapeHtml(fleetVehicleMonthlyDisplay)}<br/>` : ""}
-                <b>Total monthly:</b> $${escapeHtml(fleetTotalMonthlyDisplay)}
               </p>
-              <p><b>Next step:</b> Review details, then reply with the Square subscription link or invoice plan.</p>
+
+              ${fleetVehicleTypes ? `<p><b>Vehicle types:</b> ${escapeHtml(fleetVehicleTypes)}</p>` : ""}
+              ${fleetAvgMonthlyMileage ? `<p><b>Average monthly mileage:</b> ${escapeHtml(fleetAvgMonthlyMileage)}</p>` : ""}
+              ${fleetServiceFrequency ? `<p><b>Service frequency needed:</b> ${escapeHtml(fleetServiceFrequency)}</p>` : ""}
+              ${fleetOperatingHours ? `<p><b>Business operating hours:</b> ${escapeHtml(fleetOperatingHours)}</p>` : ""}
+              ${fleetPreferredLocation ? `<p><b>Preferred service location:</b> ${escapeHtml(fleetPreferredLocation)}</p>` : ""}
+              ${fleetMaintenanceChallenges ? `<p><b>Current maintenance challenges:</b> ${escapeHtml(fleetMaintenanceChallenges)}</p>` : ""}
+              ${fleetServicesInterested ? `<p><b>Services interested:</b> ${escapeHtml(fleetServicesInterested)}</p>` : ""}
+              ${fleetNeeds ? `<p><b>Fleet needs:</b><br/>${escapeHtml(fleetNeeds)}</p>` : ""}
+
+              <p><b>Next step:</b> Review details, then reply with the next steps.</p>
             `
             : ""
         }
@@ -265,13 +310,13 @@ export async function POST(req: NextRequest) {
         }
 
         ${
-          requestType === "fleet"
+          requestType === "fleet" && fleetVehicleList
             ? `
               <p><b>Fleet vehicle list:</b><br/>
                 <span style="color:#64748b">Format expected: Year, Make, Model, Engine, Trim</span>
               </p>
               <pre style="white-space:pre-wrap; background:#0b1220; color:#e5e7eb; padding:10px; border-radius:8px; margin:0">${
-                escapeHtml(fleetVehicleList || "")
+                escapeHtml(fleetVehicleList)
               }</pre>
             `
             : ""
@@ -324,19 +369,6 @@ export async function POST(req: NextRequest) {
             : ""
         }
 
-        ${
-          requestType === "fleet"
-            ? `
-              <p>
-                <b>Pricing:</b><br/>
-                Per vehicle monthly: $${escapeHtml(fleetVehicleMonthlyDisplay || "—")}<br/>
-                Vehicles: ${fleetCount}<br/>
-                Estimated monthly total: $${escapeHtml(fleetTotalMonthlyDisplay || "—")}
-              </p>
-            `
-            : ""
-        }
-
         ${serviceIssue ? `<p><b>What needs service:</b> ${escapeHtml(serviceIssue)}</p>` : ""}
         ${notes ? `<p><b>Notes:</b> ${escapeHtml(notes)}</p>` : ""}
       </div>
@@ -346,7 +378,7 @@ export async function POST(req: NextRequest) {
       requestType === "fleet"
         ? "We received your fleet request"
         : requestType === "membership"
-        ? "We received your membership request"
+        ? "We received your maintenance plan request"
         : `We received your request, ${servicePicked}`;
 
     const customerHtml = `
@@ -357,7 +389,7 @@ export async function POST(req: NextRequest) {
           requestType === "membership"
             ? `
               <p>
-                <b>Membership selected:</b> ${escapeHtml(membershipPlanLabel)}<br/>
+                <b>Maintenance plan selected:</b> ${escapeHtml(membershipPlanLabel)}<br/>
                 ${membershipMonthlyDisplay ? `<b>Monthly:</b> $${escapeHtml(membershipMonthlyDisplay)}<br/>` : ""}
                 ${membershipPromoText ? `<span style="color:#64748b">${escapeHtml(membershipPromoText)}</span>` : ""}
               </p>
@@ -370,11 +402,22 @@ export async function POST(req: NextRequest) {
           requestType === "fleet"
             ? `
               <p>
-                <b>Fleet plan:</b> ${escapeHtml(fleetPlanLabel)}<br/>
+                <b>Fleet request:</b> ${escapeHtml(fleetPlanLabel || "Fleet maintenance program request")}<br/>
                 <b>Vehicles:</b> ${fleetCount}<br/>
-                ${fleetVehicleMonthlyDisplay ? `<b>Per vehicle monthly:</b> $${escapeHtml(fleetVehicleMonthlyDisplay)}<br/>` : ""}
-                <b>Estimated monthly total:</b> $${escapeHtml(fleetTotalMonthlyDisplay)}
+                ${companyName ? `<b>Company name:</b> ${escapeHtml(companyName)}<br/>` : ""}
               </p>
+
+              ${fleetVehicleTypes ? `<p><b>Vehicle types:</b> ${escapeHtml(fleetVehicleTypes)}</p>` : ""}
+              ${fleetAvgMonthlyMileage ? `<p><b>Average monthly mileage:</b> ${escapeHtml(fleetAvgMonthlyMileage)}</p>` : ""}
+              ${fleetServiceFrequency ? `<p><b>Service frequency needed:</b> ${escapeHtml(fleetServiceFrequency)}</p>` : ""}
+              ${fleetOperatingHours ? `<p><b>Business operating hours:</b> ${escapeHtml(fleetOperatingHours)}</p>` : ""}
+              ${fleetPreferredLocation ? `<p><b>Preferred service location:</b> ${escapeHtml(fleetPreferredLocation)}</p>` : ""}
+              ${fleetMaintenanceChallenges ? `<p><b>Current maintenance challenges:</b> ${escapeHtml(fleetMaintenanceChallenges)}</p>` : ""}
+              ${fleetServicesInterested ? `<p><b>Services interested:</b> ${escapeHtml(fleetServicesInterested)}</p>` : ""}
+              ${fleetNeeds ? `<p><b>Fleet needs:</b><br/>${escapeHtml(fleetNeeds)}</p>` : ""}
+
+              <p><b>Preferred start date:</b> ${escapeHtml(preferredDate || "—")}</p>
+
               <p style="color:#0f172a"><b>Next:</b> We will review your request and get back to you soon with next steps.</p>
             `
             : ""
@@ -387,6 +430,9 @@ export async function POST(req: NextRequest) {
               <p><b>Add-ons:</b> ${escapeHtml(String(data.addons || "").trim() || "None selected")}</p>
               <p><b>Your vehicle:</b> ${escapeHtml(vehicle || "—")}</p>
               <p><b>Your time:</b> ${escapeHtml(`${preferredDate} ${preferredTime}`.trim() || "—")}</p>
+
+              ${serviceIssue ? `<p><b>What needs service:</b> ${escapeHtml(serviceIssue)}</p>` : ""}
+              ${notes ? `<p><b>Notes:</b> ${escapeHtml(notes)}</p>` : ""}
 
               <p>
                 <b>Pricing:</b><br/>
@@ -406,16 +452,13 @@ export async function POST(req: NextRequest) {
         }
 
         ${
-          requestType !== "single"
+          requestType !== "single" && requestType !== "fleet"
             ? `
               ${vehicle.trim() ? `<p><b>Your vehicle:</b> ${escapeHtml(vehicle)}</p>` : ""}
               <p><b>Preferred start date:</b> ${escapeHtml(preferredDate || "—")}</p>
             `
             : ""
         }
-
-        ${serviceIssue ? `<p><b>What needs service:</b> ${escapeHtml(serviceIssue)}</p>` : ""}
-        ${notes ? `<p><b>Notes:</b> ${escapeHtml(notes)}</p>` : ""}
 
         ${outOfArea ? `<p style="color:#b45309"><b>Note:</b> Outside our normal area. We will follow up.</p>` : ""}
 
@@ -454,7 +497,7 @@ export async function POST(req: NextRequest) {
     console.error("quote-email error:", err);
     return Response.json(
       { error: err?.message || "Server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
