@@ -454,7 +454,7 @@ export default function RequestQuotePage() {
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
           <div>
-            <p className="font-semibold text-slate-900">Save with a maintenance membership</p>
+            <p className="font-semibold text-slate-900">Save with a maintenance plan</p>
             <p className="text-slate-700">{MEMBERSHIP_PROMO_TEXT}</p>
             <p className="text-slate-500 text-sm mt-1">
               Limited to the first 10 paid signups. One per customer. Starts at signup date. Not
@@ -466,7 +466,7 @@ export default function RequestQuotePage() {
             href="/memberships"
             className="inline-flex items-center justify-center rounded-lg bg-blue-700 text-white font-semibold px-5 py-3 hover:bg-blue-800 transition"
           >
-            View memberships
+            View maintenance plans
           </Link>
         </div>
       </div>
