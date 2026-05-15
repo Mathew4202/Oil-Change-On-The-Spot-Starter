@@ -244,13 +244,13 @@ export default function MaintenancePlansPage() {
           <div className="text-slate-900 font-semibold mb-2">On-site service photos</div>
           <div className="grid md:grid-cols-3 gap-3">
             <div className="rounded-lg overflow-hidden border bg-white">
-              <Image src="/gallery/work-18.PNG" alt="Tire pressure and checks" width={900} height={600} className="w-full h-auto" />
+              <Image src="/gallery/work-18.png" alt="Tire pressure and checks" width={900} height={600} className="w-full h-auto" />
             </div>
             <div className="rounded-lg overflow-hidden border bg-white">
-              <Image src="/gallery/work-21.PNG" alt="Tire pressure and checks" width={900} height={600} className="w-full h-auto" />
+              <Image src="/gallery/work-21.png" alt="Tire pressure and checks" width={900} height={600} className="w-full h-auto" />
             </div>
             <div className="rounded-lg overflow-hidden border bg-white">
-              <Image src="/gallery/work-19.PNG" alt="Tire pressure and checks" width={900} height={600} className="w-full h-auto" />
+              <Image src="/gallery/work-19.png" alt="Tire pressure and checks" width={900} height={600} className="w-full h-auto" />
             </div>
           </div>
         </div>
