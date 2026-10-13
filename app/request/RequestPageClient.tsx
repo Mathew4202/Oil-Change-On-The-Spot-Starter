@@ -53,28 +53,72 @@ function isEuroMake(make: string) {
   );
 }
 
+
+
 function buildSlotsForDate(dateStr: string): Slot[] {
   if (!dateStr) return [];
+
   const STEP_MIN = 30;
   const d = new Date(`${dateStr}T12:00:00`);
   const dow = d.getDay();
-  let start = m(17, 0);
-  let end = m(21, 0);
-  if (dow === 2) start = m(16, 0);
+
+  let start: number;
+  let end: number;
+
+  switch (dow) {
+    case 0: // Sunday
+      start = m(13, 30);
+      end = m(22, 0);
+      break;
+
+    case 1: // Monday
+      start = m(7, 0);
+      end = m(17, 0);
+      break;
+
+    case 2: // Tuesday
+    case 3: // Wednesday
+    case 4: // Thursday
+      start = m(12, 0);
+      end = m(16, 0);
+      break;
+
+    case 5: // Friday
+      start = m(7, 0);
+      end = m(18, 0);
+      break;
+
+    case 6: // Saturday
+      start = m(10, 0);
+      end = m(22, 0);
+      break;
+
+    default:
+      return [];
+  }
 
   const out: Slot[] = [];
+
   for (let t = start; t <= end; t += STEP_MIN) {
     const hh = Math.floor(t / 60);
     const mm = t % 60;
-    const label = new Date(0, 0, 0, hh, mm).toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-    });
+
+    const label = new Date(2000, 0, 1, hh, mm)
+      .toLocaleTimeString("en-CA", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+
     const value = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+
     out.push({ value, label });
   }
+
   return out;
 }
+
+
 
 const CA_POSTAL_RE =
   /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d$/i;
