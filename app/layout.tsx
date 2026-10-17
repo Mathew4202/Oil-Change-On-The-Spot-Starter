@@ -89,6 +89,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   data-domain={process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN}
   src="https://plausible.io/js/script.js"
 />
+{/* Google Analytics 4 */}
+<Script
+  src="https://www.googletagmanager.com/gtag/js?id=G-LQ4FQ4CR01"
+  strategy="afterInteractive"
+/>
+
+<Script id="google-analytics" strategy="afterInteractive">
+  {`
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-LQ4FQ4CR01');
+  `}
+</Script>
       </body>
     </html>
   );

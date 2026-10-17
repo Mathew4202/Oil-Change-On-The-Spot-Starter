@@ -453,15 +453,29 @@ export default function RequestQuotePage() {
       if (!r.ok || j?.error) throw new Error(j?.error || "Could not send request");
 
       setDone(true);
-      try {
-        track("quote_request_submitted", {
-          service: f.service,
-          make: f.make,
-          vehicleClass: f.vehicleClass || "",
-          price: quote.total,
-          outOfArea: f.outOfArea,
-        });
-      } catch {}
+
+// Existing Plausible tracking
+try {
+  track("quote_request_submitted", {
+    service: f.service,
+    make: f.make,
+    vehicleClass: f.vehicleClass || "",
+    price: quote.total,
+    outOfArea: f.outOfArea,
+  });
+} catch {}
+
+// Google Analytics 4 tracking
+if (typeof window !== "undefined") {
+  const gtag = (window as any).gtag;
+
+  if (typeof gtag === "function") {
+    gtag("event", "generate_lead", {
+      lead_source: "website_quote_form",
+      service_type: f.service,
+    });
+  }
+}
       form.reset();
       setTs(String(Date.now()));
     } catch (err: any) {
