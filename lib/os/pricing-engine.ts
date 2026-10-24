@@ -33,6 +33,7 @@ export const OIL_BASE: Record<VehicleClass, number> = {
 };
 export const EURO_BASE: Record<string, number> = {
   Volkswagen: 169.99, Audi: 169.99, Volvo: 169.99, "Mercedes-Benz": 169.99, BMW: 159.99, Porsche: 189.99,
+  MINI: 159.99, FIAT: 159.99, "Alfa Romeo": 179.99, "Land Rover": 189.99, Jaguar: 189.99, Maserati: 199.99,   // only used if the oil price is missing
 };
 
 // Euro and sports cars: priced as our cost + a set profit (agreed Oct 24).
@@ -121,7 +122,26 @@ export function quoteOilChange(input: QuoteInput): Quote {
   const euroPrice = input.make ? EURO_BASE[input.make] : undefined;
   let price: number;
 
-  if (input.ownParts) {
+  if (input.ownParts && (euroPrice || cls === "Sports Car")) {
+    // Euro / sports car, customer brings parts: we keep the same profit as a full job (riskier, slower work),
+    // they only skip paying for what they brought. Oil + filter brought = the profit alone, e.g. BMW sedan $75.
+    const margin = euroPrice ? EURO_MARGIN[cls] : SPORTS_MARGIN;
+    const who = input.ownParts === "both" ? "oil and filter" : input.ownParts;
+    let ours = 0;                          // what we still supply, at our cost
+    let known = true;
+    if (input.ownParts === "oil") {        // we bring the filter
+      let filter = input.costs.filterCost;
+      if (filter == null) { filter = euroPrice ? EURO_FILTER_GUESS : 10; needsReview.push("Filter price not on file (estimated)"); }
+      ours = filter;
+    } else if (input.ownParts === "filter") {   // we bring the oil
+      const perL = input.spec ? oilCostPerL(input.spec.grade, input.costs.oilPerL) : null;
+      if (perL == null || !input.spec) { known = false; needsReview.push(input.spec ? `No oil price on file for ${input.spec.grade}` : "Oil type and capacity not on file for this car"); }
+      else ours = input.spec.capacityL * perL;
+    }
+    cost = r2(ours + input.costs.consumables);
+    price = !known ? (euroPrice ?? OIL_BASE[cls]) : input.ownParts === "both" ? margin : r2(to99(cost + margin));
+    lines.push({ label: `Oil change labour (you supply ${who})`, amount: price });
+  } else if (input.ownParts) {
     price = OWN_PARTS[input.ownParts][cls];
     lines.push({ label: `Oil change labour (you supply ${input.ownParts === "both" ? "oil and filter" : input.ownParts})`, amount: price });
     if (input.ownParts === "filter" && input.spec) {

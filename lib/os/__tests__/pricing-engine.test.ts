@@ -153,3 +153,32 @@ test("review text fills in name and link; emoji counts as Unicode", () => {
   assert.equal(segments("a".repeat(160)), 1);
   assert.equal(segments("🚗" + "a".repeat(100)), 2);
 });
+
+test("Euro and sports cars bringing their own parts keep the full profit (not the normal-car price)", () => {
+  const spec = { grade: "Euro 0W-30", capacityL: 6.5 };
+  const both = (make: string | undefined, cls: "Sedan" | "SUV/Crossover" | "Large SUV" | "Sports Car") =>
+    quoteOilChange({ vehicleClass: cls, make, ownParts: "both", spec, costs: costs(18) }).lines[0].amount;
+  assert.equal(both("BMW", "Sedan"), 75);
+  assert.equal(both("BMW", "SUV/Crossover"), 85);
+  assert.equal(both("Mercedes-Benz", "Large SUV"), 95);
+  assert.equal(both("Porsche", "Sports Car"), 95);
+  assert.equal(both(undefined, "Sports Car"), 80);          // GR86, WRX, Mustang
+  assert.equal(both("Honda", "Sedan"), 50);                 // normal cars unchanged
+  // brings oil only: profit + our filter; brings filter only: profit + our oil
+  const oilOnly = quoteOilChange({ vehicleClass: "Sedan", make: "BMW", ownParts: "oil", spec, costs: costs(18) });
+  assert.equal(oilOnly.lines[0].amount, 94.99);              // 75 + 18 + 1 = 94 -> 94.99
+  assert.equal(oilOnly.profit, 75.99);
+  const filterOnly = quoteOilChange({ vehicleClass: "Sedan", make: "BMW", ownParts: "filter", spec, costs: costs(18) });
+  assert.equal(filterOnly.lines[0].amount, 149.99);          // 6.5 x 10.73 + 1 + 75 = 145.75 -> 149.99
+  // never cheaper than the same car with nothing brought, minus what they brought
+  const full = quoteOilChange({ vehicleClass: "Sedan", make: "BMW", spec, costs: costs(18) }).lines[0].amount;
+  assert.ok(full > filterOnly.lines[0].amount && filterOnly.lines[0].amount > oilOnly.lines[0].amount && oilOnly.lines[0].amount > 75);
+});
+
+test("MINI, Land Rover etc. are Euro too: cost + Euro profit, and $75 when a MINI owner brings oil and filter", () => {
+  const spec = { grade: "Euro 5W-30", capacityL: 4.5 };
+  const full = quoteOilChange({ vehicleClass: "Sedan", make: "MINI", spec, costs: { ...costs(16), oilPerL: { "Euro 5W-30": 10.73 } } });
+  assert.equal(full.lines[0].amount, 144.99);   // 4.5 x 10.73 + 16 + 1 = 65.29 + 75 = 140.29 -> 144.99
+  assert.equal(quoteOilChange({ vehicleClass: "Sedan", make: "MINI", ownParts: "both", spec, costs: costs(16) }).lines[0].amount, 75);
+  assert.equal(quoteOilChange({ vehicleClass: "Large SUV", make: "Land Rover", ownParts: "both", spec, costs: costs(16) }).lines[0].amount, 95);
+});

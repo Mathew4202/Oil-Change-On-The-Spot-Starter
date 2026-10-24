@@ -12,7 +12,7 @@ export type Spec = { id: string; year_from: number; make: string; model: string;
   capacity_l: number; oil_filter_part: string | null; verified: boolean; source: string; confidence: string | null; oil_spec: string | null };
 
 const SPEC_COLS = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec";
-const EURO = ["Volkswagen", "Audi", "Volvo", "Mercedes-Benz", "BMW", "Porsche"];
+const EURO = ["Volkswagen", "Audi", "Volvo", "Mercedes-Benz", "BMW", "Porsche", "MINI", "Land Rover", "Jaguar", "Alfa Romeo", "Maserati", "FIAT"];
 
 export type QuoteRequest = {
   year: number; make: string; model: string; engine?: string | null; vehicleClass?: VehicleClass | null;
@@ -79,10 +79,10 @@ export async function buildQuote(req: QuoteRequest) {
     const rules = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value");
     const r = Object.fromEntries(rules.map((x) => [x.key, Number(x.value)]));
     const items: Addon[] = req.job === "parts" ? (req.addons ?? []).filter((k) => k !== "tires").map((k) => ({ kind: k, partCost: addonPrice(k, r) })) : [];
-    const vc = (req.vehicleClass || detectClassFromModel(req.model) || "Sedan") as VehicleClass;
+    const vc = (req.vehicleClass || detectClassFromModel(req.model, req.make) || "Sedan") as VehicleClass;
     const quote = quoteVisit({ job: req.job, items, distanceKm: req.km ?? null, vehicleClass: vc,
       rules: { ...DEFAULT_RULES, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30 } });
-    const vehicleClass = (req.vehicleClass || detectClassFromModel(req.model) || "Sedan") as VehicleClass;
+    const vehicleClass = (req.vehicleClass || detectClassFromModel(req.model, req.make) || "Sedan") as VehicleClass;
     return { quote, spec: null as Spec | null, engines: [] as string[], lookedUp: false, vehicleClass, rules: r };
   }
   const [{ rows, lookedUp }, oil, rules] = await Promise.all([
@@ -94,7 +94,7 @@ export async function buildQuote(req: QuoteRequest) {
   const oilPerL = Object.fromEntries(oil.map((o) => [o.grade, Number(o.cost_per_l)]));
   const make = EURO.find((e) => e.toLowerCase() === req.make.toLowerCase()) ?? req.make;
   const isEuro = EURO.includes(make);
-  const vehicleClass = (req.vehicleClass || detectClassFromModel(req.model) || "Sedan") as VehicleClass;
+  const vehicleClass = (req.vehicleClass || detectClassFromModel(req.model, req.make) || "Sedan") as VehicleClass;
   // Oil change + tire change on one visit: $15 off in season (the seasonal package), $10 off the rest of the year.
   const kinds = (req.addons ?? []).filter((k) => k !== "tires");
   const withTires = req.job === "seasonal" || (req.addons ?? []).includes("tires");
