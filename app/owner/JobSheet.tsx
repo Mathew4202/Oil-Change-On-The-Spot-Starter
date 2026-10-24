@@ -127,7 +127,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 <>
                   <p className="font-semibold text-[#8a5a00]">Not paid yet. How did they pay?</p>
                   <div className="grid grid-cols-2 gap-2">{PAY.map(([k, n]) => <button key={k} onClick={() => setPay(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
-                  {pay && <label className="flex flex-col gap-1 text-sm font-semibold">Tip (optional, no HST on tips)<input value={tip} onChange={(e) => setTip(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="$0" className={field} style={{ borderColor: LINE }} /></label>}
+                  {pay && <TipBox tip={tip} setTip={setTip} total={Number(ctx.job!.total)} />}
                 </>
               )}
               <label className="flex flex-col gap-1 text-sm font-semibold">Customer email<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="For the receipt" className={field} style={{ borderColor: LINE }} /></label>
@@ -198,7 +198,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 <div className="grid grid-cols-3 gap-2">{([["both", "Both"], ["mathew", "Mathew"], ["harsh", "Harsh"]] as const).map(([k, n]) => <button key={k} onClick={() => setDoneBy(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(doneBy === k)}>{n}</button>)}</div>
                 <h3 className="font-extrabold text-lg mt-1">How did they pay?</h3>
                 <div className="grid grid-cols-2 gap-2">{PAY.map(([k, n]) => <button key={k} onClick={() => setPay(pay === k ? "" : k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
-                {pay && <label className="flex flex-col gap-1 text-sm font-semibold">Tip (optional, no HST on tips)<input value={tip} onChange={(e) => setTip(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="$0" className={field} style={{ borderColor: LINE }} /></label>}
+                {pay && <TipBox tip={tip} setTip={setTip} total={total} />}
                 {!pay && <p className="text-sm text-[#8a5a00]">Not paid yet? Leave this empty and mark it paid later.</p>}
                 <label className="flex flex-col gap-1 text-sm font-semibold">Customer email (for the receipt)<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Optional" className={field} style={{ borderColor: LINE }} /></label>
                 <label className="flex flex-col gap-1 text-sm font-semibold">Notes (optional)<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Anything for next time" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>
@@ -212,7 +212,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
             <div className="max-w-xl mx-auto flex flex-col gap-2">
               {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
               <button onClick={finish} disabled={busy} className="py-3.5 rounded-xl font-extrabold text-base disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>
-                {busy ? "Saving…" : pay ? `Finish job · ${money(total)} paid` : `Finish job · ${money(total)}`}
+                {busy ? "Saving…" : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
               </button>
               <p className="text-xs text-center text-[#4a5878]">Signed in as {owner}</p>
             </div>
@@ -220,6 +220,27 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
         )}
         {err && (finished || result) && <p className="p-3 text-sm text-red-700" role="alert">{err}</p>}
       </div>
+    </div>
+  );
+}
+
+/** Tip: one tap for the usual amounts, or type any amount. Tips never get HST. */
+function TipBox({ tip, setTip, total }: { tip: string; setTip: (t: string) => void; total: number }) {
+  const t = Number(tip) || 0;
+  const quick = ["5", "10", "20"];
+  const custom = tip !== "" && !quick.includes(tip);
+  const [typing, setTyping] = useState(custom);
+  const btn = (on: boolean) => ({ background: on ? NAVY : "#fff", color: on ? "#fff" : NAVY, borderColor: on ? NAVY : LINE });
+  return (
+    <div className="flex flex-col gap-2 rounded-xl p-3 bg-[#f4f6fa]">
+      <p className="text-sm font-bold">Did they tip? <span className="font-normal text-[#4a5878]">(no HST on tips)</span></p>
+      <div className="grid grid-cols-5 gap-2">
+        <button type="button" onClick={() => { setTip(""); setTyping(false); }} className="h-11 rounded-lg border font-bold text-sm" style={btn(t === 0 && !typing)}>No</button>
+        {quick.map((q) => <button key={q} type="button" onClick={() => { setTip(q); setTyping(false); }} className="h-11 rounded-lg border font-bold text-sm" style={btn(tip === q && !typing)}>${q}</button>)}
+        <button type="button" onClick={() => { setTyping(true); if (quick.includes(tip)) setTip(""); }} className="h-11 rounded-lg border font-bold text-sm" style={btn(typing)}>Other</button>
+      </div>
+      {typing && <input autoFocus value={tip} onChange={(e) => setTip(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="Tip amount, e.g. 7.40" aria-label="Tip amount" className={field} style={{ borderColor: LINE }} />}
+      <p className="text-sm">{t > 0 ? <>They paid <strong>{money(total + t)}</strong> in total ({money(total)} + {money(t)} tip)</> : <>They paid <strong>{money(total)}</strong></>}</p>
     </div>
   );
 }
