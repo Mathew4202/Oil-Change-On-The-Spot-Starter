@@ -99,7 +99,9 @@ export async function buildQuote(req: QuoteRequest) {
   const kinds = (req.addons ?? []).filter((k) => k !== "tires");
   const withTires = req.job === "seasonal" || (req.addons ?? []).includes("tires");
   if (withTires) kinds.unshift("tires");
-  const addons: Addon[] = kinds.map((k) => ({ kind: k, partCost: addonPrice(k, r) }));
+  // Washer fluid is $5 with an oil change ($10 on a parts-only visit)
+  const addons: Addon[] = kinds.map((k) => ({ kind: k,
+    partCost: k === "washer_fluid" ? r.addon_price_washer_fluid_with_oil ?? 5 : addonPrice(k, r) }));
 
   const priceWith = async (spec: Spec | null) => {
     const filterCost = (await filterCostFor(spec?.oil_filter_part ?? null)) ?? (spec ? (isEuro ? r.euro_filter_estimate ?? 15 : r.filter_estimate ?? 6.5) : null);
