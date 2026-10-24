@@ -1,5 +1,6 @@
 "use client";
 // Book someone by phone: find them (or add them), pick the car, pick a time, see the price, save.
+import AddressField, { type Place } from "@/components/AddressField";
 import { useEffect, useMemo, useState } from "react";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e";
@@ -31,6 +32,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [first, setFirst] = useState(""); const [last, setLast] = useState("");
   const [phone, setPhone] = useState(""); const [address, setAddress] = useState("");
+  const [place, setPlace] = useState<Place | null>(null);
   // Car
   const [vehicleId, setVehicleId] = useState<string>("new");
   const [year, setYear] = useState(""); const [make, setMake] = useState(""); const [model, setModel] = useState(""); const [engine, setEngine] = useState("");
@@ -97,11 +99,12 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
       const sent = job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [];
       if (sent.length) p.set("addons", sent.join(","));
       if ((job === "oil_change" || job === "seasonal") && own) p.set("own", own);
+      if (place?.km != null) p.set("km", String(place.km));
       const r = await fetch(`/api/os/quote?${p}`);
       setQuote(await r.json()); setPricing(false);
     }, 600);
     return () => clearTimeout(t);
-  }, [year, make, model, engine, addons, own, cars, carReady, job, date]);
+  }, [year, make, model, engine, addons, own, cars, carReady, job, date, place?.km]);
 
   const startIso = useMemo(() => {
     if (otherTime) return halifaxIso(date, otherTime);
@@ -119,7 +122,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
     const r = await fetch("/api/owner/book", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(),
+        firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(), ...(place?.placeId ? { placeId: place.placeId } : {}),
         car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() ? { engine: engine.trim() } : {}) },
         job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [], own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
         priceOverride: special.trim() ? Number(special) : null,
@@ -175,7 +178,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
             </div>
             <label className={lbl}>Phone{customer && !customer.phone && <span className="font-normal text-[#8a5a00]"> No phone on file, add it and we&apos;ll save it</span>}
               <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="902 555 1234" className={field} style={customer && !phone ? { borderColor: GOLD, borderWidth: 2 } : undefined} /></label>
-            <label className={lbl}>Job address<input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, town" className={field} /></label>
+            <AddressField key={customer?.id ?? "new"} value={address} onChange={setAddress} onPlace={setPlace} label="Job address" placeholder="Start typing the street address" labelClass={lbl} inputClass={field} owner />
           </section>
 
           {/* 2. Car */}

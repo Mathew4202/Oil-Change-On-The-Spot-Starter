@@ -1,6 +1,7 @@
 "use client";
 // Customer booking: car → services → time → details → confirm. Prices and times come from OCOTS OS.
 import { useEffect, useMemo, useState } from "react";
+import AddressField, { type Place } from "@/components/AddressField";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type JobId = "oil_change" | "seasonal" | "tires" | "parts" | "diagnostic";
@@ -53,6 +54,7 @@ export default function BookingFlow() {
   // details
   const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [email, setEmail] = useState("");
   const [address, setAddress] = useState(""); const [notes, setNotes] = useState("");
+  const [place, setPlace] = useState<Place | null>(null);   // distance + travel fee for the address
   // price + submit
   const [quote, setQuote] = useState<Quote | null>(null);
   const [pricing, setPricing] = useState(false);
@@ -96,11 +98,12 @@ export default function BookingFlow() {
       const sent = job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [];
       if (sent.length) p.set("addons", sent.join(","));
       if ((job === "oil_change" || job === "seasonal") && own) p.set("own", own);
+      if (place?.km != null) p.set("km", String(place.km));
       try { const r = await fetch(`/api/os/quote?${p}`); setQuote(await r.json()); } catch { setQuote(null); }
       setPricing(false);
     }, 350);
     return () => clearTimeout(t);
-  }, [carReady, year, make, model, engine, job, addons, own, date]);
+  }, [carReady, year, make, model, engine, job, addons, own, date, place?.km]);
 
   // Open times
   useEffect(() => {
@@ -141,7 +144,7 @@ export default function BookingFlow() {
     const r = await fetch("/api/os/book", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        firstName: first, lastName: rest.join(" "), phone, email: email.trim(), address: address.trim(),
+        firstName: first, lastName: rest.join(" "), phone, email: email.trim(), address: address.trim(), ...(place?.placeId ? { placeId: place.placeId } : {}),
         car: { year: Number(year), make, model, ...(engine && engine !== "unsure" ? { engine } : {}) },
         job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [],
         own: (job === "oil_change" || job === "seasonal") && own ? own : null,
@@ -334,9 +337,9 @@ export default function BookingFlow() {
               <label className={labelCls}>Your name<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" placeholder="First and last name" className={input} style={{ borderColor: LINE }} /></label>
               <label className={labelCls}>Mobile number<input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" autoComplete="tel" inputMode="tel" placeholder="902-555-0123" className={input} style={{ borderColor: LINE }} /></label>
               <label className={labelCls}>Email (optional)<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" placeholder="For your receipt" className={input} style={{ borderColor: LINE }} /></label>
-              <label className={labelCls}>Address<input value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" placeholder="Street address, town" className={input} style={{ borderColor: LINE }} /></label>
+              <AddressField value={address} onChange={setAddress} onPlace={setPlace} label="Address" placeholder="Start typing your street address" labelClass={labelCls} inputClass={input} inputStyle={{ borderColor: LINE }} />
               <label className={labelCls}>Anything we should know? (optional)<input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Gate code, parking spot" className={input} style={{ borderColor: LINE }} /></label>
-              <p className="text-sm text-[#4a5878]">Travel is free within 30 km. If you&apos;re further out, we&apos;ll let you know the fee before we come.</p>
+              {!place && <p className="text-sm text-[#4a5878]">Travel is free within 30 km. Further out, the fee shows here as soon as you pick your address.</p>}
             </>
           )}
 

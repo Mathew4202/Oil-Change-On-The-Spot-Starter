@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { sbGet, sbInsert, sbHeaders, enc } from "@/lib/os/db";
 import { buildQuote, filterInStock } from "@/lib/os/quote-service";
+import { drivingDistance, mapsReady } from "@/lib/os/maps";
 import { dayAvailability, jobMinutes as minutesFor, seasonWindows } from "@/lib/os/calendar";
 import { seasonFor } from "@/lib/os/seasons";
 import { pushToOwners } from "@/lib/os/push";
@@ -23,6 +24,7 @@ export const BookingBody = z.object({
   payMode: z.enum(["online", "after"]).default("after"),
   notes: z.string().max(1000).optional(),
   km: z.number().min(0).max(300).optional(),
+  placeId: z.string().max(300).optional(),    // picked from the address suggestions
 });
 export type BookingInput = z.infer<typeof BookingBody>;
 export const needsSomething = (b: Pick<BookingInput, "job" | "addons">) => b.job !== "parts" || b.addons.length > 0;
@@ -59,7 +61,11 @@ export async function createBooking(b: BookingInput, opts: {
   if (b.job === "diagnostic" || b.job === "tires") b = { ...b, addons: [] };
   if (!needsSomething(b)) return { ok: false, status: 400, error: "Pick at least one part for a parts visit." };
   const withOil = b.job === "oil_change" || b.job === "seasonal";
-  const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, km: b.km ?? null, cars: b.cars, inSeason });
+  // Travel: worked out here from the address, never trusted from the browser. Without a maps key it falls back to what was sent.
+  const dist = mapsReady() ? await drivingDistance(b.placeId ? { placeId: b.placeId } : { address: b.address }).catch(() => null) : null;
+  const km = mapsReady() ? dist?.km ?? null : b.km ?? null;
+  const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, km, cars: b.cars, inSeason });
+  const noDistance = mapsReady() && !dist;
   if (opts.priceOverride != null && opts.priceOverride >= 0) {
     const r2 = (x: number) => Math.round(x * 100) / 100;
     const sub = r2(opts.priceOverride);
@@ -130,9 +136,9 @@ export async function createBooking(b: BookingInput, opts: {
   // 5) Book it. The database refuses it if the time overlaps another booking.
   const bk = await sbInsert<{ id: string }>("bookings", {
     customer_id: customer.id, vehicle_id: vehicle.id, starts_at: slotStart, ends_at: slotEnd, address: b.address,
-    distance_km: b.km ?? null, status: "confirmed", pay_mode: b.payMode,
+    distance_km: km, status: "confirmed", pay_mode: b.payMode,
     quoted_total: quote.total, quote_breakdown: quote, cars: b.cars,
-    services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null }, needs_review: quote.needsReview,
+    services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null }, needs_review: [...quote.needsReview, ...(noDistance ? ["Address not found on the map: check it, and add a travel fee if it's past 30 km"] : [])],
     source: opts.source, notes: b.notes || null, manage_token: newManageToken(),
   });
   if (!bk.ok) {
