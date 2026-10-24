@@ -1,72 +1,62 @@
-export const metadata = {
-    title: 'About',
-    description: 'About Oil Change On The Spot – mobile oil changes across HRM.',
-  };
-  
-  export default function AboutPage() {
-    return (
-      <div className="container py-12 space-y-6">
-        <h1 className="text-3xl font-bold">About Oil Change On The Spot</h1>
-        <p className="text-slate-700">
-          We are a Halifax-based mobile auto service. We come to your driveway or workplace 
-          so you avoid waiting rooms and lineups. We serve cars, SUVs, trucks, and performance vehicles across HRM.
-        </p>
-        <p className="text-slate-700">
-          We give you clear pricing and honest service. No upsells, 
-          no pressure. We come to your home or workplace at a time that 
-          fits your schedule. You get clean work, fast response, and reliable 
-          communication. Our focus is convenience, safety, and quality for your vehicle.
-        </p>
-  
-        <div className="rounded-xl border bg-white p-5">
-          <h2 className="text-xl font-semibold mb-2">Our Story</h2>
-          <p className="text-slate-700">
-           Oil Change On The Spot started with a simple idea. Routine car care should not waste your day. We began with mobile oil changes in Halifax. We focused on clear pricing, honest work, and fast service at your home or workplace.
+import Image from "next/image";
+import Link from "next/link";
+import { NAVY, GOLD, MUTED, LIGHT } from "@/components/site/brand";
 
-As demand grew, customers asked for more. We listened. We expanded from oil changes into a wider set of auto services. This includes tire work, basic maintenance, inspections, and light repairs. Our goal is to give you convenient service without long waits or dealership costs.
+export const metadata = { title: "About us", description: "Two guys from Dartmouth who bring the oil change to your driveway, anywhere in HRM." };
+const cond = { fontFamily: "var(--font-condensed)" } as const;
 
-We stay focused on quality, safety, and your experience. Our team delivers reliable work and clear communication every time. We look after your car the same way we look after ours.
-          </p>
-        </div>
+const TEAM = [
+  { name: "Mathew Akunyili", role: "Co-founder and technician", img: "/images/team/matt.png" },
+  { name: "Harsh Bahorun", role: "Co-founder and technician", img: "/images/team/harsh.png" },
+];
+const PROMISES: [string, string][] = [
+  ["Registered and insured", "Oil Change On The Spot Limited is a registered Nova Scotia business with commercial insurance."],
+  ["The right oil for your car", "Full synthetic matched to your engine's spec, and a new filter every time."],
+  ["Nothing added without your OK", "We check fluids, filters and wipers and tell you what we find. You decide if anything else gets done."],
+  ["Rain or snow, we still come", "Bad weather doesn't cancel your appointment. We bring mats and cover and get it done."],
+];
 
-         {/* Team */}
-      <section>
-        <h2 className="text-2xl font-semibold mb-4">Our Team</h2>
-
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* You */}
-          <article className="flex gap-4 rounded-xl border bg-white p-5 shadow-sm">
-            <img
-              src="/images/team/matt.png"   // put your photo at public/images/team/matt.jpg
-              alt="Mathew – Technician"
-              className="h-28 w-28 rounded-xl object-cover"
-            />
-            <div className="space-y-1">
-              <h3 className="text-lg font-semibold">Mathew Akunyili</h3>
-              <p className="text-slate-600 text-sm">
-                Co-founder and lead technician. Detail oriented and focused on doing the job right the first time. 
-                Mathew handles each car with care and treats your service like it is his own.
-              </p>
-            </div>
-          </article>
-          {/* Harsh */}
-          <article className="flex gap-4 rounded-xl border bg-white p-5 shadow-sm">
-            <img
-              src="/images/team/harsh.png"   // put Harsh’s photo at public/images/team/harsh.jpg
-              alt="Harsh – Technician"
-              className="h-28 w-28 rounded-xl object-cover"
-            />
-            <div className="space-y-1">
-              <h3 className="text-lg font-semibold">Harsh Bahorun</h3>
-              <p className="text-slate-600 text-sm">
-                Co-founder and technician. Friendly and efficient. Harsh keeps the workflow 
-                smooth and the service consistent. He handles filters, oil, and other basic maintenance with steady and reliable work.
-              </p>
-            </div>
-          </article>
+export default function About() {
+  return (
+    <div className="text-[#0d1b3e]">
+      <section className="text-white" style={{ background: NAVY }}>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-14 flex flex-col gap-4">
+          <h1 className="text-[42px] sm:text-[58px] leading-[0.95] font-extrabold" style={cond}>Two guys from Dartmouth who think an oil change shouldn&apos;t cost you your day.</h1>
+          <p className="text-[18px] leading-relaxed text-white/85 max-w-2xl">We started Oil Change On The Spot in 2025 so people could skip the shop and the waiting room. We bring everything to your driveway or workplace, anywhere in HRM.</p>
         </div>
       </section>
-      </div>
-    );
-  }
-  
+
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-14 flex flex-col gap-6">
+        <h2 className="text-[34px] font-extrabold" style={cond}>Who shows up</h2>
+        <div className="grid sm:grid-cols-2 gap-5">
+          {TEAM.map((t) => (
+            <article key={t.name} className="rounded-2xl overflow-hidden" style={{ background: LIGHT }}>
+              <div className="relative aspect-square"><Image src={t.img} alt={t.name} fill sizes="(min-width: 640px) 440px, 100vw" className="object-cover" /></div>
+              <div className="p-5"><h3 className="text-[24px] font-bold">{t.name}</h3><p style={{ color: MUTED }}>{t.role}</p></div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section style={{ background: LIGHT }}>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-14 flex flex-col gap-6">
+          <h2 className="text-[34px] font-extrabold" style={cond}>What you can count on</h2>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {PROMISES.map(([t, d]) => (
+              <div key={t} className="bg-white rounded-2xl p-5 flex flex-col gap-2">
+                <h3 className="text-[20px] font-bold">{t}</h3><p className="leading-relaxed" style={{ color: MUTED }}>{d}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section style={{ background: GOLD }}>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+          <h2 className="text-[34px] font-extrabold leading-none" style={cond}>See your price in 10 seconds.</h2>
+          <Link href="/booking" className="inline-block rounded-xl px-6 py-4 text-[18px] font-extrabold text-white no-underline" style={{ background: NAVY }}>Get my price</Link>
+        </div>
+      </section>
+    </div>
+  );
+}

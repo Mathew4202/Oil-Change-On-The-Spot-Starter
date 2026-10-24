@@ -1,8 +1,10 @@
 import './globals.css';
-import NavBar from '@/components/NavBar';
-import StickyCTA from '@/components/StickyCTA';
-import StickySMS from '@/components/StickySMS';
-import SiteFooter from '@/components/SiteFooter';
+import { Barlow, Barlow_Condensed } from 'next/font/google';
+import SiteHeader from '@/components/site/SiteHeader';
+import SiteFooter from '@/components/site/SiteFooter';
+
+const barlow = Barlow({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-barlow' });
+const condensed = Barlow_Condensed({ subsets: ['latin'], weight: ['700', '800'], variable: '--font-condensed' });
 import Script from "next/script";
 import HideOnOwner from '@/components/HideOnOwner';
 
@@ -13,7 +15,7 @@ export const metadata = {
     template: '%s | Oil Change On The Spot'
   },
   description:
-    'Fast mobile auto services across HRM. Full synthetic oil changes, tire changes on rims, serpentine belt replacement, spark plugs, ignition coils, battery testing and replacement, fluid changes, and more. We come to your home, work, or parking lot with transparent pricing and fast booking.',
+    'Full synthetic oil changes done in your driveway or at work, anywhere in HRM. See your exact price and book in under a minute.',
     icons: {
     icon: [
       { url: '/favicon.ico' },
@@ -26,7 +28,7 @@ export const metadata = {
     ]
   },
    manifest: "/site.webmanifest",
-  themeColor: "#0b5cff",
+  themeColor: "#0d1b3e",
   alternates: {
     canonical: 'https://oilchangeonthespot.ca',
   },
@@ -35,7 +37,7 @@ export const metadata = {
     url: 'https://oilchangeonthespot.ca',
     title: 'Oil Change On The Spot | Mobile Auto Service HRM',
     description:
-      'Fast mobile auto services across HRM. Full synthetic oil changes, tire changes on rims, serpentine belt replacement, spark plugs, ignition coils, battery testing and replacement, fluid changes, and more.',
+      'Full synthetic oil changes done in your driveway or at work, anywhere in HRM. See your exact price and book in under a minute.',
     images: [{ url: '/og.jpg', width: 1200, height: 630, alt: 'Oil Change On The Spot' }],
   },
 };
@@ -45,8 +47,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       {/* 👇 This line is the key: make the whole page a flex column that fills the viewport */}
-      <body className="min-h-dvh flex flex-col overflow-x-hidden">
-        <HideOnOwner><NavBar /></HideOnOwner>
+      <body className={`${barlow.variable} ${condensed.variable} min-h-dvh flex flex-col overflow-x-hidden`} style={{ fontFamily: 'var(--font-barlow), system-ui, sans-serif' }}>
+        <HideOnOwner><SiteHeader /></HideOnOwner>
          {/* Optional PWA/iOS helpers */}
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -57,8 +59,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         <HideOnOwner>
           <SiteFooter />
-          <StickyCTA />
-          <StickySMS />
         </HideOnOwner>
 
         {/* LocalBusiness JSON-LD (ok to leave where it is) */}
@@ -71,7 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       name: 'Oil Change On The Spot',
       image: 'https://oilchangeonthespot.ca/og.jpg',
       url: 'https://oilchangeonthespot.ca',
-      telephone: '+19024120344', // or +17826408341 — choose one and keep consistent
+      telephone: '+17826408341',
       areaServed: 'Halifax Regional Municipality',
       address: {
         '@type': 'PostalAddress',

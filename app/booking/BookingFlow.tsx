@@ -74,13 +74,16 @@ export default function BookingFlow() {
   function fillInfo(v: Saved) { setSaved(v); setName(v.name); setPhone(v.phone); setEmail(v.email || ""); setAddress(v.address); }
   useEffect(() => {
     const v = readSaved(); if (v) fillInfo(v);
+    // came from "See your price" on the home page with the car picked
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("year") && q.get("make")) { setYear(q.get("year")!); setMake(q.get("make")!); if (q.get("model")) setModel(q.get("model")!); }
     // signed in with a text code before: their account wins (it's always up to date)
     fetch("/api/os/account").then((r) => r.json()).then((j) => { if (j.signedIn && j.profile) signedIn(j.profile); }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   function signedIn(p: Profile) {
     setAccount(p);
     fillInfo({ name: p.name, phone: p.phone, email: p.email, address: p.address, cars: p.cars });
-    if (p.cars[0] && !year) pickSavedCar(p.cars[0]);
+    if (p.cars[0] && !new URLSearchParams(window.location.search).get("year")) pickSavedCar(p.cars[0]);   // keep a car picked on the home page
   }
   function pickSavedCar(c: SavedCar) { setYear(c.year); setMake(c.make); setModel(c.model); setEngine(c.engine || ""); }
   function saveHere() {
