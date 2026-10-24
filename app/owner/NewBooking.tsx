@@ -10,7 +10,7 @@ type Quote = { lines: { label: string; amount: number }[]; subtotal: number; tot
 
 const field = "h-12 rounded-xl border border-[#c8d0e0] px-3 text-base w-full bg-white";
 const lbl = "flex flex-col gap-1 text-sm font-semibold";
-const ADDONS: [string, string][] = [["wipers", "Wipers"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid top-up"]];
+const ADDONS: [string, string][] = [["tires", "Tire change"], ["wipers", "Wipers"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid top-up"]];
 type JobKind = "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires";
 
 function halifaxIso(date: string, hhmm: string) {
@@ -79,8 +79,8 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
   useEffect(() => {
     setSlots(null); setTime("");
     fetch(`/api/os/services?date=${date}`).then((r) => r.json()).then((d) => setSeason(d.season)).catch(() => setSeason(null));
-    fetch(`/api/os/slots?date=${date}&cars=${cars}&job=${job}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
-  }, [date, cars, job]);
+    fetch(`/api/os/slots?date=${date}&cars=${cars}&job=${job}&addons=${job === "oil_change" && addons.includes("tires") ? "tires" : ""}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
+  }, [date, cars, job, addons]);
 
   // Live price
   const carReady = /^\d{4}$/.test(year) && make.trim() && model.trim();
@@ -90,15 +90,15 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
       setPricing(true);
       const p = new URLSearchParams({ year, make: make.trim(), model: model.trim(), cars: String(cars) });
       if (engine.trim()) p.set("engine", engine.trim());
-      p.set("job", job);
-      const sent = job === "oil_change" || job === "seasonal" || job === "parts" ? addons : [];
+      p.set("job", job); p.set("date", date);
+      const sent = job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [];
       if (sent.length) p.set("addons", sent.join(","));
       if ((job === "oil_change" || job === "seasonal") && own) p.set("own", own);
       const r = await fetch(`/api/os/quote?${p}`);
       setQuote(await r.json()); setPricing(false);
     }, 600);
     return () => clearTimeout(t);
-  }, [year, make, model, engine, addons, own, cars, carReady, job]);
+  }, [year, make, model, engine, addons, own, cars, carReady, job, date]);
 
   const startIso = useMemo(() => {
     if (otherTime) return halifaxIso(date, otherTime);
@@ -110,7 +110,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
     if (!first.trim() || phone.replace(/\D/g, "").length < 10) return setErr("Add their name and a 10-digit phone number.");
     if (!address.trim()) return setErr("Add the address for the job.");
     if (!carReady) return setErr("Add the car: year, make and model.");
-    if (job === "parts" && !addons.length) return setErr("Pick what they need for the parts visit.");
+    if (job === "parts" && !addons.filter((a) => a !== "tires").length) return setErr("Pick what they need for the parts visit.");
     if (!startIso) return setErr("Pick a time.");
     setBusy(true);
     const r = await fetch("/api/owner/book", {
@@ -118,7 +118,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
       body: JSON.stringify({
         firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(),
         car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() ? { engine: engine.trim() } : {}) },
-        job, addons: job === "oil_change" || job === "seasonal" || job === "parts" ? addons : [], own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
+        job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [], own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
         priceOverride: special.trim() ? Number(special) : null,
         customerId: customer?.id ?? null,
       }),
@@ -225,7 +225,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
               <>
                 <p className="text-sm font-semibold">{job === "parts" ? "What do they need? ($50 visit + parts)" : "Add-ons"}</p>
                 <div className="flex flex-wrap gap-2">
-                  {ADDONS.map(([k, n]) => (
+                  {ADDONS.filter(([k]) => job === "oil_change" || k !== "tires").map(([k, n]) => (
                     <button key={k} onClick={() => setAddons((a) => a.includes(k) ? a.filter((x) => x !== k) : [...a, k])} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(addons.includes(k))}>{n}</button>
                   ))}
                 </div>

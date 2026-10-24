@@ -18,6 +18,7 @@ export type QuoteRequest = {
   year: number; make: string; model: string; engine?: string | null; vehicleClass?: VehicleClass | null;
   addons?: Addon["kind"][]; own?: "both" | "oil" | "filter" | null; km?: number | null;
   job?: JobType;   // oil_change (default), parts (no oil change), diagnostic or tires
+  inSeason?: boolean;   // the visit date falls in a seasonal window (oil + tires gets the bigger discount)
   cars?: number;   // same car, several vehicles (e.g. a fleet visit): everything but travel is per car
 };
 
@@ -94,9 +95,10 @@ export async function buildQuote(req: QuoteRequest) {
   const make = EURO.find((e) => e.toLowerCase() === req.make.toLowerCase()) ?? req.make;
   const isEuro = EURO.includes(make);
   const vehicleClass = (req.vehicleClass || detectClassFromModel(req.model) || "Sedan") as VehicleClass;
-  // Seasonal package = oil change + tire change on rims, less $15. Plain oil changes don't carry a tire add-on.
+  // Oil change + tire change on one visit: $15 off in season (the seasonal package), $10 off the rest of the year.
   const kinds = (req.addons ?? []).filter((k) => k !== "tires");
-  if (req.job === "seasonal") kinds.unshift("tires");
+  const withTires = req.job === "seasonal" || (req.addons ?? []).includes("tires");
+  if (withTires) kinds.unshift("tires");
   const addons: Addon[] = kinds.map((k) => ({ kind: k, partCost: addonPrice(k, r) }));
 
   const priceWith = async (spec: Spec | null) => {
@@ -123,11 +125,12 @@ export async function buildQuote(req: QuoteRequest) {
     spec = priced[0].x; quote = priced[0].q;
   }
 
-  if (req.job === "seasonal") {
-    const off = r.seasonal_discount ?? SEASONAL_DISCOUNT;
+  if (withTires) {
+    const seasonal = req.job === "seasonal" || !!req.inSeason;
+    const off = seasonal ? r.seasonal_discount ?? SEASONAL_DISCOUNT : r.tire_addon_discount ?? 10;
     const r2 = (x: number) => Math.round(x * 100) / 100;
     const at = quote.lines.findIndex((l) => /^Travel/.test(l.label));
-    quote.lines.splice(at < 0 ? quote.lines.length : at, 0, { label: "Seasonal package discount", amount: -off });
+    quote.lines.splice(at < 0 ? quote.lines.length : at, 0, { label: seasonal ? "Seasonal package discount" : "Oil + tire change discount", amount: -off });
     quote.subtotal = r2(quote.lines.reduce((t, l) => t + l.amount, 0));
     quote.hst = r2(quote.subtotal * Number(r.hst_rate ?? 0.14));
     quote.total = r2(quote.subtotal + quote.hst);

@@ -9,7 +9,8 @@ on conflict (name) do nothing;
 alter table seasonal_windows enable row level security;
 
 insert into pricing_rules values
-  ('seasonal_discount', 15, 'oil change + tire change on the same visit'),
+  ('seasonal_discount', 15, 'oil change + tire change on the same visit, in season'),
+  ('tire_addon_discount', 10, 'oil change + tire change on the same visit, rest of the year'),
   ('addon_price_coolant', 25, 'coolant top-up, customer price (CHECK)'),
   ('addon_price_washer_fluid', 10, 'washer fluid top-up, customer price (CHECK)'),
   ('job_minutes_parts', 45, 'parts-only visit'),

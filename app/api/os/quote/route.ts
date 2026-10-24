@@ -2,6 +2,9 @@
 // GET /api/os/quote?year=2019&make=Honda&model=Civic&engine=2.0L&addons=wipers,cabin_filter&own=both&km=12
 import { NextRequest, NextResponse } from "next/server";
 import { buildQuote } from "@/lib/os/quote-service";
+import { seasonWindows } from "@/lib/os/calendar";
+import { seasonFor } from "@/lib/os/seasons";
+import { halifaxDate } from "@/lib/os/slots";
 import type { Addon } from "@/lib/os/pricing-engine";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +23,7 @@ export async function GET(req: NextRequest) {
       addons: (q.get("addons") || "").split(",").filter(Boolean) as Addon["kind"][],
       own: (q.get("own") as any) || null, km: q.get("km") ? Number(q.get("km")) : null,
       cars: q.get("cars") ? Number(q.get("cars")) : 1,
+      inSeason: !!seasonFor(/^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date")! : halifaxDate(new Date()), await seasonWindows()),
       job: (["seasonal", "parts", "diagnostic", "tires"].includes(q.get("job") || "") ? q.get("job") : "oil_change") as "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires",
     });
     const owner = q.get("key") && q.get("key") === process.env.ADMIN_SECRET;
