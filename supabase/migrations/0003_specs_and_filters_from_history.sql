@@ -25,7 +25,7 @@ where s.source = 'job_history' and s.year_from = v.year and s.make = v.make and 
 
 -- 2) Oil filters: part numbers we have used, with the typical cost we paid
 insert into parts (part_number, brand, description, category)
-select distinct filter_part, 'NAPA Gold', 'Oil filter', 'oil_filter'
+select distinct filter_part, 'NAPA ProFormer', 'Oil filter', 'oil_filter'
 from jobs where filter_part is not null
 on conflict (part_number, brand) do nothing;
 
@@ -33,7 +33,7 @@ delete from part_quotes where supplier = 'napa' and part_id in (select id from p
   and checked_at = '2026-10-24 00:00-03';
 insert into part_quotes (part_id, supplier, our_cost, checked_at)
 select p.id, 'napa', round(percentile_cont(0.5) within group (order by j.cost_parts)::numeric, 2), '2026-10-24 00:00-03'
-from jobs j join parts p on p.part_number = j.filter_part and p.brand = 'NAPA Gold'
+from jobs j join parts p on p.part_number = j.filter_part and p.brand = 'NAPA ProFormer'
 where j.cost_parts > 0 and j.cost_parts < 20          -- only single-filter jobs
   and j.service ilike 'oil change%' and j.service not ilike '%filter%' and j.service not ilike '%wiper%'
 group by p.id;

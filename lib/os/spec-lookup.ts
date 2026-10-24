@@ -8,7 +8,7 @@ export type LookedUpEngine = {
   oilGrade: string;            // "0W-20" or "Euro 0W-30"
   oilSpec: string | null;      // "dexos1 Gen 3", "VW 508 00", "API SP"
   capacityL: number;           // with filter change
-  napaFilter: string | null;   // NAPA Canada / NAPA Gold number, e.g. 27356
+  napaFilter: string | null;   // NAPA Canada / NAPA ProFormer number, e.g. 27356
   wixFilter: string | null;
 };
 
@@ -34,7 +34,7 @@ For each engine give:
 - oil_grade: SAE grade the manual recommends for Canada, e.g. "0W-20"
 - oil_spec: the approval the oil must meet if any, e.g. "dexos1 Gen 3", "VW 508 00", "MB 229.71", "BMW LL-17 FE+", else "API SP"
 - capacity_l: oil capacity WITH filter change, in litres (convert quarts x 0.946)
-- napa_filter: NAPA Gold oil filter part number (US or Canadian format is fine, e.g. 7356 / 27356 or 100290 / 2100290). null if not found.
+- napa_filter: NAPA ProFormer oil filter number as sold by NAPA Canada (napacanada.com lists them as "PPF 27356", "PPF 2100290"). If you only find the US NAPA Gold number (e.g. 7356, 100290), give that. null if not found.
 - wix_filter: WIX number (e.g. 57356) or null
 
 Reply with ONLY this JSON, no other text:
@@ -42,7 +42,7 @@ Reply with ONLY this JSON, no other text:
  "confidence":"high|medium|low","sources":["https://..."],"notes":null}
 `.trim();
 
-/** NAPA Canada numbers are the US NAPA Gold number with a 2 in front (US 7356 -> 27356, US 100290 -> 2100290).
+/** NAPA Canada ProFormer numbers (what we buy) are the US NAPA Gold number with a 2 in front (US 7356 -> 27356, US 100290 -> 2100290).
  *  If only a WIX number is known: WIX 57356 -> 27356, WIX WL10290 -> 2100290. Exported for tests. */
 export function toNapaCanada(napa: string | null, wix: string | null): string | null {
   const d = (v: string | null) => (v ?? "").replace(/\D/g, "");

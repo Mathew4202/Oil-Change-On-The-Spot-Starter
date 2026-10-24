@@ -40,3 +40,8 @@ test("filter numbers are converted to NAPA Canada format", () => {
   assert.equal(toNapaCanada(null, "WL10290"), "2100290");
   assert.equal(toNapaCanada(null, null), null);
 });
+
+test("ProFormer catalogue style 'PPF 27356MP' becomes 27356", () => {
+  assert.equal(toNapaCanada("PPF27356MP", null), "27356");
+  assert.equal(toNapaCanada("PPF 2100255", null), "2100255");
+});

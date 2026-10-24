@@ -39,7 +39,7 @@ export async function findSpecs(year: number, make: string, model: string, engin
           capacity_l: e.capacityL, oil_filter_part: e.napaFilter, wix_filter: e.wixFilter, source: "ai_lookup", verified: false,
           confidence: found.confidence, sources: found.sources, looked_up_at: new Date().toISOString(),
         });
-        if (e.napaFilter) await sbInsert("parts", { part_number: e.napaFilter, brand: "NAPA Gold", description: "Oil filter", category: "oil_filter" }, { upsertOn: "part_number,brand" });
+        if (e.napaFilter) await sbInsert("parts", { part_number: e.napaFilter, brand: "NAPA ProFormer", description: "Oil filter", category: "oil_filter" }, { upsertOn: "part_number,brand" });
       }
       rows = await specsFor(year, make, model);
     }
