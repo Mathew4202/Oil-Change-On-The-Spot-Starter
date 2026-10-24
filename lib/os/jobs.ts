@@ -47,6 +47,7 @@ export type FinishInput = {
   doneBy?: "both" | "mathew" | "harsh";
   notes?: string;
   payMethod?: "card_terminal" | "cash" | "etransfer" | "card_online" | null;   // null = not paid yet
+  tip?: number | null;                                                          // no HST on tips
   email?: string | null;
   sendReceipt?: boolean;
 };
@@ -124,7 +125,7 @@ export async function finishJob(input: FinishInput, owner: string) {
     await sbInsert("stock_moves", { part_id: filterId, qty: -used, reason: "job", job_id: job.data!.id });
   }
 
-  if (input.payMethod) await recordPayment(ctx.booking.id, total, input.payMethod, owner);
+  if (input.payMethod) await recordPayment(ctx.booking.id, total, input.payMethod, owner, input.tip ?? 0);
 
   // Review text goes out as soon as the job is complete
   let reviewText: { sent: boolean; status: string } | null = null;
@@ -143,10 +144,13 @@ export async function finishJob(input: FinishInput, owner: string) {
   return { ok: true as const, jobId: job.data!.id, receiptNo, total, receipt, reviewText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
 }
 
-export async function recordPayment(bookingId: string, amount: number, method: string, owner: string) {
-  await sbInsert("payments", { booking_id: bookingId, amount, method, processor_ref: `recorded by ${owner}` });
+/** amount = the receipt total (with HST). A tip is added on top: it's income, but it never gets HST. */
+export async function recordPayment(bookingId: string, amount: number, method: string, owner: string, tip = 0) {
+  const t = r2(Math.max(0, tip || 0));
+  await sbInsert("payments", { booking_id: bookingId, amount: r2(amount + t), method, processor_ref: `recorded by ${owner}${t ? `, includes $${t.toFixed(2)} tip` : ""}` });
   await sbPatch("bookings", `id=eq.${enc(bookingId)}`, { paid_at: new Date().toISOString() });
-  await sbPatch("jobs", `booking_id=eq.${enc(bookingId)}`, { payment_method: method });
+  const [j] = await sbGet<{ subtotal: number | null }>(`jobs?select=subtotal&booking_id=eq.${enc(bookingId)}&limit=1`);
+  await sbPatch("jobs", `booking_id=eq.${enc(bookingId)}`, { payment_method: method, tip: t, ...(j?.subtotal != null ? { revenue: r2(Number(j.subtotal) + t) } : {}) });
 }
 
 const siteUrl = () => process.env.SITE_URL || (process.env.VERCEL_BRANCH_URL ? `https://${process.env.VERCEL_BRANCH_URL}` : process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://oilchangeonthespot.ca");
@@ -155,7 +159,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
   const [j] = await sbGet<{ id: string; receipt_no: number; receipt_token: string; done_at: string; lines: { label: string; amount: number }[];
     subtotal: number; hst: number; total: number; payment_method: string | null; km: number | null; next_due_km: number | null; next_due_date: string | null;
     oil_grade: string | null; oil_litres: number | null; vehicle_text: string | null; customer_id: string | null; booking_id: string | null;
-    filter_part: string | null; vehicle_id: string | null; review_requested: boolean | null }>(`jobs?select=*&${where}&limit=1`);
+    filter_part: string | null; vehicle_id: string | null; review_requested: boolean | null; tip: number | null }>(`jobs?select=*&${where}&limit=1`);
   if (!j) return null;
   const [c] = j.customer_id ? await sbGet<{ first_name: string | null; last_name: string | null; email: string | null; review_asked_at: string | null }>(
     `customers?select=first_name,last_name,email,review_asked_at&id=eq.${j.customer_id}`) : [];
@@ -167,7 +171,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
     jobId: j.id, email: c?.email ?? null, customerId: j.customer_id, reviewAsked: !!c?.review_asked_at,
     data: {
       receiptNo: j.receipt_no, date: nice(new Date(j.done_at)), customer: [c?.first_name, c?.last_name].filter(Boolean).join(" ") || "Customer",
-      car: j.vehicle_text || "", address: b?.address ?? null, lines: j.lines ?? [], subtotal: Number(j.subtotal), hst: Number(j.hst), total: Number(j.total),
+      car: j.vehicle_text || "", address: b?.address ?? null, lines: j.lines ?? [], subtotal: Number(j.subtotal), hst: Number(j.hst), total: Number(j.total), tip: Number(j.tip ?? 0),
       paidWith: j.payment_method, km: j.km, nextDueKm: j.next_due_km, nextDueDate: j.next_due_date ? nice(new Date(`${j.next_due_date}T12:00:00Z`)) : null,
       oil: j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${spec ? ` (meets ${spec})` : ""}${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
       filter: j.filter_part ? `${fp?.brand || "NAPA ProFormer"} ${j.filter_part}` : null,

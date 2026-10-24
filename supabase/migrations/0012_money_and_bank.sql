@@ -37,6 +37,7 @@ create index if not exists bank_lines_status on bank_lines (status);
 
 alter table expenses add column if not exists bank_line_id uuid references bank_lines(id) on delete set null;
 alter table payments add column if not exists bank_line_id uuid references bank_lines(id) on delete set null;
+alter table jobs add column if not exists tip numeric(10,2);          -- tips: part of money in, no HST on them
 
 alter table bank_imports enable row level security;
 alter table bank_lines enable row level security;

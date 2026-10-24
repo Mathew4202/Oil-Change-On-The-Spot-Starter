@@ -1,6 +1,6 @@
 // Profit and loss for a week / month / year. Pure functions (tested in __tests__/money.test.ts).
 
-export type JobRow = { done_at: string; revenue: number | null; hst: number | null; cost_oil: number | null; cost_parts: number | null; cost_other: number | null; done_by: string | null };
+export type JobRow = { done_at: string; revenue: number | null; hst: number | null; tip?: number | null; cost_oil: number | null; cost_parts: number | null; cost_other: number | null; done_by: string | null };
 export type ExpRow = { spent_at: string; total: number; hst: number | null; subtotal: number | null; category: string | null; description?: string | null };
 export type Period = { kind: "week" | "month" | "year"; from: string; to: string; label: string; offset: number };
 
@@ -73,6 +73,7 @@ export function summarize(jobs: JobRow[], expenses: ExpRow[]) {
     avgJobProfit: jobs.length ? r2((sales - partsUsed) / jobs.length) : 0,
     spendingByGroup: [...cats.entries()].map(([group, amount]) => ({ group, name: groupName(group), amount })).sort((a, b) => b.amount - a.amount),
     doneBy: people,
+    tips: r2(jobs.reduce((t, j) => t + Number(j.tip ?? 0), 0)),       // part of Money in, never taxed
     jobsNoHst: jobs.filter((j) => j.hst == null).length,           // old Job Tracker jobs: HST wasn't recorded
     expensesNoHst: expenses.filter((e) => e.hst == null).length,
   };

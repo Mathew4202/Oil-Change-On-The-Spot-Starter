@@ -7,7 +7,7 @@ import OwnerNav from "../OwnerNav";
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878", GOOD = "#1d6b3a", BAD = "#9b1c1c";
 type Kind = "week" | "month" | "year";
 type Summary = { jobs: number; sales: number; hstCollected: number; spending: number; hstPaid: number; profit: number; hstOwing: number; avgJob: number; jobProfit: number; avgJobProfit: number;
-  spendingByGroup: { group: string; name: string; amount: number }[]; doneBy: Record<string, number>; jobsNoHst: number; expensesNoHst: number };
+  spendingByGroup: { group: string; name: string; amount: number }[]; doneBy: Record<string, number>; tips: number; jobsNoHst: number; expensesNoHst: number };
 type Month = { month: string; sales: number; spending: number; profit: number };
 type Data = { period: { kind: Kind; label: string; from: string; to: string; offset: number }; summary: Summary; months: Month[];
   unpaid: { id: string; date: string; name: string; amount: number }[]; bank: { needsLook: number; lastStatement: string | null; today: string } };
@@ -68,7 +68,7 @@ export default function MoneyScreen() {
                 <p className="text-[44px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)", color: s.profit < 0 ? BAD : NAVY }}>{money(s.profit)}</p>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-xl p-3 bg-[#f4f6fa]"><p className="text-xs font-semibold" style={{ color: MUTED }}>Money in</p><p className="text-xl font-extrabold">{money(s.sales)}</p></div>
+                <div className="rounded-xl p-3 bg-[#f4f6fa]"><p className="text-xs font-semibold" style={{ color: MUTED }}>Money in</p><p className="text-xl font-extrabold">{money(s.sales)}</p>{s.tips > 0 && <p className="text-xs" style={{ color: MUTED }}>incl. {money(s.tips)} tips</p>}</div>
                 <div className="rounded-xl p-3 bg-[#f4f6fa]"><p className="text-xs font-semibold" style={{ color: MUTED }}>Money out</p><p className="text-xl font-extrabold">{money(s.spending)}</p></div>
               </div>
               <p className="text-sm" style={{ color: MUTED }}>

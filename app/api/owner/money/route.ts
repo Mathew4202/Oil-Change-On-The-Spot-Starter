@@ -7,7 +7,7 @@ import { periodFor, summarize, byMonth, type JobRow, type ExpRow, type Period } 
 
 export const dynamic = "force-dynamic";
 
-const JOB_COLS = "done_at,revenue,hst,cost_oil,cost_parts,cost_other,done_by";
+const JOB_COLS = "done_at,revenue,hst,tip,cost_oil,cost_parts,cost_other,done_by";
 const EXP_COLS = "spent_at,total,hst,subtotal,category,description";
 const nextDay = (d: string) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
 const jobsBetween = (from: string, to: string) =>

@@ -18,6 +18,7 @@ const Finish = z.object({
   extraLines: z.array(z.object({ label: z.string().max(80), amount: z.number().min(-2000).max(5000) })).max(10).optional(),
   doneBy: z.enum(["both", "mathew", "harsh"]).optional(), notes: z.string().max(1000).optional(),
   payMethod: z.enum(["card_terminal", "cash", "etransfer", "card_online"]).nullable().optional(),
+  tip: z.number().min(0).max(1000).nullable().optional(),
   email: z.string().email().nullable().optional().or(z.literal("")), sendReceipt: z.boolean().optional(),
 });
 
@@ -47,7 +48,8 @@ export async function POST(req: NextRequest) {
       const method = z.enum(["card_terminal", "cash", "etransfer", "card_online"]).safeParse(body.method);
       const ctx = await jobContext(id);
       if (!method.success || !ctx?.job) return NextResponse.json({ error: "Finish the job first, then pick how they paid" }, { status: 400 });
-      await recordPayment(id, Number(ctx.job.total), method.data, owner);
+      const tip = Math.min(1000, Math.max(0, Number(body.tip) || 0));
+      await recordPayment(id, Number(ctx.job.total), method.data, owner, tip);
       const receipt = body.sendReceipt === false ? null : await sendReceipt(String(ctx.job.id), body.email || null);
       return NextResponse.json({ ok: true, receipt });
     }

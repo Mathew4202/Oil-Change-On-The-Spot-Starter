@@ -11,7 +11,7 @@ export const BUSINESS = {
 
 export type ReceiptData = {
   receiptNo: number; date: string; customer: string; car: string; address?: string | null;
-  lines: { label: string; amount: number }[]; subtotal: number; hst: number; total: number;
+  lines: { label: string; amount: number }[]; subtotal: number; hst: number; total: number; tip?: number;
   paidWith?: string | null; km?: number | null; nextDueKm?: number | null; nextDueDate?: string | null;
   oil?: string | null; filter?: string | null; vin?: string | null;
   reviewUrl?: string | null; receiptUrl?: string | null; logoUrl?: string | null;
@@ -46,7 +46,8 @@ export function receiptHtml(r: ReceiptData): string {
    ${row("Subtotal", money(r.subtotal))}
    ${row("HST 14%", money(r.hst))}
    ${row("Total", money(r.total), true)}
-   ${r.paidWith ? row(`Paid: ${esc(METHOD_NAMES[r.paidWith] || r.paidWith)}`, money(r.total)) : ""}
+   ${r.tip ? row("Tip, thank you!", money(r.tip)) : ""}
+   ${r.paidWith ? row(`Paid: ${esc(METHOD_NAMES[r.paidWith] || r.paidWith)}`, money(r.total + (r.tip || 0))) : ""}
   </table>
   ${r.oil || r.km || r.nextDueKm || r.vin || r.filter ? `<div style="background:#eef1f6;border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6">
    <div style="font-weight:700;margin-bottom:4px">Service record</div>
@@ -70,7 +71,8 @@ export function receiptText(r: ReceiptData): string {
   return [
     `${BUSINESS.short} receipt #${r.receiptNo}, ${r.date}`, r.car, "",
     ...r.lines.map((l) => `${l.label}: ${money(l.amount)}`), `HST 14%: ${money(r.hst)}`, `Total: ${money(r.total)}`,
-    r.paidWith ? `Paid: ${METHOD_NAMES[r.paidWith] || r.paidWith}` : "",
+    r.tip ? `Tip, thank you!: ${money(r.tip)}` : "",
+    r.paidWith ? `Paid: ${METHOD_NAMES[r.paidWith] || r.paidWith}, ${money(r.total + (r.tip || 0))}` : "",
     r.vin ? `VIN: ${r.vin}` : "", r.km ? `Odometer: ${r.km} km` : "", r.oil ? `Oil: ${r.oil}` : "", r.filter ? `Oil filter: ${r.filter}` : "",
     r.nextDueKm ? `Next oil change: ${r.nextDueKm} km${r.nextDueDate ? ` or ${r.nextDueDate}` : ""}` : "",
     "", `${BUSINESS.name}, HST # ${BUSINESS.hst}, ${BUSINESS.phone}`,

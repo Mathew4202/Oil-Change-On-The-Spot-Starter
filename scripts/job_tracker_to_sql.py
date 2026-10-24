@@ -1,5 +1,6 @@
 import openpyxl, re, json, sys
 src, out = sys.argv[1], sys.argv[2]
+square_file = sys.argv[3] if len(sys.argv) > 3 else None   # optional: Square orders JSON (exact HST + tips per job)
 wb = openpyxl.load_workbook(src, data_only=True)
 
 MAKES = {'nissan':'Nissan','nissans':'Nissan','hyundai':'Hyundai','hyuandai':'Hyundai','honda':'Honda','toyota':'Toyota',
@@ -82,12 +83,59 @@ for r in ws.iter_rows(min_row=2, values_only=True):
         service=' '.join(str(svc or '').split()), price=num(price), oil=num(oil), filt=num(filt),
         other=(num(gas) or 0)+(num(other) or 0) if (num(gas) is not None or num(other) is not None) else None,
         notes=' '.join(str(notes).split()) if notes and not method(str(notes)) or (notes and len(str(notes))>12) else None,
-        method=method(str(notes) if notes else ''), split=' '.join(str(split).split()) if split else None, **v))
+        method=method(str(notes) if notes else ''), split=' '.join(str(split).split()) if split else None,
+        gas_cost=num(gas), other_cost=num(other), **v))
+
+# ---- HST and tips: HST is 14% of the job price, never of the tip ----
+import datetime as _dt
+def _days(a, b): return abs((_dt.date.fromisoformat(a) - _dt.date.fromisoformat(b)).days)
+orders = []
+if square_file:
+    _m = lambda x: (x or {}).get('amount', 0) / 100
+    for o in json.load(open(square_file)).get('orders', []):
+        tips = sum(_m(li.get('total_money')) for li in o.get('line_items', []) if (li.get('name') or '').strip().lower() in ('tip', 'tips'))
+        orders.append(dict(date=o['created_at'][:10], pre=round(_m(o.get('total_money')) - _m(o.get('total_tax_money')), 2), tax=_m(o.get('total_tax_money')), tip=tips, used=False))
+matched = 0
+for x in rows:
+    x['hst'] = x['tip'] = None
+    if x['price'] is None: continue
+    c = sorted([o for o in orders if not o['used'] and _days(o['date'], x['date']) <= 2 and abs(o['pre'] - x['price']) < 0.06], key=lambda o: _days(o['date'], x['date']))
+    if c:   # exact numbers from the Square sale
+        c[0]['used'] = True; matched += 1
+        x['hst'], x['tip'] = round(c[0]['tax'], 2), round(c[0]['tip'], 2)
+    else:   # odd amounts like 124.60 are a $120 job plus a $4.60 tip
+        base = x['price'] if round(x['price'] % 5, 2) == 0 else (x['price'] // 10) * 10
+        x['tip'] = round(x['price'] - base, 2)
+        x['hst'] = round(0.14 * base, 2) if x['date'] >= '2026-05-15' else 0
+if square_file: print(f'HST from Square for {matched} of {len(rows)} jobs', file=sys.stderr)
 
 exps = []
 for r in wb['Expense Tracker'].iter_rows(min_row=2, values_only=True):
     if not (r[0] or r[1]) or num(r[3]) is None: continue
     exps.append(dict(date=r[0].strftime('%Y-%m-%d') if hasattr(r[0],'strftime') else None, item=r[1], cat=r[2], amt=num(r[3]), notes=r[4]))
+
+# ---- Costs: count each dollar once ----
+# The Job Tracker records oil/filters/gas used on each job; the Expense Tracker records buying them.
+# Some months only one of the two was filled in. Per month and type, Money out uses the bigger of the two,
+# so nothing is counted twice and nothing is left out.
+import calendar as _cal
+TYPES = {'oil': ('Oil', lambda c: 'oil' in c), 'filters': ('Filters and parts', lambda c: 'filter' in c or 'part' in c), 'gas': ('Gas', lambda c: c in ('gas', 'fuel'))}
+used, bought, last_day = {}, {}, {}
+for x in rows:
+    m = x['date'][:7]; last_day[m] = max(last_day.get(m, ''), x['date'])
+    for t, v in (('oil', x['oil']), ('filters', (x['filt'] or 0) + (x['other_cost'] or 0)), ('gas', x['gas_cost'])):
+        used[(m, t)] = used.get((m, t), 0) + (v or 0)
+for e in exps:
+    if not e['date']: continue
+    c = str(e['cat'] or '').lower()
+    for t, (_, test) in TYPES.items():
+        if test(c): bought[(e['date'][:7], t)] = bought.get((e['date'][:7], t), 0) + e['amt']
+catchup = []
+for (m, t), u in sorted(used.items()):
+    gap = round(u - bought.get((m, t), 0), 2)
+    if gap >= 1:
+        name = TYPES[t][0].lower()
+        catchup.append(dict(date=last_day[m], item=f"{TYPES[t][0]} used on jobs in {_cal.month_name[int(m[5:])]} (from Job Tracker, not in Expense Tracker)", cat=t, amt=gap))
 
 L = []
 L.append("""-- OCOTS OS: import Job Tracker + Expense Tracker history (safe to run again)
@@ -101,6 +149,8 @@ alter table jobs add column if not exists notes text;
 alter table jobs add column if not exists filter_part text;
 alter table jobs add column if not exists vehicle_text text;
 alter table expenses add column if not exists description text;
+alter table jobs add column if not exists hst numeric(10,2);
+alter table jobs add column if not exists tip numeric(10,2);          -- tips: income, but no HST on them
 alter table expenses add column if not exists source text;
 alter table customers add column if not exists source text;
 alter table vehicles add column if not exists source text;
@@ -108,15 +158,15 @@ alter table vehicles add column if not exists source text;
 -- clear an earlier run of this import
 delete from jobs where imported_from = 'job_tracker';
 delete from vehicles where source = 'job_tracker' and id not in (select vehicle_id from jobs where vehicle_id is not null);
-delete from expenses where source = 'expense_tracker';
+delete from expenses where source in ('expense_tracker', 'job_tracker_costs');
 
 create temp table jt (n int, d date, name text, raw text, service text, price numeric, oil numeric, filt numeric, other numeric,
-  notes text, method text, split text, yr int, make text, model text, engine text, grade text, cap numeric, filter text,
+  notes text, method text, split text, yr int, make text, model text, engine text, grade text, cap numeric, filter text, hst numeric, tip numeric,
   customer_id uuid, score real, vehicle_id uuid) on commit drop;
-insert into jt (n,d,name,raw,service,price,oil,filt,other,notes,method,split,yr,make,model,engine,grade,cap,filter) values""")
+insert into jt (n,d,name,raw,service,price,oil,filt,other,notes,method,split,yr,make,model,engine,grade,cap,filter,hst,tip) values""")
 vals = []
 for i,x in enumerate(rows,1):
-    vals.append(f"({i},{q(x['date'])},{q(x['name'])},{q(x['raw'])},{q(x['service'])},{q(x['price'])},{q(x['oil'])},{q(x['filt'])},{q(x['other'])},{q(x['notes'])},{q(x['method'])},{q(x['split'])},{q(x['year'])},{q(x['make'])},{q(x['model'])},{q(x['engine'])},{q(x['grade'])},{q(x['cap'])},{q(x['filter'])})")
+    vals.append(f"({i},{q(x['date'])},{q(x['name'])},{q(x['raw'])},{q(x['service'])},{q(x['price'])},{q(x['oil'])},{q(x['filt'])},{q(x['other'])},{q(x['notes'])},{q(x['method'])},{q(x['split'])},{q(x['year'])},{q(x['make'])},{q(x['model'])},{q(x['engine'])},{q(x['grade'])},{q(x['cap'])},{q(x['filter'])},{q(x['hst'])},{q(x['tip'])})")
 L.append(',\n'.join(vals) + ';')
 L.append("""
 -- match each name to a customer: best name similarity, needs 0.45+
@@ -155,9 +205,9 @@ where v.customer_id = jt.customer_id and v.year is not distinct from jt.yr and v
 
 -- jobs
 insert into jobs (customer_id, vehicle_id, done_at, oil_grade, oil_litres, revenue, cost_oil, cost_parts, cost_other,
-  service, payment_method, split, notes, filter_part, vehicle_text, imported_from)
+  service, payment_method, split, notes, filter_part, vehicle_text, imported_from, hst, tip)
 select customer_id, vehicle_id, (d + time '12:00') at time zone 'America/Halifax', grade, cap, price, oil, filt, other,
-  service, method, split, notes, filter, raw, 'job_tracker'
+  service, method, split, notes, filter, raw, 'job_tracker', hst, tip
 from jt order by n;
 
 -- link each job to its Square booking on the same day, when there is exactly one
@@ -173,6 +223,10 @@ ev = []
 for e in exps:
     ev.append(f"(coalesce({q(e['date'])}::date, current_date),{q(e['item'])},{q((e['cat'] or 'other').lower())},{q(e['amt'])},'expense_tracker',{q(json.dumps({'notes':e['notes']}) if e['notes'] else None)}::jsonb)")
 L.append(',\n'.join(ev) + ';')
+if catchup:
+    L.append("\n-- oil / filters / gas used on jobs that were never logged as an expense (see 'Costs' in the script)")
+    L.append("insert into expenses (spent_at, description, category, total, source) values\n" + ',\n'.join(
+        f"({q(c['date'])}::date,{q(c['item'])},{q(c['cat'])},{q(c['amt'])},'job_tracker_costs')" for c in catchup) + ';')
 L.append("""
 commit;
 

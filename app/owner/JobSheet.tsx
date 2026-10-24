@@ -33,7 +33,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
   const [extras, setExtras] = useState<{ label: string; amount: string }[]>([]);
   const [doneBy, setDoneBy] = useState<"both" | "mathew" | "harsh">("both");
   const [notes, setNotes] = useState("");
-  const [pay, setPay] = useState<string>("");
+  const [pay, setPay] = useState<string>(""); const [tip, setTip] = useState("");
   const [email, setEmail] = useState("");
 
   useEffect(() => {
@@ -78,14 +78,14 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       oilGrade: withOil ? grade || null : null, oilLitres: withOil && litres ? Number(litres) : null, filterPart: withOil ? filter || null : null,
       inspection: Object.fromEntries(Object.entries(checks).map(([k, v]) => [k, { status: v }])),
       extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined,
-      payMethod: pay || null, email: email.trim() || null, sendReceipt: true,
+      payMethod: pay || null, tip: pay && Number(tip) > 0 ? Number(tip) : null, email: email.trim() || null, sendReceipt: true,
     });
     if (j) setResult(`Job done. Receipt #${j.receiptNo}, ${money(j.total)}${pay ? ", paid" : ", not paid yet"}.${receiptMsg(j.receipt)}${
       j.reviewText ? (j.reviewText.sent ? " Review text sent." : j.reviewText.status === "not_set_up" ? " Review text not sent (texting isn't set up yet)." : " Review text failed, check the number.") : ""}`);
   }
   async function markPaid() {
     if (!pay) return setErr("Pick how they paid");
-    const j = await post({ action: "pay", method: pay, email: email.trim() || null });
+    const j = await post({ action: "pay", method: pay, tip: Number(tip) > 0 ? Number(tip) : 0, email: email.trim() || null });
     if (j) setResult(`Marked paid.${receiptMsg(j.receipt)}`);
   }
   async function resend() {
@@ -127,6 +127,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 <>
                   <p className="font-semibold text-[#8a5a00]">Not paid yet. How did they pay?</p>
                   <div className="grid grid-cols-2 gap-2">{PAY.map(([k, n]) => <button key={k} onClick={() => setPay(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
+                  {pay && <label className="flex flex-col gap-1 text-sm font-semibold">Tip (optional, no HST on tips)<input value={tip} onChange={(e) => setTip(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="$0" className={field} style={{ borderColor: LINE }} /></label>}
                 </>
               )}
               <label className="flex flex-col gap-1 text-sm font-semibold">Customer email<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="For the receipt" className={field} style={{ borderColor: LINE }} /></label>
@@ -197,6 +198,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 <div className="grid grid-cols-3 gap-2">{([["both", "Both"], ["mathew", "Mathew"], ["harsh", "Harsh"]] as const).map(([k, n]) => <button key={k} onClick={() => setDoneBy(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(doneBy === k)}>{n}</button>)}</div>
                 <h3 className="font-extrabold text-lg mt-1">How did they pay?</h3>
                 <div className="grid grid-cols-2 gap-2">{PAY.map(([k, n]) => <button key={k} onClick={() => setPay(pay === k ? "" : k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
+                {pay && <label className="flex flex-col gap-1 text-sm font-semibold">Tip (optional, no HST on tips)<input value={tip} onChange={(e) => setTip(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="$0" className={field} style={{ borderColor: LINE }} /></label>}
                 {!pay && <p className="text-sm text-[#8a5a00]">Not paid yet? Leave this empty and mark it paid later.</p>}
                 <label className="flex flex-col gap-1 text-sm font-semibold">Customer email (for the receipt)<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Optional" className={field} style={{ borderColor: LINE }} /></label>
                 <label className="flex flex-col gap-1 text-sm font-semibold">Notes (optional)<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Anything for next time" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>
