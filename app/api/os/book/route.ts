@@ -6,21 +6,14 @@ import { sbGet, sbInsert, enc } from "@/lib/os/db";
 import { buildQuote, filterInStock } from "@/lib/os/quote-service";
 import { dayAvailability } from "@/lib/os/calendar";
 import { halifaxDate } from "@/lib/os/slots";
-import { Resend } from "resend";
-
-// Email the owners about every new booking (best effort: a failed email never loses the booking)
-async function notifyOwners(subject: string, lines: string[]) {
-  const to = process.env.NOTIFY_TO || process.env.EMAIL_TO;
-  if (!process.env.RESEND_API_KEY || !to) return;
-  try {
-    await new Resend(process.env.RESEND_API_KEY).emails.send({
-      from: process.env.EMAIL_FROM || "Oil Change On The Spot <onboarding@resend.dev>",
-      to, subject, text: lines.join("\n"),
-    });
-  } catch (e) { console.error("notify owners failed", e); }
+// New bookings appear in the owner calendar app as an alert (no emails).
+async function alertOwners(title: string, body: string, bookingId: string) {
+  try { await sbInsert("notifications", { kind: "new_booking", title, body, booking_id: bookingId }); }
+  catch (e) { console.error("alert failed", e); }
 }
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const Body = z.object({
   firstName: z.string().trim().min(1).max(60),
@@ -85,10 +78,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 5) Book it. The database refuses it if someone else got there first.
-    const confirmed = quote.needsReview.length === 0;
     const bk = await sbInsert<{ id: string }>("bookings", {
       customer_id: customer.id, vehicle_id: vehicle.id, starts_at: slot.start, ends_at: slot.end, address: b.address,
-      distance_km: b.km ?? null, status: confirmed ? "confirmed" : "requested", pay_mode: b.payMode,
+      distance_km: b.km ?? null, status: "confirmed", pay_mode: b.payMode,
       quoted_total: quote.total, quote_breakdown: quote, cars: b.cars,
       services: { addons: b.addons, own: b.own ?? null }, needs_review: quote.needsReview, source: "website", notes: b.notes || null,
     });
@@ -99,27 +91,16 @@ export async function POST(req: NextRequest) {
       throw new Error(`booking: ${JSON.stringify(bk.error)}`);
     }
 
-    await notifyOwners(
-      `${confirmed ? "New booking" : "New booking, oil to confirm"}: ${date} ${slot.label}, ${b.car.year} ${b.car.make} ${b.car.model}`,
-      [
-        `${b.firstName} ${b.lastName}`.trim() + `, ${phone}${b.email ? ", " + b.email : ""}`,
-        `${date} at ${slot.label}${b.cars > 1 ? ` (${b.cars} cars)` : ""}`,
-        `${b.address}`,
-        `${b.car.year} ${b.car.make} ${b.car.model}${b.car.engine ? " " + b.car.engine : ""}`,
-        ...quote.lines.map((l) => `${l.label}: $${l.amount.toFixed(2)}`),
-        `Total with HST: $${quote.total.toFixed(2)} (${b.payMode === "online" ? "pay online" : "pay after"})`,
-        quote.cost != null ? `Our cost: $${quote.cost.toFixed(2)}, profit: $${quote.profit!.toFixed(2)}${quote.raised ? " (price raised to keep $45 profit)" : ""}` : "",
-        ...(quote.needsReview.length ? ["", "To check:", ...quote.needsReview.map((r) => `- ${r}`)] : []),
-        ...(b.notes ? ["", `Customer notes: ${b.notes}`] : []),
-      ].filter((x) => x !== undefined),
+    await alertOwners(
+      `New booking: ${slot.label}, ${b.car.year} ${b.car.make} ${b.car.model}`,
+      `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? "paid online" : "pay after"}`,
+      bk.data!.id,
     );
 
     return NextResponse.json({
-      ok: true, bookingId: bk.data!.id, status: confirmed ? "confirmed" : "requested",
+      ok: true, bookingId: bk.data!.id, status: "confirmed",
       when: slot.label, date, total: quote.total, lines: quote.lines, subtotal: quote.subtotal, hst: quote.hst,
-      message: confirmed
-        ? `You're booked for ${slot.label}. See you then!`
-        : "Your time is held. We'll confirm the right oil for your car and get back to you shortly.",
+      message: `You're booked for ${slot.label}. See you then!`,
     });
   } catch (e) {
     return NextResponse.json({ error: "Something went wrong. Please call or text 782-640-8341.", detail: String(e) }, { status: 500 });
