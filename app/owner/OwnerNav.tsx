@@ -13,7 +13,7 @@ const ICONS: Record<string, JSX.Element> = {
   Money: <><path d="M4 19V9M10 19V5M16 19v-7M22 19H2" /></>,
 };
 const ITEMS: { label: string; href: string | null }[] = [
-  { label: "Calendar", href: "/owner" }, { label: "Customers", href: null }, { label: "Receipt", href: "/owner/receipt" },
+  { label: "Calendar", href: "/owner" }, { label: "Customers", href: "/owner/customers" }, { label: "Receipt", href: "/owner/receipt" },
   { label: "Stock", href: "/owner/stock" }, { label: "Money", href: "/owner/money" },
 ];
 

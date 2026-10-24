@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import NewBooking from "./NewBooking";
+import NewBooking, { type Customer as BookCustomer } from "./NewBooking";
 import PushToggle from "./PushToggle";
 import JobSheet from "./JobSheet";
 import ChangeBooking from "./ChangeBooking";
@@ -32,7 +32,7 @@ const shortDay = (d: string) => { const [y, m, dd] = d.split("-").map(Number); c
 const money = (n: number | null | undefined) => n == null ? "" : `$${n.toFixed(n % 1 ? 2 : 0)}`;
 const ago = (iso: string) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 
-export default function Calendar({ owner, initialDate }: { owner: string; initialDate?: string }) {
+export default function Calendar({ owner, initialDate, bookFor }: { owner: string; initialDate?: string; bookFor?: string }) {
   const [date, setDate] = useState(initialDate ?? todayStr());
   const [day, setDay] = useState<Day | null>(null);
   const [error, setError] = useState("");
@@ -42,6 +42,13 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
   const [showAlerts, setShowAlerts] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const [booking, setBooking] = useState(false);
+  const [bookCustomer, setBookCustomer] = useState<BookCustomer | null>(null);
+  // "Book" from a customer's page opens the booking form with them filled in
+  useEffect(() => {
+    if (!bookFor) return;
+    fetch(`/api/owner/customers?id=${bookFor}&brief=1`).then((r) => r.json()).then((x) => { if (x.customer) { setBookCustomer(x.customer); setBooking(true); } }).catch(() => {});
+    window.history.replaceState(null, "", "/owner");
+  }, [bookFor]);
   const [jobOpen, setJobOpen] = useState<string | null>(null);
   const [changing, setChanging] = useState<{ id: string; name: string } | null>(null);
 
@@ -261,7 +268,7 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
           <span className="text-2xl leading-none" aria-hidden>+</span> New booking
         </button>
       )}
-      {booking && <NewBooking date={date} onClose={(d) => { setBooking(false); if (d) { if (d === date) load(date); else setDate(d); loadAlerts(); } }} />}
+      {booking && <NewBooking date={date} customer={bookCustomer ?? undefined} onClose={(d) => { setBooking(false); setBookCustomer(null); if (d) { if (d === date) load(date); else setDate(d); loadAlerts(); } }} />}
 
       {changing && <ChangeBooking bookingId={changing.id} name={changing.name} date={date}
         onClose={(nd) => { setChanging(null); if (nd === undefined) return; if (nd && nd !== date) setDate(nd); else load(date); loadAlerts(); }} />}

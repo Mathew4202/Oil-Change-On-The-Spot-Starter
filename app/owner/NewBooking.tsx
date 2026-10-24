@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e";
-type Vehicle = { id: string; year: number | null; make: string | null; model: string | null; engine: string | null };
-type Customer = { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; address: string | null; vehicles: Vehicle[] };
+export type Vehicle = { id: string; year: number | null; make: string | null; model: string | null; engine: string | null };
+export type Customer = { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; address: string | null; vehicles: Vehicle[] };
 type Slot = { time: string; label: string; start: string };
 type Quote = { lines: { label: string; amount: number }[]; subtotal: number; total: number; spec: { grade: string; capacityL: number; filter: string | null; engine?: string | null } | null; engines?: string[]; error?: string };
 
@@ -24,7 +24,7 @@ function halifaxIso(date: string, hhmm: string) {
   return new Date(guess.getTime() - off(new Date(guess.getTime() - off(guess) * 60000)) * 60000).toISOString();
 }
 
-export default function NewBooking({ date: initialDate, onClose }: { date: string; onClose: (bookedDate?: string) => void }) {
+export default function NewBooking({ date: initialDate, onClose, customer: preset }: { date: string; onClose: (bookedDate?: string) => void; customer?: Customer }) {
   // Customer
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Customer[]>([]);
@@ -62,6 +62,9 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
     }, 250);
     return () => clearTimeout(t);
   }, [search, customer]);
+
+  // opened from a customer's page: start with them picked
+  useEffect(() => { if (preset) pick(preset); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function pick(c: Customer) {
     setCustomer(c); setResults([]);

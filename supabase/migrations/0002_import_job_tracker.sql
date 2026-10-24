@@ -185,9 +185,11 @@ where v.customer_id = jt.customer_id and v.year is not distinct from jt.yr and v
 
 -- jobs
 insert into jobs (customer_id, vehicle_id, done_at, oil_grade, oil_litres, revenue, cost_oil, cost_parts, cost_other,
-  service, payment_method, split, notes, filter_part, vehicle_text, imported_from, hst, tip)
+  service, payment_method, split, notes, filter_part, vehicle_text, imported_from, hst, tip, next_due_date)
 select customer_id, vehicle_id, (d + time '12:00') at time zone 'America/Halifax', grade, cap, price, oil, filt, other,
-  service, method, split, notes, filter, raw, 'job_tracker', hst, tip
+  service, method, split, notes, filter, raw, 'job_tracker', hst, tip,
+  -- oil changes are due again in 6 months (same rule HQ uses), so old customers get the reminder too
+  case when service ilike '%oil%' then (d + interval '6 months')::date end
 from jt order by n;
 
 -- link each job to its Square booking on the same day, when there is exactly one
