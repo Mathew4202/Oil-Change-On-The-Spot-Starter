@@ -2,7 +2,8 @@
 import { z } from "zod";
 import { sbGet, sbInsert, sbHeaders, enc } from "@/lib/os/db";
 import { buildQuote, filterInStock } from "@/lib/os/quote-service";
-import { dayAvailability, jobMinutes as minutesFor } from "@/lib/os/calendar";
+import { dayAvailability, jobMinutes as minutesFor, seasonWindows } from "@/lib/os/calendar";
+import { seasonFor } from "@/lib/os/seasons";
 import { halifaxDate, label } from "@/lib/os/slots";
 
 export const BookingBody = z.object({
@@ -12,8 +13,8 @@ export const BookingBody = z.object({
   email: z.string().trim().email().optional().or(z.literal("")),
   address: z.string().trim().min(4).max(200),
   car: z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1), model: z.string().trim().min(1), engine: z.string().trim().optional() }),
-  job: z.enum(["oil_change", "parts", "diagnostic", "tires"]).optional().default("oil_change"),
-  addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires"])).optional().default([]),
+  job: z.enum(["oil_change", "seasonal", "parts", "diagnostic", "tires"]).optional().default("oil_change"),
+  addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires", "coolant", "washer_fluid"])).optional().default([]),
   own: z.enum(["both", "oil", "filter"]).nullable().optional(),
   start: z.string().datetime(),
   cars: z.number().int().min(1).max(5).optional().default(1),
@@ -48,10 +49,14 @@ export async function createBooking(b: BookingInput, opts: {
   customerId?: string | null;    // owners picked an existing customer: update them instead of making a duplicate
 }): Promise<BookingResult> {
   // 1) Price, worked out on the server
-  if (b.job === "parts") b = { ...b, addons: b.addons.filter((a) => a !== "tires") };
+  b = { ...b, addons: b.addons.filter((a) => a !== "tires") };   // tires come with the seasonal package or a tire job
+  if (b.job === "seasonal" && !opts.anyTime && !seasonFor(halifaxDate(new Date(b.start)), await seasonWindows())) {
+    return { ok: false, status: 400, error: "The seasonal package is only offered at the start of winter and summer. Book an oil change or a tire change instead." };
+  }
   if (b.job === "diagnostic" || b.job === "tires") b = { ...b, addons: [] };
   if (!needsSomething(b)) return { ok: false, status: 400, error: "Pick at least one part for a parts visit." };
-  const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: b.job === "oil_change" ? b.own ?? null : null, km: b.km ?? null, cars: b.cars });
+  const withOil = b.job === "oil_change" || b.job === "seasonal";
+  const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, km: b.km ?? null, cars: b.cars });
   if (opts.priceOverride != null && opts.priceOverride >= 0) {
     const r2 = (x: number) => Math.round(x * 100) / 100;
     const sub = r2(opts.priceOverride);
@@ -124,7 +129,7 @@ export async function createBooking(b: BookingInput, opts: {
     customer_id: customer.id, vehicle_id: vehicle.id, starts_at: slotStart, ends_at: slotEnd, address: b.address,
     distance_km: b.km ?? null, status: "confirmed", pay_mode: b.payMode,
     quoted_total: quote.total, quote_breakdown: quote, cars: b.cars,
-    services: { job: b.job, addons: b.addons, own: b.job === "oil_change" ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null }, needs_review: quote.needsReview,
+    services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null }, needs_review: quote.needsReview,
     source: opts.source, notes: b.notes || null,
   });
   if (!bk.ok) {
@@ -139,7 +144,7 @@ export async function createBooking(b: BookingInput, opts: {
   try {
     await sbInsert("notifications", {
       kind: "new_booking", booking_id: bk.data!.id,
-      title: `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : b.job === "tires" ? " (tire change)" : b.addons.includes("tires") ? " + tires" : ""}`,
+      title: `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : b.job === "tires" ? " (tire change)" : b.job === "seasonal" ? " (seasonal package)" : ""}`,
       body: `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? "paid online" : "pay after"}`,
     });
   } catch (e) { console.error("alert failed", e); }

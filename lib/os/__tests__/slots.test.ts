@@ -53,3 +53,13 @@ test("past days and more than 30 days ahead are closed", () => {
   assert.equal(slotsForDay({ date: "2026-10-22", now: yesterday, busy: [] }).open, false);
   assert.equal(slotsForDay({ date: "2026-12-01", now: yesterday, busy: [] }).open, false);
 });
+
+import { seasonFor } from "../seasons.ts";
+test("seasonal package windows: Oct 1 to Dec 15 and Mar 15 to May 31", () => {
+  assert.equal(seasonFor("2026-10-24")?.name, "Winter tires");
+  assert.equal(seasonFor("2026-12-15")?.name, "Winter tires");
+  assert.equal(seasonFor("2026-12-16"), null);
+  assert.equal(seasonFor("2027-03-15")?.name, "Summer tires");
+  assert.equal(seasonFor("2027-07-01"), null);
+  assert.equal(seasonFor("2027-01-05", [{ name: "x", from: "11-15", to: "01-15" }])?.name, "x");
+});

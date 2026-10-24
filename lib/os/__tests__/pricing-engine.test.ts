@@ -120,3 +120,19 @@ test("oil change + tire change on one visit (SUV): $110 + $90", () => {
   const q = quoteOilChange({ vehicleClass: "SUV/Crossover", spec: { grade: "0W-20", capacityL: 4.3 }, costs: costs(5.12), addons: [{ kind: "tires", partCost: 0 }] });
   assert.deepEqual(q.lines.map((l) => l.amount), [110, 90]);
 });
+
+test("sports car tire change is $100 (low, riskier to lift)", () => {
+  assert.equal(quoteVisit({ job: "tires", vehicleClass: "Sports Car" }).subtotal, 100);
+});
+
+test("coolant and washer fluid add-ons use their set price", () => {
+  const q = quoteOilChange({ vehicleClass: "Sedan", spec: { grade: "0W-20", capacityL: 3.5 }, costs: costs(5.12),
+    addons: [{ kind: "coolant", partCost: 25 }, { kind: "washer_fluid", partCost: 10 }] });
+  assert.deepEqual(q.lines.map((l) => [l.label, l.amount]), [["Full synthetic oil change (0W-20, 3.5 L)", 90], ["Coolant top-up", 25], ["Washer fluid top-up", 10]]);
+});
+
+test("profit includes tire change and add-on labour, not part prices", () => {
+  const q = quoteOilChange({ vehicleClass: "Sedan", spec: { grade: "0W-20", capacityL: 3.5 }, costs: costs(5.12),
+    addons: [{ kind: "tires", partCost: 0 }, { kind: "wipers", partCost: 22 }, { kind: "coolant", partCost: 25 }] });
+  assert.equal(q.profit, 58.75 + 80 + 15);   // oil + tire change + wiper labour; wiper blades and coolant not counted
+});

@@ -1,6 +1,10 @@
 // Loads what the pricing engine needs, looks up unknown cars automatically, and returns a quote.
 import { sbGet, sbInsert, enc } from "@/lib/os/db";
-import { quoteOilChange, quoteVisit, DEFAULT_RULES, type VehicleClass, type Addon, type Quote, type JobType } from "@/lib/os/pricing-engine";
+import { quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUNT, type VehicleClass, type Addon, type Quote, type JobType } from "@/lib/os/pricing-engine";
+
+// Customer price for each add-on part or top-up (settings can override; part prices get replaced by the parts lookup later)
+const ADDON_DEFAULTS: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200, coolant: 25, washer_fluid: 10, tires: 0 };
+const addonPrice = (k: string, r: Record<string, number>) => r[`addon_part_${k}`] ?? r[`addon_price_${k}`] ?? ADDON_DEFAULTS[k] ?? 0;
 import { lookupOilSpec } from "@/lib/os/spec-lookup";
 import { detectClassFromModel } from "@/data/vehicleClass";
 
@@ -69,11 +73,11 @@ async function filterCostFor(part: string | null): Promise<number | null> {
 }
 
 export async function buildQuote(req: QuoteRequest) {
-  if (req.job && req.job !== "oil_change") {
+  if (req.job && req.job !== "oil_change" && req.job !== "seasonal") {
     // No oil change: no need to look up the oil (saves the lookup cost)
     const rules = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value");
     const r = Object.fromEntries(rules.map((x) => [x.key, Number(x.value)]));
-    const items: Addon[] = req.job === "parts" ? (req.addons ?? []).filter((k) => k !== "tires").map((k) => ({ kind: k, partCost: r[`addon_part_${k}`] ?? 0 })) : [];
+    const items: Addon[] = req.job === "parts" ? (req.addons ?? []).filter((k) => k !== "tires").map((k) => ({ kind: k, partCost: addonPrice(k, r) })) : [];
     const vc = (req.vehicleClass || detectClassFromModel(req.model) || "Sedan") as VehicleClass;
     const quote = quoteVisit({ job: req.job, items, distanceKm: req.km ?? null, vehicleClass: vc,
       rules: { ...DEFAULT_RULES, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30 } });
@@ -90,7 +94,10 @@ export async function buildQuote(req: QuoteRequest) {
   const make = EURO.find((e) => e.toLowerCase() === req.make.toLowerCase()) ?? req.make;
   const isEuro = EURO.includes(make);
   const vehicleClass = (req.vehicleClass || detectClassFromModel(req.model) || "Sedan") as VehicleClass;
-  const addons: Addon[] = (req.addons ?? []).map((k) => ({ kind: k, partCost: r[`addon_part_${k}`] ?? 0 }));
+  // Seasonal package = oil change + tire change on rims, less $15. Plain oil changes don't carry a tire add-on.
+  const kinds = (req.addons ?? []).filter((k) => k !== "tires");
+  if (req.job === "seasonal") kinds.unshift("tires");
+  const addons: Addon[] = kinds.map((k) => ({ kind: k, partCost: addonPrice(k, r) }));
 
   const priceWith = async (spec: Spec | null) => {
     const filterCost = (await filterCostFor(spec?.oil_filter_part ?? null)) ?? (spec ? (isEuro ? r.euro_filter_estimate ?? 15 : r.filter_estimate ?? 6.5) : null);
@@ -114,6 +121,17 @@ export async function buildQuote(req: QuoteRequest) {
     const priced = await Promise.all(rows.map(async (x) => ({ x, q: await priceWith(x) })));
     priced.sort((a, b) => b.q.total - a.q.total);
     spec = priced[0].x; quote = priced[0].q;
+  }
+
+  if (req.job === "seasonal") {
+    const off = r.seasonal_discount ?? SEASONAL_DISCOUNT;
+    const r2 = (x: number) => Math.round(x * 100) / 100;
+    const at = quote.lines.findIndex((l) => /^Travel/.test(l.label));
+    quote.lines.splice(at < 0 ? quote.lines.length : at, 0, { label: "Seasonal package discount", amount: -off });
+    quote.subtotal = r2(quote.lines.reduce((t, l) => t + l.amount, 0));
+    quote.hst = r2(quote.subtotal * Number(r.hst_rate ?? 0.14));
+    quote.total = r2(quote.subtotal + quote.hst);
+    if (quote.profit != null) quote.profit = r2(quote.profit - off);
   }
 
   // Several of the same car in one visit: every line except travel is per car

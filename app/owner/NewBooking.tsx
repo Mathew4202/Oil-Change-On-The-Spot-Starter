@@ -10,7 +10,8 @@ type Quote = { lines: { label: string; amount: number }[]; subtotal: number; tot
 
 const field = "h-12 rounded-xl border border-[#c8d0e0] px-3 text-base w-full bg-white";
 const lbl = "flex flex-col gap-1 text-sm font-semibold";
-const ADDONS: [string, string][] = [["tires", "Tire change"], ["wipers", "Wipers"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["battery", "Battery"]];
+const ADDONS: [string, string][] = [["wipers", "Wipers"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid top-up"]];
+type JobKind = "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires";
 
 function halifaxIso(date: string, hhmm: string) {
   // Turn a Halifax wall-clock time into an exact moment (handles daylight saving)
@@ -35,7 +36,8 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
   const [year, setYear] = useState(""); const [make, setMake] = useState(""); const [model, setModel] = useState(""); const [engine, setEngine] = useState("");
   const [cars, setCars] = useState(1);
   // Job
-  const [job, setJob] = useState<"oil_change" | "parts" | "diagnostic" | "tires">("oil_change");
+  const [job, setJob] = useState<JobKind>("oil_change");
+  const [season, setSeason] = useState<string | null>(null);
   const [addons, setAddons] = useState<string[]>([]);
   const [own, setOwn] = useState<"" | "both" | "oil" | "filter">("");
   const [date, setDate] = useState(initialDate);
@@ -76,8 +78,9 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
   // Open times for the chosen day
   useEffect(() => {
     setSlots(null); setTime("");
-    fetch(`/api/os/slots?date=${date}&cars=${cars}&job=${job}&addons=${addons.includes("tires") ? "tires" : ""}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
-  }, [date, cars, job, addons]);
+    fetch(`/api/os/services?date=${date}`).then((r) => r.json()).then((d) => setSeason(d.season)).catch(() => setSeason(null));
+    fetch(`/api/os/slots?date=${date}&cars=${cars}&job=${job}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
+  }, [date, cars, job]);
 
   // Live price
   const carReady = /^\d{4}$/.test(year) && make.trim() && model.trim();
@@ -88,9 +91,9 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
       const p = new URLSearchParams({ year, make: make.trim(), model: model.trim(), cars: String(cars) });
       if (engine.trim()) p.set("engine", engine.trim());
       p.set("job", job);
-      const sent = job === "oil_change" ? addons : job === "parts" ? addons.filter((a) => a !== "tires") : [];
+      const sent = job === "oil_change" || job === "seasonal" || job === "parts" ? addons : [];
       if (sent.length) p.set("addons", sent.join(","));
-      if (job === "oil_change" && own) p.set("own", own);
+      if ((job === "oil_change" || job === "seasonal") && own) p.set("own", own);
       const r = await fetch(`/api/os/quote?${p}`);
       setQuote(await r.json()); setPricing(false);
     }, 600);
@@ -107,7 +110,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
     if (!first.trim() || phone.replace(/\D/g, "").length < 10) return setErr("Add their name and a 10-digit phone number.");
     if (!address.trim()) return setErr("Add the address for the job.");
     if (!carReady) return setErr("Add the car: year, make and model.");
-    if (job === "parts" && !addons.filter((a) => a !== "tires").length) return setErr("Pick what they need for the parts visit.");
+    if (job === "parts" && !addons.length) return setErr("Pick what they need for the parts visit.");
     if (!startIso) return setErr("Pick a time.");
     setBusy(true);
     const r = await fetch("/api/owner/book", {
@@ -115,7 +118,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
       body: JSON.stringify({
         firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(),
         car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() ? { engine: engine.trim() } : {}) },
-        job, addons: job === "oil_change" ? addons : job === "parts" ? addons.filter((a) => a !== "tires") : [], own: job === "oil_change" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
+        job, addons: job === "oil_change" || job === "seasonal" || job === "parts" ? addons : [], own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
         priceOverride: special.trim() ? Number(special) : null,
         customerId: customer?.id ?? null,
       }),
@@ -209,23 +212,26 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
             <h3 className="font-extrabold text-lg">3. Job</h3>
             <div className="grid grid-cols-2 gap-2">
-              {([["oil_change", "Oil change"], ["tires", "Tire change"], ["parts", "Parts only"], ["diagnostic", "Diagnostic"]] as const).map(([k, n]) => (
+              {([["oil_change", "Oil change"], ["seasonal", "Seasonal package"], ["tires", "Tire change"], ["parts", "Parts only"], ["diagnostic", "Diagnostic"]] as const).map(([k, n]) => (
                 <button key={k} onClick={() => setJob(k)} className="h-11 rounded-lg border text-sm font-bold" style={chip(job === k)}>{n}</button>
               ))}
             </div>
+            {job === "seasonal" && (
+              <p className="text-sm text-[#4a5878]">Oil change + tire change on rims, $15 off.{!season && <span className="text-[#8a5a00] font-semibold"> Out of season on this day: customers can&apos;t book it online, but you can.</span>}</p>
+            )}
             {job === "diagnostic" && <p className="text-sm text-[#4a5878]">$100 to find the problem. Any repair is quoted after.</p>}
-            {job === "tires" && <p className="text-sm text-[#4a5878]">Seasonal swap, tires already on rims: sedan $80, SUV $90, large SUV $100, truck $110.</p>}
-            {(job === "oil_change" || job === "parts") && (
+            {job === "tires" && <p className="text-sm text-[#4a5878]">Tires already on rims: sedan $80, SUV $90, large SUV $100, truck $110, sports car $100.</p>}
+            {(job === "oil_change" || job === "seasonal" || job === "parts") && (
               <>
                 <p className="text-sm font-semibold">{job === "parts" ? "What do they need? ($50 visit + parts)" : "Add-ons"}</p>
                 <div className="flex flex-wrap gap-2">
-                  {ADDONS.filter(([k]) => job === "oil_change" || k !== "tires").map(([k, n]) => (
+                  {ADDONS.map(([k, n]) => (
                     <button key={k} onClick={() => setAddons((a) => a.includes(k) ? a.filter((x) => x !== k) : [...a, k])} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(addons.includes(k))}>{n}</button>
                   ))}
                 </div>
               </>
             )}
-            {job === "oil_change" && (
+            {(job === "oil_change" || job === "seasonal") && (
               <>
                 <p className="text-sm font-semibold">Customer supplies</p>
                 <div className="flex flex-wrap gap-2">
@@ -257,7 +263,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
             <h3 className="font-extrabold text-lg">5. Price</h3>
             {!carReady ? <p className="text-sm text-[#4a5878]">Add the car to see the price.</p> : pricing || !quote ? (
-              <p className="text-sm text-[#4a5878]">Working out the price…{job === "oil_change" ? " (a car we've never done takes up to 20 seconds the first time)" : ""}</p>
+              <p className="text-sm text-[#4a5878]">Working out the price…{job === "oil_change" || job === "seasonal" ? " (a car we've never done takes up to 20 seconds the first time)" : ""}</p>
             ) : quote.error ? <p className="text-sm text-red-700">{quote.error}</p> : (
               <div className="flex flex-col gap-1 text-[15px]">
                 {quote.spec && <p className="text-[#4a5878]">{quote.spec.grade} · {quote.spec.capacityL} L{quote.spec.filter ? ` · filter ${quote.spec.filter}` : ""}</p>}

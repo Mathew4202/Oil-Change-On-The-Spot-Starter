@@ -1,5 +1,6 @@
 // Loads hours, bookings, time off and holidays, then asks slots.ts what is free.
 import { sbGet } from "@/lib/os/db";
+import { DEFAULT_WINDOWS, type SeasonWindow } from "@/lib/os/seasons";
 import { slotsForDay, halifaxToDate, DEFAULT_SLOT_RULES, type Hours, type Busy } from "@/lib/os/slots";
 
 const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
@@ -35,6 +36,15 @@ export function jobMinutes(job: string | undefined, r: Record<string, number>, a
   if (job === "parts") return r.job_minutes_parts ?? 45;
   if (job === "diagnostic") return r.job_minutes_diagnostic ?? 60;
   if (job === "tires") return r.job_minutes_tires ?? 60;
+  if (job === "seasonal") return (r.job_minutes ?? 75) + (r.job_minutes_tires_addon ?? 45);
   // oil change, plus extra time when tires are swapped on the same visit
   return (r.job_minutes ?? 75) + (addons.includes("tires") ? r.job_minutes_tires_addon ?? 45 : 0);
+}
+
+/** Seasonal package windows from the database (falls back to the defaults). */
+export async function seasonWindows(): Promise<SeasonWindow[]> {
+  try {
+    const rows = await sbGet<{ name: string; starts: string; ends: string }>("seasonal_windows?select=name,starts,ends");
+    return rows.length ? rows.map((w) => ({ name: w.name, from: w.starts, to: w.ends })) : DEFAULT_WINDOWS;
+  } catch { return DEFAULT_WINDOWS; }
 }

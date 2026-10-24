@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const filters: Record<string, number> = {};
   for (const r of rows) {
     const s = r.vehicles?.vehicle_specs;
-    if (!s || r.services?.own === "both" || (r.services?.job && r.services.job !== "oil_change")) continue;
+    if (!s || r.services?.own === "both" || (r.services?.job && !["oil_change", "seasonal"].includes(r.services.job))) continue;
     if (r.services?.own !== "oil") oil[s.oil_grade] = Math.round(((oil[s.oil_grade] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
     if (s.oil_filter_part && r.services?.own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
   }
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
       name, phone: r.customers?.phone ?? null, address: r.address || r.customers?.address || null, car,
       engine: r.vehicles?.engine ?? null,
       job: r.services?.job ?? "oil_change", addons: r.services?.addons ?? [],
-      oil: s && (!r.services?.job || r.services.job === "oil_change") ? { grade: s.oil_grade, litres: Number(s.capacity_l), filter: s.oil_filter_part, spec: s.oil_spec } : null,
+      oil: s && (!r.services?.job || ["oil_change", "seasonal"].includes(r.services.job)) ? { grade: s.oil_grade, litres: Number(s.capacity_l), filter: s.oil_filter_part, spec: s.oil_spec } : null,
       lines: r.quote_breakdown?.lines ?? [], total: r.quoted_total != null ? Number(r.quoted_total) : null,
       profit: r.quote_breakdown?.profit ?? null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import",
     };
