@@ -114,10 +114,23 @@ for r in wb['Expense Tracker'].iter_rows(min_row=2, values_only=True):
     if not (r[0] or r[1]) or num(r[3]) is None: continue
     exps.append(dict(date=r[0].strftime('%Y-%m-%d') if hasattr(r[0],'strftime') else None, item=r[1], cat=r[2], amt=num(r[3]), notes=r[4]))
 
+# ---- HST inside the Expense Tracker amounts (they include tax) ----
+# Claimable back from CRA only on things bought from Canadian businesses that charge HST.
+# No HST on: insurance, bank/card fees, fines, and online ads/software from foreign platforms (not claimable).
+TAXED_CATS = ('oil', 'filter', 'gas', 'fuel', 'suppl', 'tool', 'part')
+TAXED_WORDS = re.compile(r'repair|decal|golf|gasket|funnel|wrench|glove|absorb|carpet|towel|arranger|battery|sckt|socket|tire|mechanic', re.I)
+NO_HST = re.compile(r'insur|bmo|bank|fee|elavon|square|parking|ticket|fine|google|facebook|instagram|tiktok|meta|website|anthropic|claude', re.I)
+def hst_in(e):
+    c, item = str(e['cat'] or '').lower(), str(e['item'] or '')
+    if NO_HST.search(item) or 'insur' in c: return 0
+    if any(t in c for t in TAXED_CATS) or TAXED_WORDS.search(item): return round(e['amt'] * 14 / 114, 2)
+    return 0
+
 # ---- Costs: count each dollar once ----
 # The Job Tracker records oil/filters/gas used on each job; the Expense Tracker records buying them.
-# Some months only one of the two was filled in. Per month and type, Money out uses the bigger of the two,
-# so nothing is counted twice and nothing is left out.
+# Some months only one of the two was filled in (May/June: nothing was logged as bought).
+# Money out counts what was bought. Only when the running total used on jobs gets ahead of the running
+# total bought (incl. earlier catch-ups) is the gap added, so bulk oil bought in July still covers August.
 import calendar as _cal
 TYPES = {'oil': ('Oil', lambda c: 'oil' in c), 'filters': ('Filters and parts', lambda c: 'filter' in c or 'part' in c), 'gas': ('Gas', lambda c: c in ('gas', 'fuel'))}
 used, bought, last_day = {}, {}, {}
@@ -131,9 +144,14 @@ for e in exps:
     for t, (_, test) in TYPES.items():
         if test(c): bought[(e['date'][:7], t)] = bought.get((e['date'][:7], t), 0) + e['amt']
 catchup = []
-for (m, t), u in sorted(used.items()):
-    gap = round(u - bought.get((m, t), 0), 2)
-    if gap >= 1:
+cum_used, cum_counted = {}, {}
+for m in sorted({k[0] for k in used} | {k[0] for k in bought}):
+  for t in TYPES:
+    cum_used[t] = cum_used.get(t, 0) + used.get((m, t), 0)
+    cum_counted[t] = cum_counted.get(t, 0) + bought.get((m, t), 0)
+    gap = round(cum_used[t] - cum_counted[t], 2)
+    if gap >= 1 and m in last_day:
+        cum_counted[t] += gap
         name = TYPES[t][0].lower()
         catchup.append(dict(date=last_day[m], item=f"{TYPES[t][0]} used on jobs in {_cal.month_name[int(m[5:])]} (from Job Tracker, not in Expense Tracker)", cat=t, amt=gap))
 
@@ -218,15 +236,16 @@ where j.imported_from = 'job_tracker' and j.booking_id is null and b.customer_id
        and (b2.starts_at at time zone 'America/Halifax')::date = (j.done_at at time zone 'America/Halifax')::date) = 1;
 
 -- expenses
-insert into expenses (spent_at, description, category, total, source, parsed) values""")
+insert into expenses (spent_at, description, category, total, subtotal, hst, source, parsed) values""")
 ev = []
 for e in exps:
-    ev.append(f"(coalesce({q(e['date'])}::date, current_date),{q(e['item'])},{q((e['cat'] or 'other').lower())},{q(e['amt'])},'expense_tracker',{q(json.dumps({'notes':e['notes']}) if e['notes'] else None)}::jsonb)")
+    h = hst_in(e)
+    ev.append(f"(coalesce({q(e['date'])}::date, current_date),{q(e['item'])},{q((e['cat'] or 'other').lower())},{q(e['amt'])},{q(round(e['amt'] - h, 2))},{h},'expense_tracker',{q(json.dumps({'notes':e['notes']}) if e['notes'] else None)}::jsonb)")
 L.append(',\n'.join(ev) + ';')
 if catchup:
     L.append("\n-- oil / filters / gas used on jobs that were never logged as an expense (see 'Costs' in the script)")
-    L.append("insert into expenses (spent_at, description, category, total, source) values\n" + ',\n'.join(
-        f"({q(c['date'])}::date,{q(c['item'])},{q(c['cat'])},{q(c['amt'])},'job_tracker_costs')" for c in catchup) + ';')
+    L.append("insert into expenses (spent_at, description, category, total, subtotal, hst, source) values\n" + ',\n'.join(
+        f"({q(c['date'])}::date,{q(c['item'])},{q(c['cat'])},{q(c['amt'])},{q(round(c['amt'] - round(c['amt']*14/114, 2), 2))},{round(c['amt']*14/114, 2)},'job_tracker_costs')" for c in catchup) + ';')
 L.append("""
 commit;
 
