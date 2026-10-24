@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseLookup } from "../spec-lookup.ts";
+import { parseLookup, toNapaCanada } from "../spec-lookup.ts";
 
 test("reads a normal answer, even with text around the JSON", () => {
   const r = parseLookup(`Here you go:\n{"engines":[{"engine":"2.0L 4-cyl","fuel":"gas","oil_grade":"0w20","oil_spec":"API SP","capacity_l":4.4,"napa_filter":"27356","wix_filter":"57356"}],"confidence":"high","sources":["https://owners.honda.ca/manual"],"notes":null}\nThanks`, "Honda");
@@ -29,4 +29,14 @@ test("no sources means low confidence", () => {
 
 test("garbage reply returns null", () => {
   assert.equal(parseLookup("Sorry, I couldn't find it.", "Kia"), null);
+});
+
+test("filter numbers are converted to NAPA Canada format", () => {
+  assert.equal(toNapaCanada("100033", "WL10033"), "2100033");   // 2020 Telluride
+  assert.equal(toNapaCanada("7356", null), "27356");            // Civic
+  assert.equal(toNapaCanada("27356", null), "27356");           // already Canadian
+  assert.equal(toNapaCanada("2100290", null), "2100290");
+  assert.equal(toNapaCanada(null, "57356"), "27356");           // from WIX only
+  assert.equal(toNapaCanada(null, "WL10290"), "2100290");
+  assert.equal(toNapaCanada(null, null), null);
 });

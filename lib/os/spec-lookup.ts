@@ -34,13 +34,28 @@ For each engine give:
 - oil_grade: SAE grade the manual recommends for Canada, e.g. "0W-20"
 - oil_spec: the approval the oil must meet if any, e.g. "dexos1 Gen 3", "VW 508 00", "MB 229.71", "BMW LL-17 FE+", else "API SP"
 - capacity_l: oil capacity WITH filter change, in litres (convert quarts x 0.946)
-- napa_filter: NAPA Canada / NAPA Gold oil filter part number as sold in Canada (5 to 7 digits, e.g. 21334, 27356, 2100290). null if not found.
+- napa_filter: NAPA Gold oil filter part number (US or Canadian format is fine, e.g. 7356 / 27356 or 100290 / 2100290). null if not found.
 - wix_filter: WIX number (e.g. 57356) or null
 
 Reply with ONLY this JSON, no other text:
 {"engines":[{"engine":"","fuel":"gas","oil_grade":"","oil_spec":"","capacity_l":0,"napa_filter":null,"wix_filter":null}],
  "confidence":"high|medium|low","sources":["https://..."],"notes":null}
 `.trim();
+
+/** NAPA Canada numbers are the US NAPA Gold number with a 2 in front (US 7356 -> 27356, US 100290 -> 2100290).
+ *  If only a WIX number is known: WIX 57356 -> 27356, WIX WL10033 -> 2100033. Exported for tests. */
+export function toNapaCanada(napa: string | null, wix: string | null): string | null {
+  const d = (v: string | null) => (v ?? "").replace(/\D/g, "");
+  let n = d(napa);
+  if (n) {
+    if (/^2\d{4}$|^21\d{5}$/.test(n)) return n;         // already Canadian: 2xxxx or 21xxxxx
+    if (/^\d{4}$|^1\d{5}$/.test(n)) return "2" + n;      // US style: xxxx or 1xxxxx
+  }
+  const w = d(wix);
+  if (/^5\d{4}$/.test(w)) return "2" + w.slice(1);       // WIX 5xxxx -> NAPA 2xxxx
+  if (/^1\d{5}$/.test(w)) return "2" + w;                // WIX WL1xxxxx -> NAPA 21xxxxx
+  return n || null;
+}
 
 /** Pull the JSON object out of the model's reply and check every field. Exported for tests. */
 export function parseLookup(text: string, make: string): LookupResult | null {
@@ -66,7 +81,7 @@ export function parseLookup(text: string, make: string): LookupResult | null {
       oilGrade: grade,
       oilSpec: spec,
       capacityL: Math.round(cap * 10) / 10,
-      napaFilter: clean(e?.napa_filter),
+      napaFilter: toNapaCanada(clean(e?.napa_filter), clean(e?.wix_filter)),
       wixFilter: clean(e?.wix_filter),
     });
   }
