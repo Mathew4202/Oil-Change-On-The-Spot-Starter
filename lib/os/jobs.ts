@@ -62,6 +62,7 @@ export async function finishJob(input: FinishInput, owner: string) {
   const booked = ctx.booking.quote_breakdown?.lines ?? [];
   const extras = (input.extraLines ?? []).filter((l) => l.label?.trim() && Number.isFinite(l.amount)).map((l) => ({ label: l.label.trim().slice(0, 80), amount: r2(l.amount) }));
   const lines = [...booked, ...extras];
+  if (!lines.length) return { ok: false as const, error: "Add what you charged before finishing" };
   const subtotal = r2(lines.reduce((t, l) => t + l.amount, 0));
   const hst = r2(subtotal * hstRate);
   const total = r2(subtotal + hst);

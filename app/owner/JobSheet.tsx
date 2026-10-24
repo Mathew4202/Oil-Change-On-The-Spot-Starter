@@ -42,6 +42,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       const s = c.vehicle?.vehicle_specs;
       if (s) { setGrade(s.oil_grade); setLitres(String(Number(s.capacity_l) * (c.booking.cars || 1))); setFilter(s.oil_filter_part || ""); }
       setEmail(c.customer?.email || ""); setVin(c.vehicle?.vin || "");
+      if (!(c.booking.quote_breakdown?.lines ?? []).length) setExtras([{ label: "Oil change", amount: "" }]);
       if (c.booking.pay_mode === "online") setPay("card_online");
     }).catch(() => setErr("Couldn't load this job"));
   }, [bookingId]);
@@ -170,6 +171,9 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
 
               <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
                 <h3 className="font-extrabold text-lg">Charges</h3>
+                {!(ctx.booking.quote_breakdown?.lines ?? []).length && (
+                  <p className="text-sm rounded-lg bg-[#fff6dd] p-2">This booking came from Square, so it has no price yet. Enter what you charged (before HST).</p>
+                )}
                 {lines.map((l, i) => <div key={i} className="flex justify-between gap-3 text-[15px]"><span className="text-[#4a5878]">{l.label}</span><span>{money(l.amount)}</span></div>)}
                 {extras.map((e, i) => (
                   <div key={i} className="grid grid-cols-[1fr_96px_40px] gap-2">

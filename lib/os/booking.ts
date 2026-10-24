@@ -5,6 +5,7 @@ import { buildQuote, filterInStock } from "@/lib/os/quote-service";
 import { dayAvailability, jobMinutes as minutesFor, seasonWindows } from "@/lib/os/calendar";
 import { seasonFor } from "@/lib/os/seasons";
 import { pushToOwners } from "@/lib/os/push";
+import { newManageToken, sendBookingConfirmation } from "@/lib/os/customer-texts";
 import { halifaxDate, label } from "@/lib/os/slots";
 
 export const BookingBody = z.object({
@@ -132,7 +133,7 @@ export async function createBooking(b: BookingInput, opts: {
     distance_km: b.km ?? null, status: "confirmed", pay_mode: b.payMode,
     quoted_total: quote.total, quote_breakdown: quote, cars: b.cars,
     services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null }, needs_review: quote.needsReview,
-    source: opts.source, notes: b.notes || null,
+    source: opts.source, notes: b.notes || null, manage_token: newManageToken(),
   });
   if (!bk.ok) {
     if (bk.status === 409 || JSON.stringify(bk.error).includes("23P01")) {
@@ -152,6 +153,9 @@ export async function createBooking(b: BookingInput, opts: {
     pushToOwners({ title: title.replace(`: ${when},`, `: ${dayWord} ${when},`), body, url: `/owner?date=${date}`, tag: bk.data!.id }),
     new Promise((r) => setTimeout(r, 4000)),   // never make the customer wait on a slow push
   ]);
+
+  // 7) Confirmation text to the customer (with their change/cancel link)
+  await Promise.race([sendBookingConfirmation(bk.data!.id).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
 
   return { ok: true, bookingId: bk.data!.id, date, when, total: quote.total, subtotal: quote.subtotal, hst: quote.hst, lines: quote.lines,
     message: `You're booked for ${when}. See you then!` };

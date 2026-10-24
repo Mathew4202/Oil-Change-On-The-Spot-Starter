@@ -195,7 +195,7 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
                 <a href={j.phone ? `tel:${j.phone}` : undefined} className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.phone}>Call</a>
                 <a href={j.phone ? `sms:${j.phone}` : undefined} className="h-11 rounded-lg flex items-center justify-center font-bold text-sm text-white aria-disabled:opacity-40" style={{ background: NAVY }} aria-disabled={!j.phone}>Text</a>
               </div>
-              {!j.imported && (
+              {(
                 j.status === "confirmed" || j.status === "requested" ? (
                   <button onClick={async () => { await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", bookingId: j.id }) }); setJobOpen(j.id); load(date); }}
                     className="h-12 rounded-xl font-extrabold text-base" style={{ background: GOLD, color: NAVY }}>Start job</button>
