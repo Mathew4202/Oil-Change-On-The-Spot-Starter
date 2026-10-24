@@ -104,10 +104,25 @@ export function travelFee(km: number | null | undefined, freeKm = 30): number {
 
 export function oilCostPerL(grade: string, table: Record<string, number>): number | null {
   if (table[grade] != null) return table[grade];
-  const plain = grade.replace(/^Euro\s+/i, "");
-  // a Euro grade we don't stock exactly falls back to the same grade, then to our Euro 0W-30
-  if (/^euro/i.test(grade)) return table[plain] ?? table["Euro 0W-30"] ?? null;
-  return table[plain] ?? null;
+  // A Euro grade we have no price for is NOT priced as regular oil (that undercharged by ~$30 a job).
+  // It comes back unknown, so the quote uses the safe Euro fallback price and is flagged for a look.
+  if (/^euro/i.test(grade)) return null;
+  return null;
+}
+
+/**
+ * Which of our Westpier Euro oils a European car gets (Shawn's quote, Oct 21 2026):
+ *   Euro 0W-30 = Pennzoil Platinum Euro LX: VW 504/507, MB 229.31/51/52, Porsche C30, Fiat. Cheapest, so used wherever it's approved.
+ *   Euro 5W-30 = Pennzoil Platinum Euro L: BMW LL-04, MB 229.51 (BMW and MINI).
+ *   Euro 0W-40 = Pennzoil Platinum Euro 0W-40: 40-weight specs (VW 502/505, MB 229.5, BMW LL-01, Porsche A40).
+ *   Euro 0W-20 = Pennzoil Platinum Euro AV-L: newer 0W-20 specs (VW 508/509, MB 229.71, BMW LL-17FE, JLR, Volvo).
+ */
+export function euroOilKey(make: string, grade: string, oilSpec?: string | null): "Euro 0W-30" | "Euro 5W-30" | "Euro 0W-40" | "Euro 0W-20" {
+  const t = `${grade} ${oilSpec ?? ""}`.toLowerCase();
+  if (/\b0w-?20\b|\b0w-?16\b|\b0w-?12\b|508|509|229\.7|ll-?17|ll-?19|5005|rbs0-2ae/.test(t)) return "Euro 0W-20";
+  const forty = /\b[05]w-?40\b|\b502\b|\b505\b|229\.5(?!\d)|229\.3(?!\d)|\ba40\b|ll-?01|ll-?98/.test(t);
+  if (/^(bmw|mini)$/i.test(make)) return forty ? "Euro 0W-40" : "Euro 5W-30";
+  return forty ? "Euro 0W-40" : "Euro 0W-30";
 }
 
 export function quoteOilChange(input: QuoteInput): Quote {

@@ -1,6 +1,6 @@
 // Loads what the pricing engine needs, looks up unknown cars automatically, and returns a quote.
 import { sbGet, sbInsert, enc } from "@/lib/os/db";
-import { quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUNT, type VehicleClass, type Addon, type Quote, type JobType } from "@/lib/os/pricing-engine";
+import { euroOilKey, quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUNT, type VehicleClass, type Addon, type Quote, type JobType } from "@/lib/os/pricing-engine";
 
 // Customer price for each add-on part or top-up (settings can override; part prices get replaced by the parts lookup later)
 const ADDON_DEFAULTS: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200, coolant: 25, washer_fluid: 10, tires: 0 };
@@ -107,7 +107,9 @@ export async function buildQuote(req: QuoteRequest) {
     const filterCost = (await filterCostFor(spec?.oil_filter_part ?? null)) ?? (spec ? (isEuro ? r.euro_filter_estimate ?? 15 : r.filter_estimate ?? 6.5) : null);
     return quoteOilChange({
       vehicleClass, make,
-      spec: spec ? { grade: spec.oil_grade, capacityL: Number(spec.capacity_l), euro: /^euro/i.test(spec.oil_grade) } : null,
+      // European cars get the Westpier Euro oil that's approved for them (cheapest one that fits)
+      spec: spec ? { grade: isEuro || /^euro/i.test(spec.oil_grade) ? euroOilKey(make, spec.oil_grade, spec.oil_spec) : spec.oil_grade,
+        capacityL: Number(spec.capacity_l), euro: isEuro || /^euro/i.test(spec.oil_grade) } : null,
       costs: { oilPerL, filterCost, consumables: r.consumables ?? 1 },
       rules: { ...DEFAULT_RULES, profitFloor: r.profit_floor ?? 45, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30 },
       ownParts: req.own ?? null, addons, distanceKm: req.km ?? null,

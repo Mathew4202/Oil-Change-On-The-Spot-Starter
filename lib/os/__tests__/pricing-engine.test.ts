@@ -29,17 +29,25 @@ test("Euro: 2021 VW Atlas (3-row) Euro 0W-30 5.5 L = cost + $95, ends in .99", (
   assert.equal(q.lines[0].amount, 169.99);   // 168.11 -> 169.99
 });
 
-test("Euro: 2015 VW Tiguan (SUV) VW 5W-40 4.7 L = cost + $85", () => {
-  const q = quoteOilChange({ vehicleClass: "SUV/Crossover", make: "Volkswagen", spec: { grade: "Euro 5W-40", capacityL: 4.7, euro: true }, costs: costs(9.1) });
-  assert.equal(q.cost, 44.41);
-  assert.equal(q.lines[0].amount, 129.99);
+const westpier = (filterCost: number) => ({ ...costs(filterCost), oilPerL: { ...costs(0).oilPerL, "Euro 0W-30": 10.73, "Euro 5W-30": 13.81, "Euro 0W-40": 14.35, "Euro 0W-20": 15.45 } });
+
+test("Euro: 2015 VW Tiguan (SUV) VW 502 40-weight 4.7 L gets Westpier Euro 0W-40 = cost + $85", () => {
+  const q = quoteOilChange({ vehicleClass: "SUV/Crossover", make: "Volkswagen", spec: { grade: "Euro 0W-40", capacityL: 4.7, euro: true }, costs: westpier(9.1) });
+  assert.equal(q.cost, 77.55);           // 4.7 x 14.35 + 9.10 + 1
+  assert.equal(q.lines[0].amount, 164.99);
 });
 
-test("Euro: 2010 Mercedes C300 (sedan) 7 L 5W-40 = cost + $75", () => {
-  const q = quoteOilChange({ vehicleClass: "Sedan", make: "Mercedes-Benz", spec: { grade: "Euro 5W-40", capacityL: 7, euro: true }, costs: costs(10.17) });
-  assert.equal(q.cost, 62.27);
-  assert.equal(q.lines[0].amount, 139.99);
+test("Euro: 2010 Mercedes C300 (sedan) 7 L MB 229.5 gets Euro 0W-40 = cost + $75", () => {
+  const q = quoteOilChange({ vehicleClass: "Sedan", make: "Mercedes-Benz", spec: { grade: "Euro 0W-40", capacityL: 7, euro: true }, costs: westpier(10.17) });
+  assert.equal(q.cost, 111.62);          // 7 x 14.35 + 10.17 + 1
+  assert.equal(q.lines[0].amount, 189.99);
   assert.ok(q.profit! >= 75);
+});
+
+test("Euro: 2019 Jetta 504/507 5.5 L gets the cheap LX 0W-30 = cost + $75", () => {
+  const q = quoteOilChange({ vehicleClass: "Sedan", make: "Volkswagen", spec: { grade: "Euro 0W-30", capacityL: 5.5, euro: true }, costs: westpier(15) });
+  assert.equal(q.cost, 75.02);           // 5.5 x 10.73 + 15 + 1
+  assert.equal(q.lines[0].amount, 154.99);
 });
 
 test("Sports: GR86 0W-20 5.4 L = cost + $80", () => {
@@ -181,4 +189,25 @@ test("MINI, Land Rover etc. are Euro too: cost + Euro profit, and $75 when a MIN
   assert.equal(full.lines[0].amount, 144.99);   // 4.5 x 10.73 + 16 + 1 = 65.29 + 75 = 140.29 -> 144.99
   assert.equal(quoteOilChange({ vehicleClass: "Sedan", make: "MINI", ownParts: "both", spec, costs: costs(16) }).lines[0].amount, 75);
   assert.equal(quoteOilChange({ vehicleClass: "Large SUV", make: "Land Rover", ownParts: "both", spec, costs: costs(16) }).lines[0].amount, 95);
+});
+
+test("Euro cars get the cheapest Westpier Euro oil that's approved for them", async () => {
+  const { euroOilKey } = await import("../pricing-engine.ts");
+  assert.equal(euroOilKey("Volkswagen", "Euro 5W-30", "VW 504 00/507 00"), "Euro 0W-30");      // LX covers 504/507
+  assert.equal(euroOilKey("Audi", "Euro 0W-30", null), "Euro 0W-30");
+  assert.equal(euroOilKey("Mercedes-Benz", "Euro 5W-30", "MB 229.51"), "Euro 0W-30");
+  assert.equal(euroOilKey("Mercedes-Benz", "Euro 0W-40", "MB 229.5"), "Euro 0W-40");
+  assert.equal(euroOilKey("Porsche", "Euro 0W-40", "Porsche A40"), "Euro 0W-40");
+  assert.equal(euroOilKey("BMW", "Euro 5W-30", "BMW LL-04"), "Euro 5W-30");                     // LX has no BMW approval
+  assert.equal(euroOilKey("BMW", "Euro 0W-20", "BMW LL-17FE+"), "Euro 0W-20");
+  assert.equal(euroOilKey("BMW", "Euro 5W-30", "BMW LL-01"), "Euro 0W-40");
+  assert.equal(euroOilKey("MINI", "Euro 5W-30", null), "Euro 5W-30");
+  assert.equal(euroOilKey("Volkswagen", "Euro 0W-20", "VW 508 00/509 00"), "Euro 0W-20");
+  assert.equal(euroOilKey("Volvo", "Euro 0W-20", "VCC RBS0-2AE"), "Euro 0W-20");
+});
+
+test("a Euro oil with no price on file is never priced as cheap regular oil", () => {
+  const q = quoteOilChange({ vehicleClass: "Sedan", make: "Volkswagen", spec: { grade: "Euro 0W-40", capacityL: 5.7 }, costs: { ...costs(15), oilPerL: { "5W-40": 7.30 } } });
+  assert.ok(q.needsReview.some((n) => /No oil price on file/.test(n)));
+  assert.equal(q.lines[0].amount, 169.99);   // safe Euro fallback price, flagged
 });
