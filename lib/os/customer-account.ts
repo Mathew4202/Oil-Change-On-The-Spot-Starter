@@ -5,6 +5,7 @@ import { e164 } from "@/lib/os/booking";
 import { sendSms } from "@/lib/os/sms";
 import { when } from "@/lib/os/customer-texts";
 import { newCode, hashCode, sameHash, codeText, signCustomer, readCustomer, CODE_MINUTES, MAX_TRIES, MAX_CODES_PER_HOUR, CUSTOMER_DAYS } from "@/lib/os/login-code";
+import { PHONE } from "@/lib/os/business";
 
 export const CUSTOMER_COOKIE = "ocots_customer";
 const secret = () => process.env.OWNER_SESSION_SECRET || process.env.ADMIN_SECRET || "";
@@ -15,7 +16,7 @@ export async function sendCode(rawPhone: string): Promise<{ ok: boolean; error?:
   if (!secret()) return { ok: false, error: "Sign-in isn't set up yet." };
   const phone = e164(rawPhone);
   const recent = await sbGet<{ id: string }>(`login_codes?select=id&phone=eq.${enc(phone)}&created_at=gte.${new Date(Date.now() - 3600000).toISOString()}`);
-  if (recent.length >= MAX_CODES_PER_HOUR) return { ok: false, error: "That's a lot of codes. Try again in an hour, or call or text 782-640-8341." };
+  if (recent.length >= MAX_CODES_PER_HOUR) return { ok: false, error: `That's a lot of codes. Try again in an hour, or call or text ${PHONE}.` };
   const [c] = await sbGet<{ id: string }>(`customers?select=id&phone=eq.${enc(phone)}&limit=1`);
   // Same answer either way, so nobody can use this to check who our customers are
   if (!c) return { ok: true };
@@ -38,7 +39,7 @@ export async function checkCode(rawPhone: string, code: string): Promise<{ ok: b
   }
   await sbPatch("login_codes", `id=eq.${row.id}`, { used_at: new Date().toISOString() });
   const [c] = await sbGet<{ id: string }>(`customers?select=id&phone=eq.${enc(phone)}&limit=1`);
-  if (!c) return { ok: false, error: "We couldn't find your bookings. Please call or text 782-640-8341." };
+  if (!c) return { ok: false, error: `We couldn't find your bookings. Please call or text ${PHONE}.` };
   await sbPatch("customers", `id=eq.${c.id}`, { account_opt_in: true });
   return { ok: true, customerId: c.id };
 }

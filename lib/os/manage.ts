@@ -1,18 +1,19 @@
 // Change or cancel a booking (customer self-serve link, or owners in HQ).
-import { sbGet, sbPatch, sbInsert, enc } from "@/lib/os/db";
+import { sbGet, sbPatch, sbInsert, sbRpc, enc } from "@/lib/os/db";
 import { dayAvailability, jobMinutes } from "@/lib/os/calendar";
 import { halifaxDate } from "@/lib/os/slots";
 import { pushToOwners } from "@/lib/os/push";
-import { textCustomer, when } from "@/lib/os/customer-texts";
+import crypto from "crypto";
+import { textCustomer, when, payLink } from "@/lib/os/customer-texts";
 
 export type ManagedBooking = {
-  id: string; starts_at: string; ends_at: string; status: string; address: string | null; quoted_total: number | null; cars: number;
+  id: string; starts_at: string; ends_at: string; status: string; address: string | null; quoted_total: number | null; cars: number; vehicle_id?: string | null;
   services: { job?: string; addons?: string[] } | null;
   customers: { id: string; first_name: string | null; last_name: string | null; phone: string | null; sms_opt_out: boolean | null } | null;
   vehicles: { year: number | null; make: string | null; model: string | null } | null;
 };
 
-const SELECT = "id,starts_at,ends_at,status,address,quoted_total,cars,services,customers(id,first_name,last_name,phone,sms_opt_out),vehicles(year,make,model)";
+const SELECT = "id,starts_at,ends_at,status,address,quoted_total,cars,services,vehicle_id,customers(id,first_name,last_name,phone,sms_opt_out),vehicles(year,make,model)";
 
 export async function bookingByToken(token: string) {
   const t = token.replace(/[^A-Za-z0-9_-]/g, "");
@@ -45,12 +46,34 @@ async function tellOwners(b: ManagedBooking, kind: string, title: string, body: 
   await Promise.race([pushToOwners({ title, body, url: `/owner?date=${halifaxDate(new Date(b.starts_at))}`, tag: `${b.id}-${kind}` }), new Promise((r) => setTimeout(r, 4000))]);
 }
 
-export async function cancelBooking(b: ManagedBooking, by: "customer" | string, reason?: string) {
+/** Cancelling on the day of the appointment (Halifax time). Our policy: 24 hours' notice, same-day may carry a $30 fee. */
+export const isSameDay = (b: { starts_at: string }, now = new Date()) => halifaxDate(new Date(b.starts_at)) === halifaxDate(now);
+
+/** The $30 + HST same-day fee: its own small job and receipt, so it shows in Money and the customer can pay it by link. */
+async function chargeCancelFee(b: ManagedBooking) {
+  const r = await rules();
+  const fee = Number(r.same_day_cancel_fee ?? 30), rate = Number(r.hst_rate ?? 0.14);
+  const hst = Math.round(fee * rate * 100) / 100, total = Math.round((fee + hst) * 100) / 100;
+  const receiptNo = await sbRpc<number>("next_receipt_no");
+  const token = crypto.randomBytes(18).toString("base64url");
+  await sbInsert("jobs", { booking_id: b.id, customer_id: b.customers?.id ?? null, vehicle_id: b.vehicle_id ?? null,
+    done_at: new Date().toISOString(), service: "cancellation_fee", revenue: fee, cost_oil: 0, cost_parts: 0, cost_other: 0,
+    lines: [{ label: "Same-day cancellation fee", amount: fee }], subtotal: fee, hst, total, receipt_no: receiptNo, receipt_token: token,
+    vehicle_text: carOf(b), done_by: "both" });
+  await sbPatch("bookings", `id=eq.${b.id}`, { cancel_fee: fee, cancel_fee_waived: false });
+  return { fee, total, token };
+}
+
+export async function cancelBooking(b: ManagedBooking, by: "customer" | string, reason?: string, opts: { chargeFee?: boolean } = {}) {
   if (!["confirmed", "requested", "in_progress"].includes(b.status)) return { ok: false, error: "This booking can't be cancelled anymore." };
-  await sbPatch("bookings", `id=eq.${b.id}`, { status: "cancelled", cancelled_at: new Date().toISOString(), cancel_reason: `${by}: ${reason || "no reason given"}`.slice(0, 300) });
+  const sameDay = isSameDay(b);
+  await sbPatch("bookings", `id=eq.${b.id}`, { status: "cancelled", cancelled_at: new Date().toISOString(), cancel_reason: `${by}: ${reason || "no reason given"}`.slice(0, 300),
+    ...(sameDay && by !== "customer" && !opts.chargeFee ? { cancel_fee_waived: true } : {}) });
+  const fee = sameDay && by !== "customer" && opts.chargeFee ? await chargeCancelFee(b) : null;
   await tellOwners(b, "cancelled", `Cancelled: ${when(b.starts_at)}, ${carOf(b)}`, `${nameOf(b)}${by === "customer" ? " cancelled online" : ` (cancelled by ${by})`}${reason ? `: ${reason}` : ""}`);
   if (by !== "customer") await textCustomer("booking_cancelled", b.customers, { when: when(b.starts_at), car: carOf(b) }, b.id).catch(() => null);
-  return { ok: true };
+  if (fee) await textCustomer("cancel_fee", b.customers, { fee: `$${fee.fee.toFixed(2)}`, total: `$${fee.total.toFixed(2)}`, pay_link: payLink(fee.token) }, b.id).catch(() => null);
+  return { ok: true, fee: fee ? fee.total : null };
 }
 
 /** Move to a new start time. Customers must pick an open slot; owners can pick any free time. */

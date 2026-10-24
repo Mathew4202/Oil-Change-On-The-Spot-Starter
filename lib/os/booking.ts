@@ -25,6 +25,7 @@ export const BookingBody = z.object({
   notes: z.string().max(1000).optional(),
   km: z.number().min(0).max(300).optional(),
   placeId: z.string().max(300).optional(),    // picked from the address suggestions
+  agreeTerms: z.boolean().optional(),          // website: cancellation (and diagnostic) terms ticked
 });
 export type BookingInput = z.infer<typeof BookingBody>;
 export const needsSomething = (b: Pick<BookingInput, "job" | "addons">) => b.job !== "parts" || b.addons.length > 0;
@@ -134,12 +135,13 @@ export async function createBooking(b: BookingInput, opts: {
   }
 
   // 5) Book it. The database refuses it if the time overlaps another booking.
+  const manageToken = newManageToken();
   const bk = await sbInsert<{ id: string }>("bookings", {
     customer_id: customer.id, vehicle_id: vehicle.id, starts_at: slotStart, ends_at: slotEnd, address: b.address,
-    distance_km: km, status: "confirmed", pay_mode: b.payMode,
+    distance_km: km, status: "confirmed", pay_mode: opts.bookedBy ? b.payMode : "after",   // website: becomes "online" only once Converge confirms the payment
     quoted_total: quote.total, quote_breakdown: quote, cars: b.cars,
-    services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null }, needs_review: [...quote.needsReview, ...(noDistance ? ["Address not found on the map: check it, and add a travel fee if it's past 30 km"] : [])],
-    source: opts.source, notes: b.notes || null, manage_token: newManageToken(),
+    services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null, ...(b.agreeTerms ? { termsAgreedAt: new Date().toISOString() } : {}) }, needs_review: [...quote.needsReview, ...(noDistance ? ["Address not found on the map: check it, and add a travel fee if it's past 30 km"] : [])],
+    source: opts.source, notes: b.notes || null, manage_token: manageToken,
   });
   if (!bk.ok) {
     if (bk.status === 409 || JSON.stringify(bk.error).includes("23P01")) {
@@ -151,7 +153,7 @@ export async function createBooking(b: BookingInput, opts: {
   // 6) Alert in the calendar app + buzz both phones
   const who = opts.bookedBy ? `${opts.bookedBy[0].toUpperCase()}${opts.bookedBy.slice(1)} booked` : "New booking";
   const title = `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : b.job === "tires" ? " (tire change)" : b.job === "seasonal" ? " (seasonal package)" : b.addons.includes("tires") ? " + tires" : ""}`;
-  const body = `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? "paid online" : "pay after"}`;
+  const body = `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? (opts.bookedBy ? "already paid" : "paying online now") : "pay after"}`;
   try { await sbInsert("notifications", { kind: "new_booking", booking_id: bk.data!.id, title, body }); }
   catch (e) { console.error("alert failed", e); }
   const dayWord = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric" }).format(new Date(slotStart));
@@ -161,8 +163,8 @@ export async function createBooking(b: BookingInput, opts: {
   ]);
 
   // 7) Confirmation text to the customer (with their change/cancel link)
-  await Promise.race([sendBookingConfirmation(bk.data!.id).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
+  await Promise.race([sendBookingConfirmation(bk.data!.id, { payingNow: b.payMode === "online" && !opts.bookedBy }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
 
   return { ok: true, bookingId: bk.data!.id, date, when, total: quote.total, subtotal: quote.subtotal, hst: quote.hst, lines: quote.lines,
-    message: `You're booked for ${when}. See you then!` };
+    message: `You're booked for ${when}. See you then!`, ...(b.payMode === "online" && !opts.bookedBy ? { payUrl: `/pay/${manageToken}` } : {}) };
 }

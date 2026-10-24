@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import QuickPrice from "@/components/site/QuickPrice";
 import Reviews from "@/components/site/Reviews";
+import ScrollPhotos from "@/components/site/ScrollPhotos";
 import { NAVY, GOLD, MUTED, LIGHT, PHONE, PHONE_TEL } from "@/components/site/brand";
 
 export const revalidate = 3600;
@@ -47,29 +48,12 @@ export default function Home() {
       {/* Why us */}
       <section aria-label="Why customers pick us" style={{ background: GOLD }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-3 text-center font-extrabold text-[17px]">
-          <p>5-star Google reviews</p><p>Full synthetic every time</p><p>Free travel within 30 km</p><p>Pay after the job</p>
+          <p>5-star Google reviews</p><p>Full synthetic every time</p><p>Free travel within 30 km</p><p>Pay online or after</p>
         </div>
       </section>
 
-      {/* Real jobs */}
-      <section aria-label="Real jobs" className="max-w-6xl mx-auto px-4 sm:px-6 py-14 grid md:grid-cols-3 gap-4">
-        {[
-          { img: "/gallery/work-17.png", alt: "Oil change on a red pickup in a parking garage", kicker: "REAL JOBS, NOT STOCK PHOTOS", title: "At home, at work, in the parking garage." },
-          { img: "/gallery/work-19.png", alt: "Oil change on a Jeep in a driveway", title: "We bring the oil, the filter and the mess kit.", text: "Mats down, old oil taken away, nothing left on your driveway." },
-          { img: "/gallery/work-15.png", alt: "Oil change on a Honda in a driveway", title: "You keep your day. We do the oil change.", cta: true },
-        ].map((c) => (
-          <div key={c.img} className="relative aspect-[3/4] rounded-2xl overflow-hidden">
-            <Image src={c.img} alt={c.alt} fill sizes="(min-width: 768px) 380px, 100vw" className="object-cover" />
-            <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(13,27,62,0.92) 0%, rgba(13,27,62,0.35) 55%, rgba(13,27,62,0) 75%)" }} />
-            <div className="absolute inset-x-0 bottom-0 p-5 text-white flex flex-col gap-2">
-              {c.kicker && <p className="font-bold tracking-[0.1em] text-xs" style={{ color: GOLD }}>{c.kicker}</p>}
-              <h2 className="text-[28px] leading-none font-extrabold" style={cond}>{c.title}</h2>
-              {c.text && <p className="text-white/85">{c.text}</p>}
-              {c.cta && <div className="pt-1"><Cta /></div>}
-            </div>
-          </div>
-        ))}
-      </section>
+      {/* Real jobs: full-screen photos that fly in as you scroll */}
+      <ScrollPhotos />
 
       {/* How it works */}
       <section aria-label="How it works" style={{ background: LIGHT }}>
@@ -79,7 +63,7 @@ export default function Home() {
             {[
               ["Pick your car", "Year, make and model. Not sure of the engine? Pick \"Not sure\" and we check when we arrive."],
               ["See your price, pick a time", "Your exact price shows before you book, travel included. Choose any open slot and it's yours right away."],
-              ["We come to you", "Oil, filter and a quick check of fluids, filters and wipers. Pay by card, tap, cash or e-transfer when we're done."],
+              ["We come to you", "Oil, filter and a quick check of fluids, filters and wipers. Pay online when you book, or by card, tap, cash or e-transfer when we're done."],
             ].map(([t, d], i) => (
               <li key={t} className="bg-white rounded-2xl p-5 flex flex-col gap-2">
                 <p className="w-10 h-10 rounded-full flex items-center justify-center font-extrabold text-[18px]" style={{ background: GOLD }}>{i + 1}</p>
@@ -119,6 +103,11 @@ export default function Home() {
               <div className="mt-auto pt-2"><Cta>See all services</Cta></div>
             </div>
           </div>
+          <Link href={"/maintenance-plan" as never} className="rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 no-underline text-white" style={{ background: NAVY }}>
+            <span><span className="block text-[24px] font-extrabold" style={cond}>Drive a lot? Get a maintenance plan.</span>
+              <span className="block text-white/80">Your oil changes for one monthly price, worked out for your car. Filter and wiper labour free.</span></span>
+            <span className="font-extrabold whitespace-nowrap" style={{ color: GOLD }}>See your monthly price ›</span>
+          </Link>
         </div>
       </section>
 

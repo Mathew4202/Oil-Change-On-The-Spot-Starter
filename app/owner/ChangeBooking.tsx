@@ -15,12 +15,15 @@ export default function ChangeBooking({ bookingId, name, date: initialDate, onCl
   const [mode, setMode] = useState<"move" | "cancel">("move");
   const [date, setDate] = useState(initialDate); const [time, setTime] = useState("");
   const [reason, setReason] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  // Same-day cancellation: $30 + HST, on by default, waive it for emergencies or bad weather
+  const sameDay = initialDate === new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax" }).format(new Date());
+  const [chargeFee, setChargeFee] = useState(true);
   async function go() {
     setErr("");
     if (mode === "move" && !time) return setErr("Pick the new time");
     setBusy(true);
     const r = await fetch("/api/owner/manage", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(mode === "move" ? { bookingId, action: "move", start: halifaxIso(date, time) } : { bookingId, action: "cancel", reason }) });
+      body: JSON.stringify(mode === "move" ? { bookingId, action: "move", start: halifaxIso(date, time) } : { bookingId, action: "cancel", reason, chargeFee: sameDay && chargeFee }) });
     const j = await r.json().catch(() => ({})); setBusy(false);
     if (!r.ok) return setErr(j.error || "Couldn't save");
     onClose(mode === "move" ? date : null);
@@ -40,7 +43,19 @@ export default function ChangeBooking({ bookingId, name, date: initialDate, onCl
             <label className="flex flex-col gap-1 text-sm font-semibold">Time<input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="h-12 rounded-xl border px-3 text-base" style={{ borderColor: LINE }} /></label>
           </div>
         ) : (
-          <label className="flex flex-col gap-1 text-sm font-semibold">Reason (optional)<input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Customer called, weather…" className="h-12 rounded-xl border px-3 text-base font-normal" style={{ borderColor: LINE }} /></label>
+          <>
+            <label className="flex flex-col gap-1 text-sm font-semibold">Reason (optional)<input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Customer called, weather…" className="h-12 rounded-xl border px-3 text-base font-normal" style={{ borderColor: LINE }} /></label>
+            {sameDay && (
+              <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: "#fff6dd" }}>
+                <p className="font-bold">Same-day cancellation</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setChargeFee(true)} className="h-11 rounded-lg border font-bold text-sm" style={chip(chargeFee)}>Charge $30 + HST</button>
+                  <button onClick={() => setChargeFee(false)} className="h-11 rounded-lg border font-bold text-sm" style={chip(!chargeFee)}>Waive it</button>
+                </div>
+                <p className="text-xs text-[#4a5878]">{chargeFee ? "They get a text with a link to pay $34.20. It shows under Waiting on payment in Money." : "Waived, e.g. an emergency or bad weather. Nothing is charged."}</p>
+              </div>
+            )}
+          </>
         )}
         <p className="text-sm text-[#4a5878]">The customer gets a text about the change.</p>
         {err && <p className="text-sm text-red-700" role="alert">{err}</p>}

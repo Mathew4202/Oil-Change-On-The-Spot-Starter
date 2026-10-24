@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sbGet, sbPatch } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
 import { textCustomer, timeOnly, manageLink, siteUrl } from "@/lib/os/customer-texts";
+import { PHONE } from "@/lib/os/business";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
   for (const b of tomorrows) {
     const car = [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model].filter(Boolean).join(" ") || "car";
     const r = await textCustomer("day_before", b.customers, { time: timeOnly(b.starts_at), car, address: b.address || "your address",
-      manage_link: b.manage_token ? manageLink(b.manage_token) : "call or text 782-640-8341" }, b.id);
+      manage_link: b.manage_token ? manageLink(b.manage_token) : `call or text ${PHONE}` }, b.id);
     if (r.sent) { out.reminders++; await sbPatch("bookings", `id=eq.${b.id}`, { reminder_sent_at: new Date().toISOString() }); } else out.reminderSkipped++;
   }
 

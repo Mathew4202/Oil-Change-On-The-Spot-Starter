@@ -1,3 +1,4 @@
+import { PHONE_TEL } from '@/lib/os/business';
 import './globals.css';
 import { Barlow, Barlow_Condensed } from 'next/font/google';
 import SiteHeader from '@/components/site/SiteHeader';
@@ -71,7 +72,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       name: 'Oil Change On The Spot',
       image: 'https://oilchangeonthespot.ca/og.jpg',
       url: 'https://oilchangeonthespot.ca',
-      telephone: '+17826408341',
+      telephone: PHONE_TEL.replace('tel:', ''),
       areaServed: 'Halifax Regional Municipality',
       address: {
         '@type': 'PostalAddress',

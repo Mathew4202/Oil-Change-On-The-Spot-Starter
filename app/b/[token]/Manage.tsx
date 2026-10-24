@@ -1,6 +1,7 @@
 "use client";
 // Customer's private link: see the booking, move it to another open time, or cancel.
 import { useEffect, useMemo, useState } from "react";
+import { PHONE, PHONE_TEL } from "@/lib/os/business";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type B = { id: string; start: string; status: string; address: string | null; total: number | null; job: string; addons: string[]; cars: number; firstName: string; car: string };
@@ -35,7 +36,7 @@ export default function Manage({ token }: { token: string }) {
     setBusy(true); setErr("");
     const r = await fetch("/api/os/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, ...body }) });
     const j = await r.json().catch(() => ({})); setBusy(false);
-    if (!r.ok) return setErr(j.error || "Something went wrong. Please call or text 782-640-8341.");
+    if (!r.ok) return setErr(j.error || `Something went wrong. Please call or text ${PHONE}.`);
     setMsg(done); setMode("view"); load();
   }
 
@@ -68,7 +69,7 @@ export default function Manage({ token }: { token: string }) {
               <p className="text-sm text-[#4a5878]">You can change or cancel here up to {hours} hours before your time.</p>
             </div>
           ) : (
-            <p className="rounded-xl bg-[#fff6dd] p-4">It&apos;s less than {hours} hours to your time, so please call or text <a className="font-bold underline" href="tel:7826408341">782-640-8341</a> to change it.</p>
+            <p className="rounded-xl bg-[#fff6dd] p-4">It&apos;s less than {hours} hours to your time, so please call or text <a className="font-bold underline" href={PHONE_TEL}>{PHONE}</a> to change it. Cancelling on the day may have a $30 + HST fee (we waive it for emergencies and bad storms).</p>
           ))}
 
           {b && mode === "move" && (
@@ -104,7 +105,7 @@ export default function Manage({ token }: { token: string }) {
           )}
 
           {b && b.status === "cancelled" && <a href="/booking" className={`${btn} flex items-center justify-center`} style={{ background: GOLD, color: NAVY }}>Book a new time</a>}
-          <p className="text-sm text-[#4a5878] mt-2">Questions? Call or text <a className="font-bold underline" href="tel:7826408341">782-640-8341</a>.</p>
+          <p className="text-sm text-[#4a5878] mt-2">Questions? Call or text <a className="font-bold underline" href={PHONE_TEL}>{PHONE}</a>.</p>
         </main>
       </div>
     </div>

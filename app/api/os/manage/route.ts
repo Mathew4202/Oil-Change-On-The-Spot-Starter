@@ -1,6 +1,7 @@
 // Customer self-serve: GET ?t=TOKEN → booking; POST {t, action: "cancel"|"move", start?, reason?}
 import { NextRequest, NextResponse } from "next/server";
 import { bookingByToken, selfServeAllowed, cancelBooking, moveBooking } from "@/lib/os/manage";
+import { PHONE } from "@/lib/os/business";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ function view(b: NonNullable<Awaited<ReturnType<typeof bookingByToken>>>) {
 
 export async function GET(req: NextRequest) {
   const b = await bookingByToken(req.nextUrl.searchParams.get("t") || "");
-  if (!b) return NextResponse.json({ error: "We couldn't find that booking. Call or text 782-640-8341." }, { status: 404 });
+  if (!b) return NextResponse.json({ error: `We couldn't find that booking. Call or text ${PHONE}.` }, { status: 404 });
   const { ok, hours } = await selfServeAllowed(b);
   return NextResponse.json({ booking: view(b), canChange: ok, freeCancelHours: hours });
 }
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
   const b = await bookingByToken(String(t || ""));
   if (!b) return NextResponse.json({ error: "We couldn't find that booking." }, { status: 404 });
   const { ok, hours } = await selfServeAllowed(b);
-  if (!ok) return NextResponse.json({ error: `Changes online close ${hours} hours before your time. Please call or text 782-640-8341.` }, { status: 400 });
+  if (!ok) return NextResponse.json({ error: `Changes online close ${hours} hours before your time. Please call or text ${PHONE}.` }, { status: 400 });
   const r = action === "cancel" ? await cancelBooking(b, "customer", String(reason || "").slice(0, 200))
     : action === "move" ? await moveBooking(b, String(start || ""), "customer")
     : { ok: false, error: "Unknown action" };

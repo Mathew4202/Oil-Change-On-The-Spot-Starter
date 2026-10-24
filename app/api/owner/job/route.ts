@@ -4,6 +4,8 @@ import { z } from "zod";
 import { currentOwner } from "@/lib/os/auth";
 import { sbPatch } from "@/lib/os/db";
 import { jobContext, startJob, finishJob, recordPayment, sendReceipt } from "@/lib/os/jobs";
+import { payReady } from "@/lib/os/payments";
+import { payLink, textCustomer } from "@/lib/os/customer-texts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -28,7 +30,7 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("booking") || "";
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
   const ctx = await jobContext(id);
-  return ctx ? NextResponse.json(ctx) : NextResponse.json({ error: "Not found" }, { status: 404 });
+  return ctx ? NextResponse.json({ ...ctx, payOnline: payReady() }) : NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 
 export async function POST(req: NextRequest) {
@@ -51,7 +53,8 @@ export async function POST(req: NextRequest) {
       if (!method.success || !ctx?.job) return NextResponse.json({ error: "Finish the job first, then pick how they paid" }, { status: 400 });
       if (ctx.job.imported_from === "job_tracker") return NextResponse.json({ error: "This job is already in your Job Tracker sheet, so it's already counted." }, { status: 400 });
       const tip = Math.min(1000, Math.max(0, Number(body.tip) || 0));
-      await recordPayment(id, Number(ctx.job.total), method.data, owner, tip);
+      const due = Math.max(0, Math.round((Number(ctx.job.total) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100);
+      await recordPayment(id, due, method.data, owner, tip);
       const receipt = body.sendReceipt === false ? null : await sendReceipt(String(ctx.job.id), body.email || null);
       return NextResponse.json({ ok: true, receipt });
     }
@@ -61,6 +64,16 @@ export async function POST(req: NextRequest) {
       const at = String(ctx.job.done_at || new Date().toISOString());
       await sbPatch("bookings", `id=eq.${id}`, { status: "done", finished_at: at, ...(ctx.booking.paid_at ? {} : { paid_at: at }) });
       return NextResponse.json({ ok: true });
+    }
+    if (body.action === "paylink") {   // text them a link to pay online
+      const ctx = await jobContext(id);
+      if (!ctx?.job || !ctx.job.receipt_token) return NextResponse.json({ error: "Finish the job first" }, { status: 400 });
+      if (!payReady()) return NextResponse.json({ error: "Online payment isn't set up yet" }, { status: 400 });
+      if (!ctx.customer?.phone) return NextResponse.json({ error: "No phone number on file" }, { status: 400 });
+      const due = Math.max(0, Math.round((Number(ctx.job.total) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100);
+      if (due <= 0) return NextResponse.json({ error: "Nothing left to pay" }, { status: 400 });
+      const r = await textCustomer("pay_request", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(String(ctx.job.receipt_token)) }, id);
+      return NextResponse.json({ ok: true, sms: r });
     }
     if (body.action === "resend") {
       const ctx = await jobContext(id);

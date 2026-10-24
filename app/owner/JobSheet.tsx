@@ -10,7 +10,8 @@ type Ctx = {
   customer: { first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
   vehicle: { year: number | null; make: string | null; model: string | null; last_km: number | null; vin: string | null;
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null } | null } | null;
-  job: { receipt_no: number; total: number; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null } | null;
+  job: { receipt_no: number; total: number; tip?: number | null; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null } | null;
+  paid: number; payOnline: boolean;
 };
 const CHECKS: [string, string][] = [
   ["coolant", "Coolant"], ["brake_fluid", "Brake fluid"], ["washer_fluid", "Washer fluid"], ["engine_filter", "Engine air filter"],
@@ -43,7 +44,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       if (s) { setGrade(s.oil_grade); setLitres(String(Number(s.capacity_l) * (c.booking.cars || 1))); setFilter(s.oil_filter_part || ""); }
       setEmail(c.customer?.email || ""); setVin(c.vehicle?.vin || "");
       if (!(c.booking.quote_breakdown?.lines ?? []).length) setExtras([{ label: "Oil change", amount: "" }]);
-      if (c.booking.pay_mode === "online") setPay("card_online");
+      if (c.booking.pay_mode === "online" && !c.paid) setPay("card_online");   // you marked it "Already paid" when booking
     }).catch(() => setErr("Couldn't load this job"));
   }, [bookingId]);
 
@@ -55,6 +56,10 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
   const subtotal = Math.round(lines.reduce((t, l) => t + l.amount, 0) * 100) / 100;
   const hst = Math.round(subtotal * 14) / 100;
   const total = Math.round((subtotal + hst) * 100) / 100;
+  const prepaid = ctx && !ctx.job ? ctx.paid : 0;                    // paid online when they booked
+  const balance = Math.max(0, Math.round((total - prepaid) * 100) / 100);
+  const owedAfter = ctx?.job ? Math.max(0, Math.round((Number(ctx.job.total) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100) : 0;
+  const payChoices = prepaid > 0 ? PAY.filter(([k]) => k !== "card_online") : PAY;
 
   async function post(body: object) {
     setBusy(true); setErr("");
@@ -80,13 +85,18 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined,
       payMethod: pay || null, tip: pay && Number(tip) > 0 ? Number(tip) : null, email: email.trim() || null, sendReceipt: true,
     });
-    if (j) setResult(`Job done. Receipt #${j.receiptNo}, ${money(j.total)}${pay ? ", paid" : ", not paid yet"}.${receiptMsg(j.receipt)}${
+    const paidLine = j?.prepaid > 0 ? (j.refund > 0 ? `, paid online. They paid ${money(j.refund)} too much, refund it in Converge` : balance > 0 && !pay ? `, ${money(balance)} still owed` : ", paid online") : pay ? ", paid" : ", not paid yet";
+    if (j) setResult(`Job done. Receipt #${j.receiptNo}, ${money(j.total)}${paidLine}.${receiptMsg(j.receipt)}${
       j.reviewText ? (j.reviewText.sent ? " Review text sent." : j.reviewText.status === "not_set_up" ? " Review text not sent (texting isn't set up yet)." : " Review text failed, check the number.") : ""}`);
   }
   async function markPaid() {
     if (!pay) return setErr("Pick how they paid");
     const j = await post({ action: "pay", method: pay, tip: Number(tip) > 0 ? Number(tip) : 0, email: email.trim() || null });
     if (j) setResult(`Marked paid.${receiptMsg(j.receipt)}`);
+  }
+  async function sendPayLink() {
+    const j = await post({ action: "paylink" });
+    if (j) setResult(j.sms?.sent ? "Pay link texted. You'll get a notice when they pay." : j.sms?.status === "not_set_up" ? "Texting isn't set up yet, so the pay link wasn't sent." : j.sms?.status === "opted_out" ? "They turned texts off, so the link wasn't sent." : "The text didn't go through. Check the number.");
   }
   async function resend() {
     const j = await post({ action: "resend", email: email.trim() || null });
@@ -133,15 +143,18 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
           {ctx && finished && !fromSheet && !result && (
             <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
               <h3 className="font-extrabold text-lg">Receipt #{ctx.job!.receipt_no} · {money(Number(ctx.job!.total))}</h3>
-              {ctx.booking.paid_at ? <p className="font-semibold text-[#1d6b3a]">Paid{ctx.job!.payment_method ? ` (${PAY.find(([k]) => k === ctx.job!.payment_method)?.[1] ?? ctx.job!.payment_method})` : ""}</p> : (
+              {owedAfter <= 0 ? <p className="font-semibold text-[#1d6b3a]">Paid{ctx.job!.payment_method ? ` (${PAY.find(([k]) => k === ctx.job!.payment_method)?.[1] ?? ctx.job!.payment_method})` : ""}</p> : (
                 <>
-                  <p className="font-semibold text-[#8a5a00]">Not paid yet. How did they pay?</p>
+                  <p className="font-semibold text-[#8a5a00]">{owedAfter < Number(ctx.job!.total) ? `${money(owedAfter)} still owed (${money(Number(ctx.job!.total) - owedAfter)} paid online).` : "Not paid yet."} How did they pay?</p>
                   <div className="grid grid-cols-2 gap-2">{PAY.map(([k, n]) => <button key={k} onClick={() => setPay(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
-                  {pay && <TipBox tip={tip} setTip={setTip} total={Number(ctx.job!.total)} />}
+                  {pay && <TipBox tip={tip} setTip={setTip} total={owedAfter} />}
+                  {ctx.payOnline && ctx.customer?.phone && (
+                    <button onClick={sendPayLink} disabled={busy} className="h-11 rounded-lg border font-bold text-sm disabled:opacity-60" style={{ borderColor: LINE }}>Or text them a link to pay online</button>
+                  )}
                 </>
               )}
               <label className="flex flex-col gap-1 text-sm font-semibold">Customer email<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="For the receipt" className={field} style={{ borderColor: LINE }} /></label>
-              {!ctx.booking.paid_at
+              {owedAfter > 0
                 ? <button onClick={markPaid} disabled={busy} className="h-12 rounded-xl font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Saving…" : "Mark paid and send receipt"}</button>
                 : <button onClick={resend} disabled={busy} className="h-12 rounded-xl border font-bold disabled:opacity-60" style={{ borderColor: LINE }}>{busy ? "Sending…" : ctx.job!.receipt_sent_at ? "Send receipt again" : "Send receipt"}</button>}
             </section>
@@ -206,10 +219,15 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
               <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
                 <h3 className="font-extrabold text-lg">Who did it</h3>
                 <div className="grid grid-cols-3 gap-2">{([["both", "Both"], ["mathew", "Mathew"], ["harsh", "Harsh"]] as const).map(([k, n]) => <button key={k} onClick={() => setDoneBy(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(doneBy === k)}>{n}</button>)}</div>
-                <h3 className="font-extrabold text-lg mt-1">How did they pay?</h3>
-                <div className="grid grid-cols-2 gap-2">{PAY.map(([k, n]) => <button key={k} onClick={() => setPay(pay === k ? "" : k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
-                {pay && <TipBox tip={tip} setTip={setTip} total={total} />}
-                {!pay && <p className="text-sm text-[#8a5a00]">Not paid yet? Leave this empty and mark it paid later.</p>}
+                {prepaid > 0 && (
+                  <p className="rounded-lg p-3 text-[15px] font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }}>
+                    Paid {money(prepaid)} online when they booked.{balance > 0 ? ` ${money(balance)} still owed for what was added.` : total < prepaid ? ` That's ${money(prepaid - total)} more than the total, refund it in Converge.` : " Nothing left to pay."}
+                  </p>
+                )}
+                <h3 className="font-extrabold text-lg mt-1">{prepaid > 0 ? (balance > 0 ? "How did they pay the rest?" : "Did they tip? Pick how") : "How did they pay?"}</h3>
+                <div className="grid grid-cols-2 gap-2">{payChoices.map(([k, n]) => <button key={k} onClick={() => setPay(pay === k ? "" : k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
+                {pay && <TipBox tip={tip} setTip={setTip} total={prepaid > 0 ? balance : total} />}
+                {!pay && (prepaid === 0 || balance > 0) && <p className="text-sm text-[#8a5a00]">Not paid yet? Leave this empty and mark it paid later{ctx.payOnline ? ", or text them a pay link after you finish" : ""}.</p>}
                 <label className="flex flex-col gap-1 text-sm font-semibold">Customer email (for the receipt)<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Optional" className={field} style={{ borderColor: LINE }} /></label>
                 <label className="flex flex-col gap-1 text-sm font-semibold">Notes (optional)<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Anything for next time" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>
               </section>
@@ -222,7 +240,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
             <div className="max-w-xl mx-auto flex flex-col gap-2">
               {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
               <button onClick={finish} disabled={busy} className="py-3.5 rounded-xl font-extrabold text-base disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>
-                {busy ? "Saving…" : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
+                {busy ? "Saving…" : prepaid > 0 ? `Finish job · ${balance > 0 ? `${money(balance)} ${pay ? "paid" : "owed"}` : "paid online"}` : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
               </button>
               <p className="text-xs text-center text-[#4a5878]">Signed in as {owner}</p>
             </div>

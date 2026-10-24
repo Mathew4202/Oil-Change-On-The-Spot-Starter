@@ -3,7 +3,8 @@ export const BUSINESS = {
   name: "Oil Change On The Spot Limited",
   short: "Oil Change On The Spot",
   hst: "780152179RC0001",
-  phone: "782-640-8341",
+  // same setting as lib/os/business.ts (kept import-free so the receipt tests run on their own)
+  phone: ((d) => d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : "782-640-8341")((process.env.NEXT_PUBLIC_BUSINESS_PHONE || "782-640-8341").replace(/\D/g, "").slice(-10)),
   email: "oilchangeonthespot@gmail.com",
   town: "Dartmouth, NS",
   site: "oilchangeonthespot.ca",

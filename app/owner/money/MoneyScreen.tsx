@@ -10,7 +10,7 @@ type Summary = { jobs: number; sales: number; hstCollected: number; spending: nu
   spendingByGroup: { group: string; name: string; amount: number }[]; doneBy: Record<string, number>; tips: number; jobsNoHst: number; expensesNoHst: number };
 type Month = { month: string; sales: number; spending: number; profit: number };
 type Data = { period: { kind: Kind; label: string; from: string; to: string; offset: number }; summary: Summary; months: Month[];
-  unpaid: { id: string; date: string; name: string; amount: number }[]; bank: { needsLook: number; lastStatement: string | null; today: string } };
+  unpaid: { id: string; date: string; name: string; amount: number; fee?: boolean }[]; bank: { needsLook: number; lastStatement: string | null; today: string } };
 type BankLine = { id: string; account?: string; posted_on: string; amount: number; description: string; kind: string | null; category: string | null; note: string | null; status?: string; decided_by?: string | null };
 type Upload = { ok: boolean; error?: string; account?: string; from?: string; to?: string; added?: number; skipped?: number; matched?: number; auto?: number; needsLook?: number };
 
@@ -113,13 +113,15 @@ export default function MoneyScreen() {
             {data.unpaid.length > 0 && (
               <section className="rounded-2xl p-4 flex flex-col gap-2 border" style={{ background: "#fff6dd", borderColor: GOLD }}>
                 <h2 className="font-extrabold text-lg">Waiting on payment</h2>
-                {data.unpaid.map((u) => (
+                {data.unpaid.map((u) => u.fee
+                  ? <FeeRow key={u.id} u={u} done={load} />
+                  : (
                   <Link key={u.id} href={`/owner?date=${u.date}`} className="flex justify-between gap-3 text-[15px] py-1">
                     <span><span className="font-semibold">{u.name}</span> <span style={{ color: MUTED }}>· {nice(u.date)}</span></span>
                     <span className="font-bold whitespace-nowrap">{money(u.amount)} ›</span>
                   </Link>
                 ))}
-                <p className="text-xs" style={{ color: MUTED }}>Finished jobs with no payment entered. Tap one to open the job and mark it paid.</p>
+                <p className="text-xs" style={{ color: MUTED }}>Finished jobs and same-day cancellation fees with no payment entered. Tap a job to open it and mark it paid.</p>
               </section>
             )}
 
@@ -278,6 +280,29 @@ function LineCard({ l, done }: { l: BankLine; done: () => void }) {
           <button disabled={busy} onClick={() => act("personal")} className={btn} style={{ borderColor: LINE }}>Not business</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** A same-day cancellation fee waiting on payment: mark it paid right here (the booking is cancelled, so it's not on the calendar). */
+function FeeRow({ u, done }: { u: { id: string; date: string; name: string; amount: number }; done: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function paid(method: string) {
+    setBusy(true);
+    await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId: u.id, action: "pay", method, sendReceipt: false }) });
+    setBusy(false); done();
+  }
+  return (
+    <div className="flex flex-col gap-2 py-2 border-t" style={{ borderColor: "#f2d58a" }}>
+      <div className="flex justify-between gap-3 text-[15px]">
+        <span><span className="font-semibold">{u.name}</span> <span style={{ color: MUTED }}>· {nice(u.date)} · same-day cancellation fee</span></span>
+        <span className="font-bold whitespace-nowrap">{money(u.amount)}</span>
+      </div>
+      <div className="flex gap-2 text-sm">
+        {[["etransfer", "E-transfer"], ["card_terminal", "Card"], ["cash", "Cash"]].map(([k, n]) => (
+          <button key={k} disabled={busy} onClick={() => paid(k)} className="h-9 px-3 rounded-lg border font-bold bg-white disabled:opacity-50" style={{ borderColor: LINE }}>Paid by {n}</button>
+        ))}
+      </div>
     </div>
   );
 }

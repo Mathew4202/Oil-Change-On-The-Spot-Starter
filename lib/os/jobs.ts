@@ -19,18 +19,20 @@ export type JobContext = {
   vehicle: { id: string; year: number | null; make: string | null; model: string | null; engine: string | null; last_km: number | null; vin: string | null;
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null } | null } | null;
   job: Record<string, unknown> | null;
+  paid: number;   // all payments on this booking so far (a booking paid online when booked, tips included)
 };
 
 export async function jobContext(bookingId: string): Promise<JobContext | null> {
   const id = enc(bookingId);
   const [b] = await sbGet<JobContext["booking"]>(`bookings?select=id,status,starts_at,address,pay_mode,quoted_total,quote_breakdown,services,cars,notes,paid_at,customer_id,vehicle_id&id=eq.${id}`);
   if (!b) return null;
-  const [[customer], [vehicle], [job]] = await Promise.all([
+  const [[customer], [vehicle], [job], pays] = await Promise.all([
     b.customer_id ? sbGet<NonNullable<JobContext["customer"]>>(`customers?select=id,first_name,last_name,phone,email,review_asked_at&id=eq.${b.customer_id}`) : Promise.resolve([null]),
     b.vehicle_id ? sbGet<NonNullable<JobContext["vehicle"]>>(`vehicles?select=id,year,make,model,engine,last_km,vin,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec)&id=eq.${b.vehicle_id}`) : Promise.resolve([null]),
     sbGet<Record<string, unknown>>(`jobs?select=*&booking_id=eq.${id}&order=done_at.desc&limit=1`),
+    sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${id}`),
   ]);
-  return { booking: b, customer: customer ?? null, vehicle: vehicle ?? null, job: job ?? null };
+  return { booking: b, customer: customer ?? null, vehicle: vehicle ?? null, job: job ?? null, paid: r2(pays.reduce((t, p) => t + Number(p.amount), 0)) };
 }
 
 export async function startJob(bookingId: string) {
@@ -125,7 +127,22 @@ export async function finishJob(input: FinishInput, owner: string) {
     await sbInsert("stock_moves", { part_id: filterId, qty: -used, reason: "job", job_id: job.data!.id });
   }
 
-  if (input.payMethod) await recordPayment(ctx.booking.id, total, input.payMethod, owner, input.tip ?? 0);
+  // Paid online when they booked? Only the difference (if anything was added on site) is still owed.
+  const prepaid = r2((await sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${ctx.booking.id}`)).reduce((t, p) => t + Number(p.amount), 0));
+  const tip = input.tip ?? 0;
+  let paidNow = !!input.payMethod, refund = 0;
+  if (prepaid > 0) {
+    const balance = r2(total - prepaid);
+    if (balance > 0.009) {
+      if (input.payMethod && input.payMethod !== "card_online") await recordPayment(ctx.booking.id, balance, input.payMethod, owner, tip);
+      else paidNow = false;   // still owes the balance: mark it paid later or send a pay link
+    } else {
+      refund = r2(-balance);
+      if (tip > 0) await recordPayment(ctx.booking.id, 0, input.payMethod && input.payMethod !== "card_online" ? input.payMethod : "cash", owner, tip);
+      await sbPatch("jobs", `id=eq.${job.data!.id}`, { payment_method: "card_online" });
+      paidNow = true;
+    }
+  } else if (input.payMethod) await recordPayment(ctx.booking.id, total, input.payMethod, owner, tip);
 
   // Review text goes out as soon as the job is complete
   let reviewText: { sent: boolean; status: string } | null = null;
@@ -139,9 +156,9 @@ export async function finishJob(input: FinishInput, owner: string) {
   if (firstTime && ctx.customer) await sbPatch("customers", `id=eq.${ctx.customer.id}`, { review_asked_at: now });
 
   // The receipt goes out once they've paid (if not paid yet, it's sent when you mark it paid)
-  let receipt: { sent: boolean; reason?: string } = { sent: false, reason: input.payMethod ? "not requested" : "waiting for payment" };
-  if (input.payMethod && input.sendReceipt !== false) receipt = await sendReceipt(job.data!.id, input.email ?? null);
-  return { ok: true as const, jobId: job.data!.id, receiptNo, total, receipt, reviewText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
+  let receipt: { sent: boolean; reason?: string } = { sent: false, reason: paidNow ? "not requested" : "waiting for payment" };
+  if (paidNow && input.sendReceipt !== false) receipt = await sendReceipt(job.data!.id, input.email ?? null);
+  return { ok: true as const, jobId: job.data!.id, receiptNo, total, prepaid, refund, receipt, reviewText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
 }
 
 /** amount = the receipt total (with HST). A tip is added on top: it's income, but it never gets HST. */

@@ -37,6 +37,15 @@ export async function sbPatch(table: string, filter: string, patch: object): Pro
   return res.ok;
 }
 
+/** PATCH and return the rows it changed (empty = the filter matched nothing). */
+export async function sbPatchRows<T = any>(table: string, filter: string, patch: object): Promise<T[]> {
+  const res = await fetch(`${URL_()}/rest/v1/${table}?${filter}`, {
+    method: "PATCH", headers: sbHeaders({ "Content-Type": "application/json", Prefer: "return=representation" }), body: JSON.stringify(patch),
+  });
+  if (!res.ok) return [];
+  return res.json().catch(() => []);
+}
+
 export async function sbRpc<T = unknown>(fn: string, args: object = {}): Promise<T> {
   const res = await fetch(`${URL_()}/rest/v1/rpc/${fn}`, {
     method: "POST", headers: sbHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(args),

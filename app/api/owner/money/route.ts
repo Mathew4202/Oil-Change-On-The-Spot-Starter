@@ -26,8 +26,12 @@ export async function GET(req: NextRequest) {
     jobsBetween(p.from, p.to), expBetween(p.from, p.to),
     kind === "year" ? Promise.resolve(null) : jobsBetween(`${year}-01-01`, `${year}-12-31`),
     kind === "year" ? Promise.resolve(null) : expBetween(`${year}-01-01`, `${year}-12-31`),
-    sbGet<{ id: string; starts_at: string; quoted_total: number | null; customer: { first_name: string | null; last_name: string | null } | null; jobs: { total: number | null }[] }>(
-      "bookings?select=id,starts_at,quoted_total,customer:customers(first_name,last_name),jobs(total)&status=eq.done&paid_at=is.null&or=(source.is.null,source.neq.square_import)&order=starts_at.desc&limit=30"),
+    // finished jobs not paid yet, plus same-day cancellation fees not paid yet
+    sbGet<{ id: string; starts_at: string; status: string; cancel_fee: number | null; quoted_total: number | null; customer: { first_name: string | null; last_name: string | null } | null; jobs: { total: number | null }[] }>(
+      "bookings?select=id,starts_at,status,cancel_fee,quoted_total,customer:customers(first_name,last_name),jobs(total)&status=in.(done,cancelled)&paid_at=is.null&or=(source.is.null,source.neq.square_import)&order=starts_at.desc&limit=40")
+      .then((rows) => rows.filter((b) => b.status === "done" || Number(b.cancel_fee) > 0))
+      .catch(() => sbGet<{ id: string; starts_at: string; status: string; cancel_fee: number | null; quoted_total: number | null; customer: { first_name: string | null; last_name: string | null } | null; jobs: { total: number | null }[] }>(
+        "bookings?select=id,starts_at,status,quoted_total,customer:customers(first_name,last_name),jobs(total)&status=eq.done&paid_at=is.null&or=(source.is.null,source.neq.square_import)&order=starts_at.desc&limit=30")),
     sbGet<{ id: string }>("bank_lines?select=id&status=eq.needs_look").catch(() => []),
     sbGet<{ to_date: string; account: string }>("bank_imports?select=to_date,account&order=to_date.desc&limit=1").catch(() => []),
   ]);
@@ -37,7 +41,7 @@ export async function GET(req: NextRequest) {
     summary: summarize(jobs, exps),
     months: byMonth(year, yJobs ?? jobs, yExps ?? exps, (ts) => halifaxDate(new Date(ts))),
     unpaid: unpaid.map((b) => ({ id: b.id, date: halifaxDate(new Date(b.starts_at)), name: [b.customer?.first_name, b.customer?.last_name].filter(Boolean).join(" ") || "Customer",
-      amount: Number(b.jobs?.[0]?.total ?? b.quoted_total ?? 0) })),
+      amount: Number(b.jobs?.[0]?.total ?? b.quoted_total ?? 0), fee: b.status === "cancelled" })),
     bank: { needsLook: needs.length, lastStatement: lastImport[0]?.to_date ?? null, today },
   });
 }

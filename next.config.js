@@ -12,6 +12,12 @@ const nextConfig = {
       { source: "/book", destination: "/booking", permanent: true },
       { source: "/quote", destination: "/booking", permanent: true },
       { source: "/services", destination: "/#services", permanent: true },
+      // old membership and plan forms: the maintenance plan is priced per car now
+      { source: "/memberships", destination: "/maintenance-plan", permanent: true },
+      { source: "/membership-request", destination: "/maintenance-plan", permanent: true },
+      { source: "/maintenance-plan-request", destination: "/maintenance-plan", permanent: true },
+      { source: "/custom-plan-request", destination: "/maintenance-plan", permanent: true },
+      { source: "/thank-you", destination: "/", permanent: false },
     ];
   },
 };

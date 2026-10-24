@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import AddressField, { type Place } from "@/components/AddressField";
 import type { Profile } from "@/lib/os/customer-account";
+import { trackLead } from "@/lib/site/track";
+import { PHONE, PHONE_TEL } from "@/lib/os/business";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type JobId = "oil_change" | "seasonal" | "tires" | "parts" | "diagnostic";
@@ -65,10 +67,13 @@ export default function BookingFlow() {
   // "Save my info on this phone" (optional). Text-code accounts come with texting.
   const [saved, setSaved] = useState<Saved | null>(null);
   const [saveState, setSaveState] = useState<"ask" | "saved" | "declined">("ask");
-  const [account, setAccount] = useState<Profile | null>(null);   // signed in with a text code (works on any phone)
+  const [account, setAccount] = useState<Profile | null>(null);
+  const [payNow, setPayNow] = useState(false); const [payOnline, setPayOnline] = useState(false);   // pay online when booking (only once Converge is set up)
+  const [agree, setAgree] = useState(false);   // cancellation (and diagnostic) terms   // signed in with a text code (works on any phone)
   const [manualEngine, setManualEngine] = useState("");
 
   const years = useMemo(() => { const y = new Date().getFullYear() + 1; return Array.from({ length: y - 1989 }, (_, i) => String(y - i)); }, []);
+  useEffect(() => { fetch("/api/os/pay").then((r) => r.json()).then((d) => setPayOnline(!!d.ready)).catch(() => {}); }, []);
   useEffect(() => { fetch("/api/makes").then((r) => r.json()).then((d) => setMakes(d.makes || [])).catch(() => {}); }, []);
   // Returning customer on this phone: fill in their details
   function fillInfo(v: Saved) { setSaved(v); setName(v.name); setPhone(v.phone); setEmail(v.email || ""); setAddress(v.address); }
@@ -147,6 +152,7 @@ export default function BookingFlow() {
       if (phone.replace(/\D/g, "").length < 10) return setErr("Add a 10-digit mobile number so we can text you.");
       if (address.trim().length < 5) return setErr("Add the address where your car will be.");
     }
+    if (step === 4 && !agree) return setErr("Please tick the box to agree to the terms.");
     if (step === 4) return book();
     setStep((s) => s + 1);
     window.scrollTo({ top: 0 });
@@ -163,20 +169,22 @@ export default function BookingFlow() {
         car: { year: Number(year), make, model, ...(engine && engine !== "unsure" ? { engine } : {}) },
         job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [],
         own: (job === "oil_change" || job === "seasonal") && own ? own : null,
-        start: slot.start, payMode: "after", notes: notes.trim() || undefined,
+        start: slot.start, payMode: payOnline && payNow ? "online" : "after", notes: notes.trim() || undefined, agreeTerms: agree,
       }),
     });
     const j = await r.json().catch(() => ({}));
     setBusy(false);
     if (r.status === 409) { setErr(j.error || "That time was just taken. Please pick another."); setStep(2); setSlot(null); return; }
-    if (!r.ok) return setErr(j.error || "Something went wrong. Please call or text 782-640-8341.");
+    if (!r.ok) return setErr(j.error || `Something went wrong. Please call or text ${PHONE}.`);
     setDone({ when: j.when, date: j.date, total: j.total });
+    trackLead("website_booking", { service_type: job, value: Number(j.total) || 0, currency: "CAD" });
+    if (j.payUrl) { setBusy(true); setTimeout(() => { window.location.href = j.payUrl; }, 400); return; }   // booked: now off to pay
     setStep(5);
   }
 
   const card = (on: boolean) => ({ borderColor: on ? NAVY : LINE, borderWidth: on ? 2 : 1, background: on ? "#fff6dd" : "#fff" });
   const pickStyle = (on: boolean) => ({ borderColor: on ? NAVY : LINE, borderWidth: on ? 2 : 1, background: on ? GOLD : "#fff" });
-  const nextLabel = ["See services", "Pick a time", "Continue", "Review", busy ? "Booking…" : "Book it"][step];
+  const nextLabel = ["See services", "Pick a time", "Continue", "Review", busy ? "Booking…" : payOnline && payNow ? "Book and pay" : "Book it"][step];
   const jobLine = quote?.lines?.[0];
 
   return (
@@ -379,10 +387,26 @@ export default function BookingFlow() {
                 <div className="flex justify-between text-[#4a5878]"><span>HST 14%</span><span>{money(quote.hst)}</span></div>
                 <div className="flex justify-between font-extrabold text-lg border-t border-[#c8d0e0] pt-2"><span>Total</span><span>{money(quote.total)}</span></div>
               </div>
-              <div className="rounded-xl border-2 p-4 flex flex-col gap-1" style={{ borderColor: NAVY, background: "#fff6dd" }}>
-                <p className="font-bold text-[17px]">Pay after the job</p>
-                <p className="text-sm text-[#4a5878]">Card, tap, cash or e-transfer when we&apos;re done. Nothing to pay now.</p>
-              </div>
+              {payOnline ? (
+                <div className="flex flex-col gap-2" role="radiogroup" aria-label="When to pay">
+                  {([[false, "Pay after the job", "Card, tap, cash or e-transfer when we're done. Nothing to pay now."],
+                    [true, "Pay now online", "Pay by card on a secure page right after you book. Anything added on the day, you pay after."]] as const).map(([v, t, d]) => (
+                    <button key={t} type="button" role="radio" aria-checked={payNow === v} onClick={() => setPayNow(v)} className="rounded-xl p-4 flex flex-col gap-1 text-left" style={card(payNow === v)}>
+                      <span className="font-bold text-[17px]">{t}</span><span className="text-sm text-[#4a5878]">{d}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border-2 p-4 flex flex-col gap-1" style={{ borderColor: NAVY, background: "#fff6dd" }}>
+                  <p className="font-bold text-[17px]">Pay after the job</p>
+                  <p className="text-sm text-[#4a5878]">Card, tap, cash or e-transfer when we&apos;re done. Nothing to pay now.</p>
+                </div>
+              )}
+              <label className="flex items-start gap-3 rounded-xl border p-4 text-[15px] leading-relaxed cursor-pointer" style={{ borderColor: agree ? NAVY : LINE }}>
+                <input type="checkbox" checked={agree} onChange={(e) => { setAgree(e.target.checked); setErr(""); }} className="mt-1 w-5 h-5 shrink-0" style={{ accentColor: NAVY }} />
+                <span>I agree to the terms: please give us at least 24 hours&apos; notice to change or cancel. Same-day cancellations may have a $30 + HST fee (we waive it for emergencies and bad storms).
+                  {job === "diagnostic" && " The $100 diagnostic is charged on its own, separate from any repair, and repairs are only done with my OK."}</span>
+              </label>
             </>
           )}
 
@@ -394,7 +418,7 @@ export default function BookingFlow() {
               </div>
               <h1 className="text-[34px] font-extrabold leading-none" style={{ fontFamily: "var(--font-condensed)" }}>You&apos;re booked.</h1>
               <p className="text-[17px] leading-relaxed">{dayParts(done.date).long} at {done.when}. Total {money(done.total)}, paid after the job.</p>
-              <p className="text-[15px] text-[#4a5878]">Need to change it? Call or text <a className="font-bold underline" href="tel:7826408341">782-640-8341</a>.</p>
+              <p className="text-[15px] text-[#4a5878]">Need to change it? Call or text <a className="font-bold underline" href={PHONE_TEL}>{PHONE}</a>.</p>
               {account && <p className="rounded-xl bg-[#eef1f6] p-4 text-[15px]">It&apos;s in your account. Next time your cars and address fill in on any phone.</p>}
               {!account && saveState === "ask" && !(saved && saved.cars.some((c) => c.year === year && c.make === make && c.model === model)) && (
                 <div className="rounded-2xl border-2 p-4 flex flex-col gap-3" style={{ borderColor: NAVY }}>
@@ -475,7 +499,7 @@ function SignIn({ onDone }: { onDone: (p: Profile) => void }) {
             <button onClick={send} disabled={busy} className="underline font-semibold">Send a new code</button>
             <button onClick={() => { setSent(false); setMsg(""); }} className="underline font-semibold">Different number</button>
           </div>
-          <p className="text-xs text-[#4a5878]">No text after a minute? You might not be on file yet, so just book below. If you replied STOP to our texts before, text START to 782-640-8341 first.</p>
+          <p className="text-xs text-[#4a5878]">No text after a minute? You might not be on file yet, so just book below. If you replied STOP to our texts before, text START to {PHONE} first.</p>
         </>
       )}
       {msg && <p className="text-sm font-semibold text-[#9b1c1c]" role="alert">{msg}</p>}

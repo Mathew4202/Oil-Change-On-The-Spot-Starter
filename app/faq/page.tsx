@@ -39,13 +39,13 @@ export default function Faq() {
         <section className="flex flex-col gap-3">
           <h2 className="text-[30px] font-extrabold" style={cond}>Booking and payment</h2>
           <Q q="How do I pay?" open>
-            <p>After the job, by card, tap, cash or e-transfer. Nothing to pay when you book. Paying online when you book is coming soon.</p>
+            <p>Your choice. Pay online by card when you book, or after the job by card, tap, cash or e-transfer. If you pay after, we can also text you a link to pay online.</p>
           </Q>
           <Q q="Do I need an account to book?">
             <p>No. You can book as a guest. If you&apos;ve booked with us before, tap &quot;Booked with us before?&quot; on the booking page and we&apos;ll text you a code, so your car and address fill in on any phone.</p>
           </Q>
           <Q q="How do I cancel or move my appointment?">
-            <p>Use the link in your confirmation text, or call or text us. Please give us at least 24 hours&apos; notice so we can offer the time to someone else.</p>
+            <p>Use the link in your confirmation text, or call or text us. Please give us at least 24 hours&apos; notice so we can offer the time to someone else. Same-day cancellations may have a $30 + HST fee, which we waive for emergencies and bad storms.</p>
           </Q>
         </section>
 
@@ -59,7 +59,7 @@ export default function Faq() {
             <p>Yes. Bad weather doesn&apos;t cancel your appointment. We only reschedule if the roads are unsafe, and we&apos;ll call you first.</p>
           </Q>
           <Q q="What do you need from me?">
-            <p>A flat spot where we can park next to your car, and the keys. You don&apos;t need to be home if we can reach the car and the keys are left for us. You can pay by e-transfer when we text you that it&apos;s done.</p>
+            <p>A flat spot where we can park next to your car, and the keys. You don&apos;t need to be home if we can reach the car and the keys are left for us. You can pay online or by e-transfer when we text you that it&apos;s done.</p>
           </Q>
         </section>
 

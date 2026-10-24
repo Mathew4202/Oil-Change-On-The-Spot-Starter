@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { track } from "@/lib/analytics";
+import { trackLead } from "@/lib/site/track";
 
 const CA_POSTAL_RE =
   /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d$/i;
@@ -169,6 +170,7 @@ export default function FleetRequestClient() {
       if (!r.ok || j?.error) throw new Error(j?.error || "Could not send request");
 
       setDone(true);
+      trackLead("fleet_request", { service_type: "fleet", fleet_count: Math.floor(qty) });
       try {
         track("fleet_request_submitted", {
           fleetCount: Math.floor(qty),
