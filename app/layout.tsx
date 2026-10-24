@@ -4,6 +4,7 @@ import StickyCTA from '@/components/StickyCTA';
 import StickySMS from '@/components/StickySMS';
 import SiteFooter from '@/components/SiteFooter';
 import Script from "next/script";
+import HideOnOwner from '@/components/HideOnOwner';
 
 export const metadata = {
   metadataBase: new URL('https://oilchangeonthespot.ca'),
@@ -45,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       {/* 👇 This line is the key: make the whole page a flex column that fills the viewport */}
       <body className="min-h-dvh flex flex-col overflow-x-hidden">
-        <NavBar />
+        <HideOnOwner><NavBar /></HideOnOwner>
          {/* Optional PWA/iOS helpers */}
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -54,9 +55,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* fills the space between navbar and footer */}
         <main className="flex-1">{children}</main>
 
-        <SiteFooter />
-        <StickyCTA />
-        <StickySMS />
+        <HideOnOwner>
+          <SiteFooter />
+          <StickyCTA />
+          <StickySMS />
+        </HideOnOwner>
 
         {/* LocalBusiness JSON-LD (ok to leave where it is) */}
         <script

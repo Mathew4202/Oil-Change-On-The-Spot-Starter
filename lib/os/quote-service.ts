@@ -13,6 +13,7 @@ const EURO = ["Volkswagen", "Audi", "Volvo", "Mercedes-Benz", "BMW", "Porsche"];
 export type QuoteRequest = {
   year: number; make: string; model: string; engine?: string | null; vehicleClass?: VehicleClass | null;
   addons?: Addon["kind"][]; own?: "both" | "oil" | "filter" | null; km?: number | null;
+  cars?: number;   // same car, several vehicles (e.g. a fleet visit): everything but travel is per car
 };
 
 const norm = (s: string | null | undefined) => (s || "").toLowerCase().replace(/[^a-z0-9.]/g, "");
@@ -101,6 +102,18 @@ export async function buildQuote(req: QuoteRequest) {
     const priced = await Promise.all(rows.map(async (x) => ({ x, q: await priceWith(x) })));
     priced.sort((a, b) => b.q.total - a.q.total);
     spec = priced[0].x; quote = priced[0].q;
+  }
+
+  // Several of the same car in one visit: every line except travel is per car
+  const n = Math.max(1, Math.min(10, Math.floor(req.cars ?? 1)));
+  if (n > 1) {
+    const r2 = (x: number) => Math.round(x * 100) / 100;
+    quote.lines = quote.lines.map((l) => (/^Travel/.test(l.label) ? l : { label: `${l.label} × ${n}`, amount: r2(l.amount * n) }));
+    quote.subtotal = r2(quote.lines.reduce((t, l) => t + l.amount, 0));
+    quote.hst = r2(quote.subtotal * Number(r.hst_rate ?? 0.14));
+    quote.total = r2(quote.subtotal + quote.hst);
+    if (quote.cost != null) quote.cost = r2(quote.cost * n);
+    if (quote.profit != null) quote.profit = r2(quote.profit * n);
   }
 
   // Notes for the job card (not admin work): only when we truly couldn't find the oil.

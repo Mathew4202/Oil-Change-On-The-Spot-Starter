@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // 1) Price, worked out on the server
-    const { quote, spec } = await buildQuote({ ...b.car, addons: b.addons, own: b.own ?? null, km: b.km ?? null });
+    const { quote, spec } = await buildQuote({ ...b.car, addons: b.addons, own: b.own ?? null, km: b.km ?? null, cars: b.cars });
 
     // 2) Is that start time still free?
     const start = new Date(b.start);

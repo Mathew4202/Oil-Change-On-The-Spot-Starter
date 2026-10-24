@@ -1,0 +1,13 @@
+{
+  "name": "OCOTS Calendar",
+  "short_name": "OCOTS",
+  "start_url": "/owner",
+  "scope": "/owner",
+  "display": "standalone",
+  "background_color": "#0d1b3e",
+  "theme_color": "#0d1b3e",
+  "icons": [
+    { "src": "/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

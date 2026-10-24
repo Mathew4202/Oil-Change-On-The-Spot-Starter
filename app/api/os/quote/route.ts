@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
       year, make, model, engine: q.get("engine"), vehicleClass: (q.get("class") as any) || null,
       addons: (q.get("addons") || "").split(",").filter(Boolean) as Addon["kind"][],
       own: (q.get("own") as any) || null, km: q.get("km") ? Number(q.get("km")) : null,
+      cars: q.get("cars") ? Number(q.get("cars")) : 1,
     });
     const owner = q.get("key") && q.get("key") === process.env.ADMIN_SECRET;
     const { cost, profit, raised, needsReview, ...publicQuote } = quote;
