@@ -63,7 +63,6 @@ async function parseFormOrJson(req: NextRequest): Promise<Record<string, string>
   }
 }
 
-const resend = new Resend(process.env.RESEND_API_KEY || "");
 
 function labelForService(service: string) {
   switch (service) {
@@ -470,6 +469,7 @@ export async function POST(req: NextRequest) {
       throw new Error("Email service not configured");
     }
 
+    const resend = new Resend(process.env.RESEND_API_KEY);
     const from = process.env.EMAIL_FROM || "Oil Change <onboarding@resend.dev>";
 
     const notifyTo = process.env.NOTIFY_TO || process.env.EMAIL_TO || "";
