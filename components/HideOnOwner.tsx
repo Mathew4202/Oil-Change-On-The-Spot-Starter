@@ -3,6 +3,6 @@
 import { usePathname } from "next/navigation";
 export default function HideOnOwner({ children }: { children: React.ReactNode }) {
   const path = usePathname();
-  if (path?.startsWith("/owner")) return null;
+  if (path?.startsWith("/owner") || path?.startsWith("/booking")) return null;   // app-style screens have their own header
   return <>{children}</>;
 }
