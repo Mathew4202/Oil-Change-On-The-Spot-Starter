@@ -31,18 +31,23 @@ async function sqAll<T>(path: string, key: string): Promise<T[]> {
   return out;
 }
 
+const SB_KEY = () => process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+// New Supabase secret keys (sb_secret_...) go only in the apikey header; old JWT keys also go in Authorization.
+function sbHeaders(extra: Record<string, string> = {}) {
+  const k = SB_KEY();
+  return { apikey: k, ...(k.startsWith("eyJ") ? { Authorization: `Bearer ${k}` } : {}), ...extra };
+}
+
 async function upsert(table: string, rows: object[], onConflict: string) {
   if (!rows.length) return 0;
-  const url = `${process.env.SUPABASE_URL}/rest/v1/${table}?on_conflict=${onConflict}`;
+  const url = `${process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/${table}?on_conflict=${onConflict}`;
   for (let i = 0; i < rows.length; i += 200) {
     const res = await fetch(url, {
       method: "POST",
-      headers: {
-        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      headers: sbHeaders({
         "Content-Type": "application/json",
         Prefer: "resolution=merge-duplicates,return=minimal",
-      },
+      }),
       body: JSON.stringify(rows.slice(i, i + 200)),
     });
     if (!res.ok) throw new Error(`Supabase ${table}: ${res.status} ${await res.text()}`);
@@ -51,11 +56,8 @@ async function upsert(table: string, rows: object[], onConflict: string) {
 }
 
 async function idMap(table: string, col: string): Promise<Map<string, string>> {
-  const res = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${table}?select=id,${col}&limit=10000`, {
-    headers: {
-      apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-    },
+  const res = await fetch(`${process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/${table}?select=id,${col}&limit=10000`, {
+    headers: sbHeaders(),
   });
   const rows: Record<string, string>[] = await res.json();
   return new Map(rows.filter((r) => r[col]).map((r) => [r[col], r.id]));
