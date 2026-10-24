@@ -4,6 +4,7 @@ import { sbGet, sbInsert, sbHeaders, enc } from "@/lib/os/db";
 import { buildQuote, filterInStock } from "@/lib/os/quote-service";
 import { dayAvailability, jobMinutes as minutesFor, seasonWindows } from "@/lib/os/calendar";
 import { seasonFor } from "@/lib/os/seasons";
+import { pushToOwners } from "@/lib/os/push";
 import { halifaxDate, label } from "@/lib/os/slots";
 
 export const BookingBody = z.object({
@@ -140,15 +141,17 @@ export async function createBooking(b: BookingInput, opts: {
     throw new Error(`booking: ${JSON.stringify(bk.error)}`);
   }
 
-  // 6) Alert in the calendar app
+  // 6) Alert in the calendar app + buzz both phones
   const who = opts.bookedBy ? `${opts.bookedBy[0].toUpperCase()}${opts.bookedBy.slice(1)} booked` : "New booking";
-  try {
-    await sbInsert("notifications", {
-      kind: "new_booking", booking_id: bk.data!.id,
-      title: `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : b.job === "tires" ? " (tire change)" : b.job === "seasonal" ? " (seasonal package)" : b.addons.includes("tires") ? " + tires" : ""}`,
-      body: `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? "paid online" : "pay after"}`,
-    });
-  } catch (e) { console.error("alert failed", e); }
+  const title = `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : b.job === "tires" ? " (tire change)" : b.job === "seasonal" ? " (seasonal package)" : b.addons.includes("tires") ? " + tires" : ""}`;
+  const body = `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? "paid online" : "pay after"}`;
+  try { await sbInsert("notifications", { kind: "new_booking", booking_id: bk.data!.id, title, body }); }
+  catch (e) { console.error("alert failed", e); }
+  const dayWord = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric" }).format(new Date(slotStart));
+  await Promise.race([
+    pushToOwners({ title: title.replace(`: ${when},`, `: ${dayWord} ${when},`), body, url: `/owner?date=${date}`, tag: bk.data!.id }),
+    new Promise((r) => setTimeout(r, 4000)),   // never make the customer wait on a slow push
+  ]);
 
   return { ok: true, bookingId: bk.data!.id, date, when, total: quote.total, subtotal: quote.subtotal, hst: quote.hst, lines: quote.lines,
     message: `You're booked for ${when}. See you then!` };

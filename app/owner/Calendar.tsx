@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import NewBooking from "./NewBooking";
+import PushToggle from "./PushToggle";
 
 type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
@@ -27,8 +28,8 @@ const shortDay = (d: string) => { const [y, m, dd] = d.split("-").map(Number); c
 const money = (n: number | null | undefined) => n == null ? "" : `$${n.toFixed(n % 1 ? 2 : 0)}`;
 const ago = (iso: string) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 
-export default function Calendar({ owner }: { owner: string }) {
-  const [date, setDate] = useState(todayStr());
+export default function Calendar({ owner, initialDate }: { owner: string; initialDate?: string }) {
+  const [date, setDate] = useState(initialDate ?? todayStr());
   const [day, setDay] = useState<Day | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -121,6 +122,7 @@ export default function Calendar({ owner }: { owner: string }) {
 
       <main className="flex-1 p-4 flex flex-col gap-3 pb-28">
         {error && <p className="rounded-xl bg-red-50 text-red-800 p-3 text-sm" role="alert">{error}</p>}
+        <PushToggle compact />
         {!day && !error && <p className="text-center text-[#4a5878] py-10">Loading…</p>}
 
         {day && (day.bring.oil.length > 0 || day.bring.filters.length > 0) && (
@@ -222,6 +224,7 @@ export default function Calendar({ owner }: { owner: string }) {
               <button onClick={() => setShowAlerts(false)} className="h-10 px-3 rounded-lg border border-[#3b4d7a] font-bold text-sm">Close</button>
             </div>
             <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+              <PushToggle />
               {alerts.length === 0 && <p className="text-center text-[#4a5878] py-10">No alerts yet.</p>}
               {alerts.map((a) => (
                 <button key={a.id} className="text-left rounded-xl border border-[#eef1f6] p-3 flex flex-col gap-0.5"
