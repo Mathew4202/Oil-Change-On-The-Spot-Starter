@@ -10,6 +10,12 @@ type Quote = { lines: Line[]; subtotal: number; hst: number; total: number; engi
 type Slot = { time: string; label: string; start: string };
 type Services = { season: string | null; jobs: { id: JobId; name: string; note: string }[]; addons: { id: string; name: string }[] };
 
+type SavedCar = { year: string; make: string; model: string; engine: string };
+type Saved = { name: string; phone: string; email: string; address: string; cars: SavedCar[] };
+const SAVE_KEY = "ocots_saved_v1";
+function readSaved(): Saved | null { try { const v = localStorage.getItem(SAVE_KEY); return v ? JSON.parse(v) : null; } catch { return null; } }
+function writeSaved(v: Saved | null) { try { if (v) localStorage.setItem(SAVE_KEY, JSON.stringify(v)); else localStorage.removeItem(SAVE_KEY); } catch { /* private mode: skip */ } }
+
 const STEPS = ["Your car", "Services", "Date and time", "Your details", "Review", "Done"];
 const ADDON_NOTES: Record<string, string> = {
   tires: "Tires already on rims", wipers: "$15 labour + blades", cabin_filter: "$10 labour + filter",
@@ -53,9 +59,26 @@ export default function BookingFlow() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<{ when: string; date: string; total: number } | null>(null);
+  // "Save my info on this phone" (optional). Text-code accounts come with texting.
+  const [saved, setSaved] = useState<Saved | null>(null);
+  const [saveState, setSaveState] = useState<"ask" | "saved" | "declined">("ask");
+  const [manualEngine, setManualEngine] = useState("");
 
   const years = useMemo(() => { const y = new Date().getFullYear() + 1; return Array.from({ length: y - 1989 }, (_, i) => String(y - i)); }, []);
   useEffect(() => { fetch("/api/makes").then((r) => r.json()).then((d) => setMakes(d.makes || [])).catch(() => {}); }, []);
+  // Returning customer on this phone: fill in their details
+  useEffect(() => {
+    const v = readSaved(); if (!v) return;
+    setSaved(v); setName(v.name); setPhone(v.phone); setEmail(v.email || ""); setAddress(v.address);
+  }, []);
+  function pickSavedCar(c: SavedCar) { setYear(c.year); setMake(c.make); setModel(c.model); setEngine(c.engine || ""); }
+  function saveHere() {
+    const car: SavedCar = { year, make, model, engine: engine === "unsure" ? "" : engine };
+    const others = (saved?.cars ?? []).filter((c) => !(c.year === car.year && c.make === car.make && c.model === car.model));
+    const v: Saved = { name: name.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), cars: [car, ...others].slice(0, 5) };
+    writeSaved(v); setSaved(v); setSaveState("saved");
+  }
+  function forget() { writeSaved(null); setSaved(null); setName(""); setPhone(""); setEmail(""); setAddress(""); }
   useEffect(() => {
     setModels([]); if (!make || !year) return;
     fetch(`/api/models?make=${encodeURIComponent(make)}&year=${year}`).then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {});
@@ -98,7 +121,7 @@ export default function BookingFlow() {
   function next() {
     setErr("");
     if (step === 0 && !carReady) return setErr("Pick your car's year, make and model.");
-    if (step === 0 && quote?.engines && quote.engines.length > 1 && !engine) return setErr("Pick your engine, or tap “Not sure”.");
+    if (step === 0 && quote?.engines && quote.engines.length > 0 && !engine) return setErr("Pick your engine, or choose “Not sure”.");
     if (step === 1 && job === "parts" && !addons.some((a) => PARTS_ONLY.includes(a))) return setErr("Pick at least one thing for us to do.");
     if (step === 2 && !slot) return setErr("Pick a time.");
     if (step === 3) {
@@ -163,29 +186,51 @@ export default function BookingFlow() {
           {/* 0. Car */}
           {step === 0 && (
             <>
+              {saved && (
+                <div className="rounded-2xl border-2 p-4 flex flex-col gap-3" style={{ borderColor: NAVY, background: "#fff6dd" }}>
+                  <p className="font-bold text-[17px]">Welcome back, {saved.name.split(" ")[0]}.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {saved.cars.map((c) => {
+                      const on = c.year === year && c.make === make && c.model === model;
+                      return <button key={`${c.year}${c.make}${c.model}`} onClick={() => pickSavedCar(c)} aria-pressed={on}
+                        className="h-11 px-4 rounded-full border-2 font-bold text-[15px]" style={{ borderColor: NAVY, background: on ? NAVY : "#fff", color: on ? "#fff" : NAVY }}>{c.year} {c.make} {c.model}</button>;
+                    })}
+                  </div>
+                  <p className="text-sm text-[#4a5878]">Tap your car, or pick a different one below. Not {saved.name.split(" ")[0]}? <button onClick={forget} className="underline font-semibold">Clear saved info</button></p>
+                </div>
+              )}
               <h1 className="text-[22px] font-bold">Which car is it?</h1>
               <label className={labelCls}>Year
-                <select value={year} onChange={(e) => { setYear(e.target.value); setModel(""); setEngine(""); }} className={input} style={{ borderColor: LINE }}>
+                <select value={year} onChange={(e) => { setYear(e.target.value); setModel(""); setEngine(""); setManualEngine(""); }} className={input} style={{ borderColor: LINE }}>
                   <option value="">Choose year</option>{years.map((y) => <option key={y}>{y}</option>)}
                 </select>
               </label>
               <label className={labelCls}>Make
-                <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setEngine(""); }} className={input} style={{ borderColor: LINE }}>
+                <select value={make} onChange={(e) => { setMake(e.target.value); setModel(""); setEngine(""); setManualEngine(""); }} className={input} style={{ borderColor: LINE }}>
                   <option value="">Choose make</option>{makes.map((m) => <option key={m}>{m}</option>)}
                 </select>
               </label>
               <label className={labelCls}>Model
-                <select value={model} onChange={(e) => { setModel(e.target.value); setEngine(""); }} disabled={!models.length} className={`${input} disabled:bg-[#f5f7fb]`} style={{ borderColor: LINE }}>
+                <select value={model} onChange={(e) => { setModel(e.target.value); setEngine(""); setManualEngine(""); }} disabled={!models.length} className={`${input} disabled:bg-[#f5f7fb]`} style={{ borderColor: LINE }}>
                   <option value="">{!year || !make ? "Pick year and make first" : models.length ? "Choose model" : "Loading models…"}</option>
                   {models.map((m) => <option key={m}>{m}</option>)}
                 </select>
               </label>
-              {quote?.engines && quote.engines.length > 1 && (
+              {carReady && (
                 <label className={labelCls}>Engine
-                  <select value={engine} onChange={(e) => setEngine(e.target.value)} className={input} style={{ borderColor: LINE }}>
-                    <option value="">Choose engine</option>{quote.engines.map((e) => <option key={e}>{e}</option>)}
-                    <option value="unsure">Not sure</option>
-                  </select>
+                  {quote?.engines && quote.engines.length > 0 ? (
+                    <select value={engine} onChange={(e) => setEngine(e.target.value)} className={input} style={{ borderColor: LINE }}>
+                      <option value="">Choose engine</option>{quote.engines.map((e) => <option key={e}>{e}</option>)}
+                      <option value="unsure">Not sure</option>
+                    </select>
+                  ) : pricing && !quote ? (
+                    <select disabled className={`${input} bg-[#f5f7fb]`} style={{ borderColor: LINE }}><option>Looking up engines…</option></select>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input value={manualEngine} onChange={(e) => setManualEngine(e.target.value)} onBlur={() => setEngine(manualEngine.trim())}
+                        placeholder="e.g. 2.0L (optional)" className={input} style={{ borderColor: LINE }} />
+                    </div>
+                  )}
                 </label>
               )}
               {carReady && (
@@ -326,7 +371,16 @@ export default function BookingFlow() {
               <h1 className="text-[34px] font-extrabold leading-none" style={{ fontFamily: "var(--font-condensed)" }}>You&apos;re booked.</h1>
               <p className="text-[17px] leading-relaxed">{dayParts(done.date).long} at {done.when}. Total {money(done.total)}, paid after the job.</p>
               <p className="text-[15px] text-[#4a5878]">Need to change it? Call or text <a className="font-bold underline" href="tel:7826408341">782-640-8341</a>.</p>
-              <button onClick={() => { setStep(0); setYear(""); setMake(""); setModel(""); setEngine(""); setAddons([]); setJob("oil_change"); setSlot(null); setDone(null); setQuote(null); }}
+              {saveState === "ask" && !(saved && saved.cars.some((c) => c.year === year && c.make === make && c.model === model)) && (
+                <div className="rounded-2xl border-2 p-4 flex flex-col gap-3" style={{ borderColor: NAVY }}>
+                  <p className="font-bold text-[18px]">Save your info for next time?</p>
+                  <p className="text-[15px] leading-relaxed text-[#4a5878]">Next time your car, address and number are already filled in. It&apos;s saved only on this phone, and you can clear it any time.</p>
+                  <button onClick={saveHere} className="h-[50px] rounded-xl text-white text-[17px] font-bold" style={{ background: NAVY }}>Save on this phone</button>
+                  <button onClick={() => setSaveState("declined")} className="h-11 text-base font-semibold text-[#4a5878] underline">No thanks</button>
+                </div>
+              )}
+              {saveState === "saved" && <p className="rounded-xl bg-[#eef1f6] p-4 text-[15px]">Saved. Next time it&apos;s all filled in for you.</p>}
+              <button onClick={() => { setStep(0); setYear(""); setMake(""); setModel(""); setEngine(""); setManualEngine(""); setAddons([]); setJob("oil_change"); setSlot(null); setDone(null); setQuote(null); setSaveState("ask"); }}
                 className="self-start font-bold underline text-base">Book another car</button>
             </div>
           )}

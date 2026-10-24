@@ -156,6 +156,7 @@ export async function buildQuote(req: QuoteRequest) {
   if (!spec) quote.needsReview = ["Oil spec not found online: check under the hood on arrival"];
   else if (spec.source === "ai_lookup" && spec.confidence === "low") quote.needsReview.push("Oil spec found online with low confidence: check the cap or manual on arrival");
 
-  const engines = rows.length > 1 ? rows.map((x) => x.engine).filter(Boolean) as string[] : [];
+  // Every engine we know for this car (the booking page always asks; "Not sure" prices the safest one)
+  const engines = Array.from(new Set(rows.map((x) => x.engine).filter(Boolean))) as string[];
   return { quote, spec, engines, lookedUp, vehicleClass, rules: r };
 }
