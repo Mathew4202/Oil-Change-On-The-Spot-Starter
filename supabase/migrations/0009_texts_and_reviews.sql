@@ -13,14 +13,23 @@ create table if not exists message_templates (
   updated_at timestamptz not null default now()
 );
 insert into message_templates (key, body) values ('review_request',
-'Hi {first_name}, thanks again for choosing Oil Change On The Spot today! 🚗
+'Hi {first_name}, thanks again for choosing Oil Change On The Spot today!
 We hope you were happy with your service. If you have a minute, we''d really appreciate a Google review. It helps other people in HRM find us and supports our small business.
-⭐ Leave a review here:
+Leave a review here:
 {review_link}
 And remember, refer a friend or family member and you''ll receive $5 off your next oil change as a thank-you.
 Thanks again, and drive safe!
-– Oil Change On The Spot')
+- Oil Change On The Spot')
 on conflict (key) do nothing;
+-- If the first version (with emojis) was already saved, switch it to the plain-text version (cheaper to send)
+update message_templates set body = 'Hi {first_name}, thanks again for choosing Oil Change On The Spot today!
+We hope you were happy with your service. If you have a minute, we''d really appreciate a Google review. It helps other people in HRM find us and supports our small business.
+Leave a review here:
+{review_link}
+And remember, refer a friend or family member and you''ll receive $5 off your next oil change as a thank-you.
+Thanks again, and drive safe!
+- Oil Change On The Spot', updated_at = now()
+where key = 'review_request' and (body like '%🚗%' or body like '%⭐%');
 alter table message_templates enable row level security;
 
 insert into app_secrets (key, value) values ('review_link', '"https://g.page/r/Cc5AP8M9qC4MEAE/review"')
