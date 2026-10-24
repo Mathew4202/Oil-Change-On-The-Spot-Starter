@@ -197,6 +197,12 @@ where j.imported_from = 'job_tracker' and j.booking_id is null and b.customer_id
   and (select count(*) from bookings b2 where b2.customer_id = j.customer_id
        and (b2.starts_at at time zone 'America/Halifax')::date = (j.done_at at time zone 'America/Halifax')::date) = 1;
 
+-- a job in the sheet means it was done: close its booking so HQ doesn't ask to finish it again
+update bookings b set status = 'done', finished_at = coalesce(b.finished_at, j.done_at), paid_at = coalesce(b.paid_at, j.done_at)
+from jobs j where j.booking_id = b.id and j.imported_from = 'job_tracker' and b.status in ('requested', 'confirmed', 'in_progress');
+-- payments typed in HQ against a job that's already in the sheet are duplicates (the sheet already counts it)
+delete from payments p using jobs j where j.booking_id = p.booking_id and j.imported_from = 'job_tracker' and p.processor_ref like 'recorded by %';
+
 -- expenses
 insert into expenses (spent_at, description, category, total, subtotal, hst, source, parsed) values
 (coalesce('2026-05-20'::date, current_date),'Gloves','supplies',92.23,80.9,11.33,'expense_tracker',null::jsonb),

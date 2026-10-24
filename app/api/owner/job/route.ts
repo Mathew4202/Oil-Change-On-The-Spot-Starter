@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { currentOwner } from "@/lib/os/auth";
+import { sbPatch } from "@/lib/os/db";
 import { jobContext, startJob, finishJob, recordPayment, sendReceipt } from "@/lib/os/jobs";
 
 export const dynamic = "force-dynamic";
@@ -48,10 +49,18 @@ export async function POST(req: NextRequest) {
       const method = z.enum(["card_terminal", "cash", "etransfer", "card_online"]).safeParse(body.method);
       const ctx = await jobContext(id);
       if (!method.success || !ctx?.job) return NextResponse.json({ error: "Finish the job first, then pick how they paid" }, { status: 400 });
+      if (ctx.job.imported_from === "job_tracker") return NextResponse.json({ error: "This job is already in your Job Tracker sheet, so it's already counted." }, { status: 400 });
       const tip = Math.min(1000, Math.max(0, Number(body.tip) || 0));
       await recordPayment(id, Number(ctx.job.total), method.data, owner, tip);
       const receipt = body.sendReceipt === false ? null : await sendReceipt(String(ctx.job.id), body.email || null);
       return NextResponse.json({ ok: true, receipt });
+    }
+    if (body.action === "close") {   // job already logged in the sheet: just close the booking
+      const ctx = await jobContext(id);
+      if (ctx?.job?.imported_from !== "job_tracker") return NextResponse.json({ error: "Use Finish job for this one" }, { status: 400 });
+      const at = String(ctx.job.done_at || new Date().toISOString());
+      await sbPatch("bookings", `id=eq.${id}`, { status: "done", finished_at: at, ...(ctx.booking.paid_at ? {} : { paid_at: at }) });
+      return NextResponse.json({ ok: true });
     }
     if (body.action === "resend") {
       const ctx = await jobContext(id);

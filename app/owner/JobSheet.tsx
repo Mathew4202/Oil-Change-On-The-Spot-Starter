@@ -10,7 +10,7 @@ type Ctx = {
   customer: { first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
   vehicle: { year: number | null; make: string | null; model: string | null; last_km: number | null; vin: string | null;
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null } | null } | null;
-  job: { receipt_no: number; total: number; payment_method: string | null; receipt_sent_at: string | null } | null;
+  job: { receipt_no: number; total: number; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null } | null;
 };
 const CHECKS: [string, string][] = [
   ["coolant", "Coolant"], ["brake_fluid", "Brake fluid"], ["washer_fluid", "Washer fluid"], ["engine_filter", "Engine air filter"],
@@ -98,6 +98,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
   const name = [ctx?.customer?.first_name, ctx?.customer?.last_name].filter(Boolean).join(" ");
   const car = [ctx?.vehicle?.year, ctx?.vehicle?.make, ctx?.vehicle?.model].filter(Boolean).join(" ");
   const finished = !!ctx?.job;
+  const fromSheet = ctx?.job?.imported_from === "job_tracker";   // logged in the old Job Tracker sheet
 
   return (
     <div className="fixed inset-0 z-40 bg-black/40 flex justify-center" onClick={() => onClose(!!result)}>
@@ -120,7 +121,16 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
             </div>
           )}
 
-          {ctx && finished && !result && (
+          {ctx && fromSheet && !result && (
+            <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
+              <h3 className="font-extrabold text-lg">Already in your Job Tracker</h3>
+              <p className="text-[15px]">This job was logged in the sheet{ctx.job!.done_at ? ` on ${new Date(String(ctx.job!.done_at)).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "America/Halifax" })}` : ""}{ctx.job!.revenue != null ? ` for ${money(Number(ctx.job!.revenue))}` : ""}. It&apos;s already counted in Money, so there&apos;s nothing to finish or charge here.</p>
+              <button onClick={async () => { const j = await post({ action: "close" }); if (j) setResult("Closed. It's marked done on the calendar."); }} disabled={busy}
+                className="h-12 rounded-xl font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Saving…" : "Mark it done on the calendar"}</button>
+            </section>
+          )}
+
+          {ctx && finished && !fromSheet && !result && (
             <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
               <h3 className="font-extrabold text-lg">Receipt #{ctx.job!.receipt_no} · {money(Number(ctx.job!.total))}</h3>
               {ctx.booking.paid_at ? <p className="font-semibold text-[#1d6b3a]">Paid{ctx.job!.payment_method ? ` (${PAY.find(([k]) => k === ctx.job!.payment_method)?.[1] ?? ctx.job!.payment_method})` : ""}</p> : (
