@@ -11,16 +11,7 @@ function sign(payload: string) {
   return crypto.createHmac("sha256", secret()).update(payload).digest("base64url");
 }
 
-export function checkPassword(name: string, password: string): string | null {
-  const list = (process.env.OWNER_PASSWORDS || "").split(",").map((x) => x.trim()).filter(Boolean);
-  for (const entry of list) {
-    const i = entry.indexOf(":");
-    const n = entry.slice(0, i).trim().toLowerCase(), p = entry.slice(i + 1);
-    if (n === name.trim().toLowerCase() && p.length > 0 && p.length === password.length &&
-        crypto.timingSafeEqual(Buffer.from(p), Buffer.from(password))) return n;
-  }
-  return null;
-}
+export { ownerList, checkPassword } from "@/lib/os/owners";
 
 export function sessionCookie(owner: string) {
   const exp = Date.now() + DAYS * 86400000;
