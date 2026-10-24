@@ -24,7 +24,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
   const camRef = useRef<HTMLInputElement>(null); const pickRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<"idle" | "reading" | "review" | "saving" | "done">("idle");
   const [preview, setPreview] = useState(""); const [scan, setScan] = useState<Scan | null>(null); const [photoPath, setPhotoPath] = useState<string | null>(null);
-  const [err, setErr] = useState(""); const [result, setResult] = useState<{ stock: string[]; prices: string[] } | null>(null);
+  const [err, setErr] = useState(""); const [result, setResult] = useState<{ stock: string[]; prices: string[]; banked?: boolean } | null>(null);
   const [recent, setRecent] = useState<Exp[]>([]);
 
   const loadRecent = () => fetch("/api/owner/receipt").then((r) => r.json()).then((d) => setRecent(d.expenses || [])).catch(() => {});
@@ -48,7 +48,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
     const r = await fetch("/api/owner/receipt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save", scan, photoPath }) });
     const j = await r.json();
     if (!r.ok) { setErr(j.error || "Couldn't save"); setStage("review"); return; }
-    setResult({ stock: j.stock, prices: j.prices }); setStage("done"); loadRecent();
+    setResult({ stock: j.stock, prices: j.prices, banked: j.banked }); setStage("done"); loadRecent();
   }
 
   const upd = (p: Partial<Scan>) => setScan((s) => s ? { ...s, ...p } : s);
@@ -90,6 +90,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
             <p className="font-bold text-[#1d6b3a]">Saved.</p>
             {result.stock.length > 0 && <p className="text-sm">Stock: {result.stock.join(", ")}</p>}
             {result.prices.length > 0 && <p className="text-sm">Prices updated: {result.prices.join(", ")}</p>}
+            {result.banked && <p className="text-sm">Matched to its line on the bank statement.</p>}
           </div>
         )}
 

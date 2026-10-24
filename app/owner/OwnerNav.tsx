@@ -14,7 +14,7 @@ const ICONS: Record<string, JSX.Element> = {
 };
 const ITEMS: { label: string; href: string | null }[] = [
   { label: "Calendar", href: "/owner" }, { label: "Customers", href: null }, { label: "Receipt", href: "/owner/receipt" },
-  { label: "Stock", href: "/owner/stock" }, { label: "Money", href: null },
+  { label: "Stock", href: "/owner/stock" }, { label: "Money", href: "/owner/money" },
 ];
 
 export default function OwnerNav() {

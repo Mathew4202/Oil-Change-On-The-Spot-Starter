@@ -2,6 +2,7 @@
 import crypto from "crypto";
 import { sbGet, sbInsert, sbPatch, sbHeaders, enc } from "@/lib/os/db";
 import type { Scan } from "@/lib/os/receipt-scan";
+import { linkReceiptToBank } from "@/lib/os/bank-import";
 
 const base = () => process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -66,5 +67,7 @@ export async function saveExpense(scan: Scan, photoPath: string | null, owner: s
       await sbInsert("oil_prices", { grade, cost_per_l: unitCostAfterTax, supplier: scan.vendor, updated_at: new Date().toISOString() }, { upsertOn: "grade" });
     }
   }
-  return { ok: true as const, expenseId: exp.data!.id, stock, prices };
+  // if this month's bank statement is already uploaded, tick off its line
+  const banked = await linkReceiptToBank(exp.data!.id, scan.total, scan.date || new Date().toISOString().slice(0, 10), scan.paidWith).catch(() => null);
+  return { ok: true as const, expenseId: exp.data!.id, stock, prices, banked: !!banked };
 }
