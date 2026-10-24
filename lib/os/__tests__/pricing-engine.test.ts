@@ -145,3 +145,11 @@ test("receipt shows HST number, lines, total, payment and escapes names", () => 
     vin: "2HGFC2F59KH512345", filter: "NAPA ProFormer 27356", logoUrl: "https://x/email-logo.png" });
   for (const want of ["RECEIPT", "#1001", "780152179RC0001", "$91.20", "E-transfer", "−$10.00", "92,210 km", "Thanks, &lt;b&gt;Kim&lt;/b&gt;.", "2HGFC2F59KH512345", "NAPA ProFormer 27356", "email-logo.png"]) assert.ok(h.includes(want), want);
 });
+
+import { fill, segments } from "../text.ts";
+test("review text fills in name and link; emoji counts as Unicode", () => {
+  const t = fill("Hi {first_name}, {review_link} {unknown}", { first_name: "Chloe", review_link: "https://g.page/r/x/review" });
+  assert.equal(t, "Hi Chloe, https://g.page/r/x/review {unknown}");
+  assert.equal(segments("a".repeat(160)), 1);
+  assert.equal(segments("🚗" + "a".repeat(100)), 2);
+});

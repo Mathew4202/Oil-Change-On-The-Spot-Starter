@@ -57,9 +57,10 @@ export function receiptHtml(r: ReceiptData): string {
    ${r.nextDueKm || r.nextDueDate ? `<div><strong>Next oil change:</strong> ${r.nextDueKm ? `${r.nextDueKm.toLocaleString("en-CA")} km` : ""}${r.nextDueKm && r.nextDueDate ? " or " : ""}${r.nextDueDate ? esc(r.nextDueDate) : ""}, whichever comes first</div>` : ""}
   </div>` : ""}
   ${r.reviewUrl ? `<div style="border:2px solid #f2b01e;border-radius:10px;padding:14px;margin-top:16px;font-size:15px;line-height:1.5">
-   Happy with the service? A quick Google review helps our small business a lot.<br>
+   Happy with the service? A quick Google review helps other people in HRM find us and supports our small business.<br>
    <a href="${esc(r.reviewUrl)}" style="display:inline-block;margin-top:10px;background:#f2b01e;color:#0d1b3e;font-weight:700;text-decoration:none;padding:10px 16px;border-radius:8px">Leave a review</a>
   </div>` : ""}
+  <p style="margin:16px 0 0;font-size:14px;line-height:1.5;color:#0d1b3e">Refer a friend or family member and get <strong>$5 off</strong> your next oil change.</p>
   <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#4a5878">${esc(BUSINESS.name)} · ${esc(BUSINESS.town)} · ${esc(BUSINESS.phone)} · ${esc(BUSINESS.email)}<br>HST # ${BUSINESS.hst}${r.receiptUrl ? ` · <a href="${esc(r.receiptUrl)}" style="color:#4a5878">View online</a>` : ""}</p>
  </div>
 </div></body></html>`;

@@ -79,7 +79,8 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined,
       payMethod: pay || null, email: email.trim() || null, sendReceipt: true,
     });
-    if (j) setResult(`Job done. Receipt #${j.receiptNo}, ${money(j.total)}${pay ? ", paid" : ", not paid yet"}.${receiptMsg(j.receipt)}`);
+    if (j) setResult(`Job done. Receipt #${j.receiptNo}, ${money(j.total)}${pay ? ", paid" : ", not paid yet"}.${receiptMsg(j.receipt)}${
+      j.reviewText ? (j.reviewText.sent ? " Review text sent." : j.reviewText.status === "not_set_up" ? " Review text not sent (texting isn't set up yet)." : " Review text failed, check the number.") : ""}`);
   }
   async function markPaid() {
     if (!pay) return setErr("Pick how they paid");

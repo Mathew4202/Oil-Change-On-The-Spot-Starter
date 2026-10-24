@@ -4,6 +4,7 @@ import { Resend } from "resend";
 import { sbGet, sbInsert, sbPatch, sbRpc, enc } from "@/lib/os/db";
 import { oilCostPerL } from "@/lib/os/pricing-engine";
 import { receiptHtml, receiptText, type ReceiptData } from "@/lib/os/receipt";
+import { sendSms, template, fill, reviewLink } from "@/lib/os/sms";
 
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const TZ = "America/Halifax";
@@ -91,6 +92,8 @@ export async function finishJob(input: FinishInput, owner: string) {
   const due = new Date(); due.setMonth(due.getMonth() + (rules.oil_interval_months ?? 6));
   const nextDate = withOil ? due.toISOString().slice(0, 10) : null;
 
+  // First-time customers get the review request (text now, and on their receipt)
+  const firstTime = !!ctx.customer && !ctx.customer.review_asked_at;
   const receiptNo = await sbRpc<number>("next_receipt_no");
   const token = crypto.randomBytes(18).toString("base64url");
   const now = new Date().toISOString();
@@ -104,6 +107,7 @@ export async function finishJob(input: FinishInput, owner: string) {
     service: ctx.booking.services?.job ?? "oil_change", payment_method: input.payMethod ?? null, done_by: input.doneBy ?? "both",
     notes: input.notes?.slice(0, 1000) || null, vehicle_text: carText,
     receipt_no: receiptNo, receipt_token: token, lines, subtotal, hst, total,
+    review_requested: firstTime,
   });
   if (!job.ok) return { ok: false as const, error: `Couldn't save the job: ${JSON.stringify(job.error)}` };
 
@@ -121,10 +125,21 @@ export async function finishJob(input: FinishInput, owner: string) {
 
   if (input.payMethod) await recordPayment(ctx.booking.id, total, input.payMethod, owner);
 
+  // Review text goes out as soon as the job is complete
+  let reviewText: { sent: boolean; status: string } | null = null;
+  if (firstTime && ctx.customer?.phone) {
+    const body = await template("review_request");
+    if (body) {
+      reviewText = await sendSms(ctx.customer.phone, fill(body, { first_name: ctx.customer.first_name?.trim() || "there", review_link: await reviewLink() }),
+        { kind: "review_request", customerId: ctx.customer.id, bookingId: ctx.booking.id });
+    }
+  }
+  if (firstTime && ctx.customer) await sbPatch("customers", `id=eq.${ctx.customer.id}`, { review_asked_at: now });
+
   // The receipt goes out once they've paid (if not paid yet, it's sent when you mark it paid)
   let receipt: { sent: boolean; reason?: string } = { sent: false, reason: input.payMethod ? "not requested" : "waiting for payment" };
   if (input.payMethod && input.sendReceipt !== false) receipt = await sendReceipt(job.data!.id, input.email ?? null);
-  return { ok: true as const, jobId: job.data!.id, receiptNo, total, receipt, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
+  return { ok: true as const, jobId: job.data!.id, receiptNo, total, receipt, reviewText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
 }
 
 export async function recordPayment(bookingId: string, amount: number, method: string, owner: string) {
@@ -139,7 +154,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
   const [j] = await sbGet<{ id: string; receipt_no: number; receipt_token: string; done_at: string; lines: { label: string; amount: number }[];
     subtotal: number; hst: number; total: number; payment_method: string | null; km: number | null; next_due_km: number | null; next_due_date: string | null;
     oil_grade: string | null; oil_litres: number | null; vehicle_text: string | null; customer_id: string | null; booking_id: string | null;
-    filter_part: string | null; vehicle_id: string | null }>(`jobs?select=*&${where}&limit=1`);
+    filter_part: string | null; vehicle_id: string | null; review_requested: boolean | null }>(`jobs?select=*&${where}&limit=1`);
   if (!j) return null;
   const [c] = j.customer_id ? await sbGet<{ first_name: string | null; last_name: string | null; email: string | null; review_asked_at: string | null }>(
     `customers?select=first_name,last_name,email,review_asked_at&id=eq.${j.customer_id}`) : [];
@@ -158,6 +173,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       vin: v?.vin ?? null,
       receiptUrl: `${siteUrl()}/receipt/${j.receipt_token}`,
       logoUrl: `${siteUrl()}/email-logo.png`,
+      reviewUrl: j.review_requested ? await reviewLink() : null,
     },
   };
 }
