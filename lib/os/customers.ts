@@ -18,8 +18,8 @@ export async function listCustomers() {
 export async function customerDetail(id: string) {
   const i = enc(id);
   const [[c], vehicles, jobs, bookings, texts] = await Promise.all([
-    sbGet<CustRow & { notes: string | null; review_asked_at: string | null; city: string | null }>(
-      `customers?select=id,first_name,last_name,phone,email,address,city,notes,sms_opt_out,created_at,source,review_asked_at,vehicles(year,make,model)&id=eq.${i}`),
+    sbGet<CustRow & { notes: string | null; review_asked_at: string | null; city: string | null; sms_opt_out_at: string | null; sms_opt_out_by: string | null }>(
+      `customers?select=id,first_name,last_name,phone,email,address,city,notes,sms_opt_out,sms_opt_out_at,sms_opt_out_by,created_at,source,review_asked_at,vehicles(year,make,model)&id=eq.${i}`),
     sbGet<{ id: string; year: number | null; make: string | null; model: string | null; engine: string | null; vin: string | null; last_km: number | null;
       vehicle_specs: { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null } | null }>(
       `vehicles?select=id,year,make,model,engine,vin,last_km,vehicle_specs(oil_grade,capacity_l,oil_filter_part)&customer_id=eq.${i}&order=created_at.desc`),
@@ -29,8 +29,8 @@ export async function customerDetail(id: string) {
       `jobs?select=id,done_at,revenue,hst,tip,total,service,vehicle_text,payment_method,receipt_token,receipt_no,imported_from,km,next_due_date,next_due_km,oil_grade,notes&customer_id=eq.${i}&order=done_at.desc&limit=200`),
     sbGet<{ id: string; starts_at: string; status: string; quoted_total: number | null; services: { job?: string } | null; source: string | null }>(
       `bookings?select=id,starts_at,status,quoted_total,services,source&customer_id=eq.${i}&order=starts_at.desc&limit=100`),
-    sbGet<{ kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null }>(
-      `messages?select=kind,body,sent_at,status,channel&customer_id=eq.${i}&order=sent_at.desc&limit=15`).catch(() => []),
+    sbGet<{ kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null; direction: string | null }>(
+      `messages?select=kind,body,sent_at,status,channel,direction&customer_id=eq.${i}&order=sent_at.desc&limit=15`).catch(() => []),
   ]);
   if (!c) return null;
   const today = halifaxDate(new Date());
@@ -39,7 +39,7 @@ export async function customerDetail(id: string) {
   const spent = Math.round(jobs.reduce((t, j) => t + Number(j.revenue ?? 0), 0) * 100) / 100;
   return {
     customer: { id: c.id, firstName: c.first_name, lastName: c.last_name, name: fullName(c), phone: c.phone, email: c.email, address: c.address, notes: c.notes,
-      smsOff: !!c.sms_opt_out, since: [day(c.created_at), ...jobs.map((j) => day(j.done_at)), ...bookings.map((b) => day(b.starts_at))].sort()[0],   // first time we saw them, not the import date
+      smsOff: !!c.sms_opt_out, smsOffAt: c.sms_opt_out_at, smsOffBy: c.sms_opt_out_by, since: [day(c.created_at), ...jobs.map((j) => day(j.done_at)), ...bookings.map((b) => day(b.starts_at))].sort()[0],   // first time we saw them, not the import date
       source: c.source, reviewAsked: !!c.review_asked_at },
     stats: { visits: jobs.length, spent, average: jobs.length ? Math.round((spent / jobs.length) * 100) / 100 : 0,
       lastVisit: jobs[0] ? day(jobs[0].done_at) : null, nextDue, nextDueKm: jobs.find((j) => j.next_due_km)?.next_due_km ?? null,
@@ -58,7 +58,7 @@ export async function customerDetail(id: string) {
 
 export type CustomerEdit = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; notes?: string; smsOff?: boolean };
 
-export async function updateCustomer(id: string, e: CustomerEdit) {
+export async function updateCustomer(id: string, e: CustomerEdit, by?: string) {
   const patch: Record<string, unknown> = {};
   if (e.firstName !== undefined) patch.first_name = e.firstName.trim().slice(0, 60) || null;
   if (e.lastName !== undefined) patch.last_name = e.lastName.trim().slice(0, 60) || null;
@@ -69,7 +69,7 @@ export async function updateCustomer(id: string, e: CustomerEdit) {
   }
   if (e.address !== undefined) patch.address = e.address.trim().slice(0, 200) || null;
   if (e.notes !== undefined) patch.notes = e.notes.trim().slice(0, 2000) || null;
-  if (e.smsOff !== undefined) patch.sms_opt_out = !!e.smsOff;
+  if (e.smsOff !== undefined) { patch.sms_opt_out = !!e.smsOff; patch.sms_opt_out_at = e.smsOff ? new Date().toISOString() : null; patch.sms_opt_out_by = e.smsOff ? by ?? "owner" : null; }
   if (e.phone !== undefined) {
     const digits = e.phone.replace(/\D/g, "");
     if (digits && digits.length !== 10 && !(digits.length === 11 && digits.startsWith("1"))) return { ok: false as const, error: "Phone needs 10 digits" };

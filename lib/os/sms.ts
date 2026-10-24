@@ -17,11 +17,15 @@ export async function template(key: string): Promise<string | null> {
   return t && t.active ? t.body : null;
 }
 
-export async function sendSms(to: string, content: string, meta: { kind: string; customerId?: string | null; bookingId?: string | null }) {
+/** force = the one reply confirming STOP/START; everything else respects "texts off". */
+export async function sendSms(to: string, content: string, meta: { kind: string; customerId?: string | null; bookingId?: string | null; force?: boolean }) {
   const phone = e164(to);
   const key = process.env.QUO_API_KEY, from = process.env.QUO_FROM_NUMBER;
   let status = "sent", error: string | null = null, providerId: string | null = null;
-  if (!key || !from) { status = "not_set_up"; error = "Add QUO_API_KEY and QUO_FROM_NUMBER in Vercel"; }
+  // Anyone who replied STOP (or was switched off in HQ) never gets an automatic text. Checked here so no path can skip it.
+  const off = meta.force ? [] : await sbGet<{ id: string }>(`customers?select=id&sms_opt_out=eq.true&or=(${[meta.customerId ? `id.eq.${meta.customerId}` : "", `phone.eq.${enc(phone)}`].filter(Boolean).join(",")})&limit=1`).catch(() => []);
+  if (off.length) { status = "opted_out"; error = "Texts are off for this customer"; }
+  else if (!key || !from) { status = "not_set_up"; error = "Add QUO_API_KEY and QUO_FROM_NUMBER in Vercel"; }
   else {
     try {
       const res = await fetch(`${process.env.QUO_BASE_URL || "https://api.quo.com"}/v1/messages`, {

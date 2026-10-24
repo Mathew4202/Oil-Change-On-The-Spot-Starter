@@ -9,12 +9,12 @@ import { DUE_BADGE } from "../CustomersScreen";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878", GOOD = "#1d6b3a";
 type Detail = {
-  customer: { id: string; firstName: string | null; lastName: string | null; name: string; phone: string | null; email: string | null; address: string | null; notes: string | null; smsOff: boolean; since: string; source: string | null; reviewAsked: boolean };
+  customer: { id: string; firstName: string | null; lastName: string | null; name: string; phone: string | null; email: string | null; address: string | null; notes: string | null; smsOff: boolean; smsOffAt: string | null; smsOffBy: string | null; since: string; source: string | null; reviewAsked: boolean };
   stats: { visits: number; spent: number; average: number; lastVisit: string | null; nextDue: string | null; nextDueKm: number | null; due: string; cancelled: number; noShows: number };
   vehicles: { id: string; name: string; engine: string | null; vin: string | null; lastKm: number | null; oil: string | null; filter: string | null }[];
   upcoming: { id: string; date: string; at: string; status: string; total: number | null; job: string | null }[];
   jobs: { id: string; date: string; car: string | null; service: string | null; amount: number; tip: number; paidWith: string | null; receipt: string | null; receiptNo: number | null; fromSheet: boolean; km: number | null; oil: string | null; notes: string | null }[];
-  texts: { kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null }[];
+  texts: { kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null; direction: string | null }[];
 };
 type Found = { id: string; first_name: string | null; last_name: string | null; phone: string | null; vehicles: { year: number | null; make: string | null; model: string | null }[] };
 
@@ -141,7 +141,9 @@ function Texts({ c, texts, reload }: { c: Detail["customer"]; texts: Detail["tex
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="font-extrabold text-lg">Automatic texts</h2>
-          <p className="text-sm" style={{ color: MUTED }}>{on ? "Booking texts, reminders, oil-due and review texts." : "Off. Nothing automatic gets sent to them."}</p>
+          <p className="text-sm" style={{ color: MUTED }}>{on ? "Booking texts, reminders, oil-due and review texts." : c.smsOffBy === "reply"
+            ? `Off. They replied STOP${c.smsOffAt ? ` on ${new Date(c.smsOffAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "America/Halifax" })}` : ""}. Only turn it back on if they ask (or they can reply START).`
+            : "Off. Nothing automatic gets sent to them."}</p>
         </div>
         <button role="switch" aria-checked={on} aria-label="Automatic texts" disabled={busy || !c.phone}
           onClick={async () => { setBusy(true); await save(c.id, { smsOff: on }); setBusy(false); reload(); }}
@@ -154,7 +156,7 @@ function Texts({ c, texts, reload }: { c: Detail["customer"]; texts: Detail["tex
         <div className="flex flex-col">
           {texts.map((t, i) => (
             <div key={i} className="py-2 border-t text-sm" style={{ borderColor: "#eef1f6" }}>
-              <p className="font-bold">{TEXT_KIND[t.kind ?? ""] ?? t.kind ?? "Message"} <span className="font-normal" style={{ color: MUTED }}>· {new Date(t.sent_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "America/Halifax" })}{t.status && t.status !== "sent" ? ` · ${t.status === "not_set_up" ? "not sent (texting not set up)" : "not sent"}` : ""}</span></p>
+              <p className="font-bold">{t.direction === "in" ? "They replied" : TEXT_KIND[t.kind ?? ""] ?? t.kind ?? "Message"} <span className="font-normal" style={{ color: MUTED }}>· {new Date(t.sent_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "America/Halifax" })}{t.status && !["sent", "received"].includes(t.status) ? ` · ${t.status === "not_set_up" ? "not sent (texting not set up)" : t.status === "opted_out" ? "not sent (texts off)" : "not sent"}` : ""}</span></p>
               {t.body && <p className="line-clamp-2" style={{ color: MUTED }}>{t.body}</p>}
             </div>
           ))}
