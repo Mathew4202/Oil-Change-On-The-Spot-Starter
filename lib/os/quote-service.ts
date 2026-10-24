@@ -13,7 +13,7 @@ const EURO = ["Volkswagen", "Audi", "Volvo", "Mercedes-Benz", "BMW", "Porsche"];
 export type QuoteRequest = {
   year: number; make: string; model: string; engine?: string | null; vehicleClass?: VehicleClass | null;
   addons?: Addon["kind"][]; own?: "both" | "oil" | "filter" | null; km?: number | null;
-  job?: JobType;   // oil_change (default), parts (no oil change) or diagnostic
+  job?: JobType;   // oil_change (default), parts (no oil change), diagnostic or tires
   cars?: number;   // same car, several vehicles (e.g. a fleet visit): everything but travel is per car
 };
 
@@ -73,8 +73,9 @@ export async function buildQuote(req: QuoteRequest) {
     // No oil change: no need to look up the oil (saves the lookup cost)
     const rules = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value");
     const r = Object.fromEntries(rules.map((x) => [x.key, Number(x.value)]));
-    const items: Addon[] = req.job === "parts" ? (req.addons ?? []).map((k) => ({ kind: k, partCost: r[`addon_part_${k}`] ?? 0 })) : [];
-    const quote = quoteVisit({ job: req.job, items, distanceKm: req.km ?? null,
+    const items: Addon[] = req.job === "parts" ? (req.addons ?? []).filter((k) => k !== "tires").map((k) => ({ kind: k, partCost: r[`addon_part_${k}`] ?? 0 })) : [];
+    const vc = (req.vehicleClass || detectClassFromModel(req.model) || "Sedan") as VehicleClass;
+    const quote = quoteVisit({ job: req.job, items, distanceKm: req.km ?? null, vehicleClass: vc,
       rules: { ...DEFAULT_RULES, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30 } });
     const vehicleClass = (req.vehicleClass || detectClassFromModel(req.model) || "Sedan") as VehicleClass;
     return { quote, spec: null as Spec | null, engines: [] as string[], lookedUp: false, vehicleClass, rules: r };

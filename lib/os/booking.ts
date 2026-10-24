@@ -12,8 +12,8 @@ export const BookingBody = z.object({
   email: z.string().trim().email().optional().or(z.literal("")),
   address: z.string().trim().min(4).max(200),
   car: z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1), model: z.string().trim().min(1), engine: z.string().trim().optional() }),
-  job: z.enum(["oil_change", "parts", "diagnostic"]).optional().default("oil_change"),
-  addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery"])).optional().default([]),
+  job: z.enum(["oil_change", "parts", "diagnostic", "tires"]).optional().default("oil_change"),
+  addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires"])).optional().default([]),
   own: z.enum(["both", "oil", "filter"]).nullable().optional(),
   start: z.string().datetime(),
   cars: z.number().int().min(1).max(5).optional().default(1),
@@ -48,6 +48,8 @@ export async function createBooking(b: BookingInput, opts: {
   customerId?: string | null;    // owners picked an existing customer: update them instead of making a duplicate
 }): Promise<BookingResult> {
   // 1) Price, worked out on the server
+  if (b.job === "parts") b = { ...b, addons: b.addons.filter((a) => a !== "tires") };
+  if (b.job === "diagnostic" || b.job === "tires") b = { ...b, addons: [] };
   if (!needsSomething(b)) return { ok: false, status: 400, error: "Pick at least one part for a parts visit." };
   const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: b.job === "oil_change" ? b.own ?? null : null, km: b.km ?? null, cars: b.cars });
   if (opts.priceOverride != null && opts.priceOverride >= 0) {
@@ -63,14 +65,14 @@ export async function createBooking(b: BookingInput, opts: {
   // 2) Time: customers must pick an open slot; owners can pick any time that isn't taken
   const start = new Date(b.start);
   const date = halifaxDate(start);
-  const perCar = minutesFor(b.job, rules);
+  const perCar = minutesFor(b.job, rules, b.addons);
   const jobMinutes = perCar * b.cars;
   let slotStart = start.toISOString();
   let slotEnd = new Date(start.getTime() + jobMinutes * 60000).toISOString();
   let when = label(halifaxMinutes(start));
   if (!opts.anyTime) {
     const day = await dayAvailability(date, { cars: b.cars, minutes: perCar,
-      filterInStock: b.job === "diagnostic" ? true : b.job === "parts" ? false : await filterInStock(spec?.oil_filter_part) });
+      filterInStock: b.job === "diagnostic" || b.job === "tires" ? true : b.job === "parts" ? false : await filterInStock(spec?.oil_filter_part) });
     const slot = day.slots.find((s) => s.start === start.toISOString());
     if (!slot) return { ok: false, status: 409, error: "Sorry, that time was just taken. Please pick another time.", slots: day.slots };
     slotStart = slot.start; slotEnd = slot.end; when = slot.label;
@@ -137,7 +139,7 @@ export async function createBooking(b: BookingInput, opts: {
   try {
     await sbInsert("notifications", {
       kind: "new_booking", booking_id: bk.data!.id,
-      title: `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : ""}`,
+      title: `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : b.job === "tires" ? " (tire change)" : b.addons.includes("tires") ? " + tires" : ""}`,
       body: `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? "paid online" : "pay after"}`,
     });
   } catch (e) { console.error("alert failed", e); }

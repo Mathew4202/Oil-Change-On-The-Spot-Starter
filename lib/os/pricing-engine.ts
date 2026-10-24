@@ -50,6 +50,11 @@ const OWN_PARTS: Record<"both" | "oil" | "filter", Record<VehicleClass, number>>
   filter: { Sedan: 80, "SUV/Crossover": 100, "Large SUV": 110, Truck: 120, "Sports Car": 110 },
 };
 
+// Seasonal tire change (tires already on rims), per vehicle size
+export const TIRE_CHANGE: Record<VehicleClass, number> = {
+  Sedan: 80, "SUV/Crossover": 90, "Large SUV": 100, Truck: 110, "Sports Car": 80,
+};
+
 // Prices agreed Oct 24
 export const SERVICE_PRICES = {
   diagnostic: 100,
@@ -60,7 +65,7 @@ export const SERVICE_PRICES = {
   addonFilter: 10,            // cabin or engine air filter with an oil change, plus parts
 } as const;
 
-export type Addon = { kind: "wipers" | "cabin_filter" | "engine_filter" | "battery"; partCost: number; partRetail?: number };
+export type Addon = { kind: "wipers" | "cabin_filter" | "engine_filter" | "battery" | "tires"; partCost: number; partRetail?: number };
 
 export type QuoteInput = {
   vehicleClass: VehicleClass;
@@ -162,6 +167,7 @@ export function quoteOilChange(input: QuoteInput): Quote {
     if (a.kind === "cabin_filter") lines.push({ label: "Cabin air filter", amount: r2(SERVICE_PRICES.addonFilter + retail) });
     if (a.kind === "engine_filter") lines.push({ label: "Engine air filter", amount: r2(SERVICE_PRICES.addonFilter + retail) });
     if (a.kind === "battery") lines.push({ label: "Battery", amount: r2(SERVICE_PRICES.batteryWithOilChange + retail) });
+    if (a.kind === "tires") lines.push({ label: "Tire change (on rims)", amount: TIRE_CHANGE[cls] });
   }
 
   const travel = travelFee(input.distanceKm, rules.freeTravelKm);
@@ -197,17 +203,19 @@ export function quoteStandalone(opts: {
     needsReview: opts.partRetail == null && !["diagnostic", "labour"].includes(opts.kind) ? ["Part price not on file"] : [] };
 }
 
-export type JobType = "oil_change" | "parts" | "diagnostic";
-export const JOB_NAMES: Record<JobType, string> = { oil_change: "Oil change", parts: "Parts visit (no oil change)", diagnostic: "Diagnostic" };
-const PART_NAMES = { battery: "Battery", wipers: "Wiper blades", cabin_filter: "Cabin air filter", engine_filter: "Engine air filter" } as const;
+export type JobType = "oil_change" | "parts" | "diagnostic" | "tires";
+export const JOB_NAMES: Record<JobType, string> = { oil_change: "Oil change", parts: "Parts visit (no oil change)", diagnostic: "Diagnostic", tires: "Tire change" };
+const PART_NAMES = { battery: "Battery", wipers: "Wiper blades", cabin_filter: "Cabin air filter", engine_filter: "Engine air filter", tires: "Tire change (on rims)" } as const;
 
 /** A visit with no oil change: one $50 call-out for any number of parts, or a $100 diagnostic. */
-export function quoteVisit(opts: { job: Exclude<JobType, "oil_change">; items?: Addon[]; distanceKm?: number | null; rules?: Rules }): Quote {
+export function quoteVisit(opts: { job: Exclude<JobType, "oil_change">; items?: Addon[]; distanceKm?: number | null; rules?: Rules; vehicleClass?: VehicleClass }): Quote {
   const rules = opts.rules ?? DEFAULT_RULES;
   const lines: Line[] = [];
   const needsReview: string[] = [];
   if (opts.job === "diagnostic") {
     lines.push({ label: "Diagnostic", amount: SERVICE_PRICES.diagnostic });
+  } else if (opts.job === "tires") {
+    lines.push({ label: "Tire change (on rims)", amount: TIRE_CHANGE[opts.vehicleClass ?? "Sedan"] });
   } else {
     lines.push({ label: "Mobile service call", amount: SERVICE_PRICES.standaloneCallout });
     for (const a of opts.items ?? []) {
@@ -221,7 +229,7 @@ export function quoteVisit(opts: { job: Exclude<JobType, "oil_change">; items?: 
   const subtotal = r2(lines.reduce((t, l) => t + l.amount, 0));
   const hst = r2(subtotal * rules.hstRate);
   // Profit (on the safe side): the visit fee itself; any margin on parts is extra
-  const fee = opts.job === "diagnostic" ? SERVICE_PRICES.diagnostic : SERVICE_PRICES.standaloneCallout;
-  const partsTotal = r2(lines.filter((l) => !/^Travel|^Mobile service call|^Diagnostic/.test(l.label)).reduce((t, l) => t + l.amount, 0));
+  const fee = opts.job === "diagnostic" ? SERVICE_PRICES.diagnostic : opts.job === "tires" ? TIRE_CHANGE[opts.vehicleClass ?? "Sedan"] : SERVICE_PRICES.standaloneCallout;
+  const partsTotal = r2(lines.filter((l) => !/^Travel|^Mobile service call|^Diagnostic|^Tire change/.test(l.label)).reduce((t, l) => t + l.amount, 0));
   return { lines, subtotal, hst, total: r2(subtotal + hst), cost: partsTotal, profit: fee, raised: false, needsReview };
 }

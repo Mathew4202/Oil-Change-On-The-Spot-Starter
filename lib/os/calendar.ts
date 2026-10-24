@@ -31,8 +31,10 @@ export async function dayAvailability(date: string, opts: { cars?: number; filte
 }
 
 /** Minutes in the calendar per car for each job type (settings can override). */
-export function jobMinutes(job: string | undefined, r: Record<string, number>): number {
+export function jobMinutes(job: string | undefined, r: Record<string, number>, addons: string[] = []): number {
   if (job === "parts") return r.job_minutes_parts ?? 45;
   if (job === "diagnostic") return r.job_minutes_diagnostic ?? 60;
-  return r.job_minutes ?? 75;
+  if (job === "tires") return r.job_minutes_tires ?? 60;
+  // oil change, plus extra time when tires are swapped on the same visit
+  return (r.job_minutes ?? 75) + (addons.includes("tires") ? r.job_minutes_tires_addon ?? 45 : 0);
 }
