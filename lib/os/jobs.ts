@@ -81,7 +81,7 @@ export async function finishJob(input: FinishInput, owner: string) {
   }
   let filterId: string | null = null, filterOnHand = 0;
   if (withOil && filterPart && own !== "both" && own !== "filter") {
-    const [p] = await sbGet<{ id: string; on_hand: number }>(`parts?select=id,on_hand&part_number=eq.${enc(filterPart)}&limit=1`);
+    const [p] = await sbGet<{ id: string; on_hand: number }>(`parts?select=id,on_hand&part_number=eq.${enc(filterPart)}&order=on_hand.desc&limit=1`);
     filterId = p?.id ?? null; filterOnHand = Number(p?.on_hand ?? 0);
     const [q] = filterId ? await sbGet<{ our_cost: number }>(`part_quotes?select=our_cost&part_id=eq.${filterId}&order=checked_at.desc&limit=1`) : [];
     costParts = r2(Number(q?.our_cost ?? rules.filter_estimate ?? 6.5) * (ctx.booking.cars || 1));

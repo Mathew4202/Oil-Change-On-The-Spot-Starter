@@ -4,6 +4,7 @@ import NewBooking from "./NewBooking";
 import PushToggle from "./PushToggle";
 import JobSheet from "./JobSheet";
 import ChangeBooking from "./ChangeBooking";
+import OwnerNav from "./OwnerNav";
 
 type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
@@ -224,17 +225,7 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
         )}
       </main>
 
-      {/* Bottom nav */}
-      <nav aria-label="App sections" className="fixed bottom-0 inset-x-0 z-20 bg-white border-t border-[#dde3ee] pb-[max(14px,env(safe-area-inset-bottom))] pt-2">
-        <div className="max-w-xl mx-auto grid grid-cols-5 gap-1 px-2">
-          {[["Calendar", true], ["Customers", false], ["Receipt", false], ["Stock", false], ["Money", false]].map(([label, active]) => (
-            <span key={label as string} className="flex flex-col items-center gap-1 py-1 text-[12px]" style={{ color: active ? NAVY : "#9aa6bf", fontWeight: active ? 800 : 600 }}>
-              <span className="w-6 h-6 rounded-md" style={{ background: active ? GOLD : "#eef1f6" }} aria-hidden />
-              {label as string}{!active && <span className="sr-only"> (coming soon)</span>}
-            </span>
-          ))}
-        </div>
-      </nav>
+      <OwnerNav />
 
       {/* Alerts panel */}
       {showAlerts && (
