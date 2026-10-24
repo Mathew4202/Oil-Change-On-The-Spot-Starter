@@ -13,11 +13,13 @@ export const maxDuration = 60;
 async function price(sp: URLSearchParams) {
   const year = Number(sp.get("year")), make = sp.get("make") || "", model = sp.get("model") || "";
   if (!year || !make || !model) return null;
-  const { quote, vehicleClass, rules } = await buildQuote({ year, make, model, engine: sp.get("engine") || null, job: "oil_change", addons: [], own: null, km: null, cars: 1 });
+  const { quote, vehicleClass, rules, engines, spec } = await buildQuote({ year, make, model, engine: sp.get("engine") || null, job: "oil_change", addons: [], own: null, km: null, cars: 1 });
   const regular = Number(quote.lines[0]?.amount ?? quote.subtotal);
   const plan = planPrice({ regular, profit: quote.profit, visits: Number(sp.get("visits") || 6), swaps: Number(sp.get("swaps") || 0),
     swapPrice: TIRE_CHANGE[(vehicleClass || "Sedan") as VehicleClass], hstRate: Number((rules as Record<string, number>)?.hst_rate ?? 0.14) });
-  return { car: `${year} ${make} ${model}`, regular, oil: quote.lines[0]?.label ?? "", vehicleClass, plan };
+  const engine = sp.get("engine") || "";
+  return { car: `${year} ${make} ${model}${engine ? ` ${engine}` : ""}`, regular, oil: quote.lines[0]?.label ?? "", vehicleClass, plan,
+    engines, pricedEngine: engine ? spec?.engine ?? engine : null };
 }
 
 export async function GET(req: NextRequest) {

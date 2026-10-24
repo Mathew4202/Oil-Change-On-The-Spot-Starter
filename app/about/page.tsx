@@ -13,7 +13,7 @@ const PROMISES: [string, string][] = [
   ["Registered and insured", "Oil Change On The Spot Limited is a registered Nova Scotia business with commercial insurance."],
   ["The right oil for your car", "Full synthetic matched to your engine's spec, and a new filter every time."],
   ["Nothing added without your OK", "We check fluids, filters and wipers and tell you what we find. You decide if anything else gets done."],
-  ["Rain or snow, we still come", "Bad weather doesn't cancel your appointment. We bring mats and cover and get it done."],
+  ["Rain or snow, we still come", "Bad weather doesn't cancel your appointment. We put mats down and get it done."],
 ];
 
 export default function About() {

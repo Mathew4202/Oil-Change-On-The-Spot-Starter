@@ -9,9 +9,12 @@ import { lookupOilSpec } from "@/lib/os/spec-lookup";
 import { detectClassFromModel } from "@/data/vehicleClass";
 
 export type Spec = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_grade: string;
-  capacity_l: number; oil_filter_part: string | null; verified: boolean; source: string; confidence: string | null; oil_spec: string | null };
+  capacity_l: number; oil_filter_part: string | null; verified: boolean; source: string; confidence: string | null; oil_spec: string | null; fuel?: string | null };
 
-const SPEC_COLS = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec";
+const SPEC_COLS = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec,fuel";
+const DIESEL_WORDS = /diesel|cummins|duramax|power\s*stroke|powerstroke|ecodiesel|\btdi\b|bluetec|\bcrd\b/i;
+export const isDiesel = (s: { fuel?: string | null; engine?: string | null; oil_spec?: string | null } | null) =>
+  !!s && (s.fuel === "diesel" || DIESEL_WORDS.test(s.engine || "") || /\bC[JK]-4\b|\bFA-4\b|dexos\s*D/i.test(s.oil_spec || ""));
 const EURO = ["Volkswagen", "Audi", "Volvo", "Mercedes-Benz", "BMW", "Porsche", "MINI", "Land Rover", "Jaguar", "Alfa Romeo", "Maserati", "FIAT"];
 
 export type QuoteRequest = {
@@ -37,7 +40,7 @@ export async function findSpecs(year: number, make: string, model: string, engin
   let rows = await specsFor(year, make, model);
   let lookedUp = false;
   if (!rows.length || (engine && !rows.some((r) => engineMatches(engine, r.engine)))) {
-    const found = await lookupOilSpec(year, make, model, engine);
+    const found = await lookupOilSpec(year, make, model, engine).catch(() => null);   // lookup down: fall back below, never break the quote
     if (found) {
       lookedUp = true;
       for (const e of found.engines) {
@@ -104,14 +107,15 @@ export async function buildQuote(req: QuoteRequest) {
     partCost: k === "washer_fluid" ? r.addon_price_washer_fluid_with_oil ?? 5 : addonPrice(k, r) }));
 
   const priceWith = async (spec: Spec | null) => {
-    const filterCost = (await filterCostFor(spec?.oil_filter_part ?? null)) ?? (spec ? (isEuro ? r.euro_filter_estimate ?? 15 : r.filter_estimate ?? 6.5) : null);
+    const diesel = !isEuro && isDiesel(spec);
+    const filterCost = (await filterCostFor(spec?.oil_filter_part ?? null)) ?? (spec ? (isEuro ? r.euro_filter_estimate ?? 15 : diesel ? r.diesel_filter_estimate ?? 20 : r.filter_estimate ?? 6.5) : null);
     return quoteOilChange({
       vehicleClass, make,
       // European cars get the Westpier Euro oil that's approved for them (cheapest one that fits)
-      spec: spec ? { grade: isEuro || /^euro/i.test(spec.oil_grade) ? euroOilKey(make, spec.oil_grade, spec.oil_spec) : spec.oil_grade,
-        capacityL: Number(spec.capacity_l), euro: isEuro || /^euro/i.test(spec.oil_grade) } : null,
+      spec: spec ? { grade: isEuro || /^euro/i.test(spec.oil_grade) ? euroOilKey(make, spec.oil_grade, spec.oil_spec) : diesel ? `Diesel ${spec.oil_grade.replace(/^diesel\s*/i, "")}` : spec.oil_grade,
+        capacityL: Number(spec.capacity_l), euro: isEuro || /^euro/i.test(spec.oil_grade), diesel } : null,
       costs: { oilPerL, filterCost, consumables: r.consumables ?? 1 },
-      rules: { ...DEFAULT_RULES, profitFloor: r.profit_floor ?? 45, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30 },
+      rules: { ...DEFAULT_RULES, profitFloor: r.profit_floor ?? 45, bumpTo: r.profit_floor ?? 45, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30 },
       ownParts: req.own ?? null, addons, distanceKm: req.km ?? null,
     });
   };

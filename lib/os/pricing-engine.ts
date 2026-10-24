@@ -9,6 +9,7 @@ export type OilSpec = {
   grade: string;          // "0W-20", "Euro 0W-30"
   capacityL: number;      // litres
   euro?: boolean;         // needs a European spec oil
+  diesel?: boolean;       // diesel engine: heavy-duty diesel oil, big capacity, priced as cost + a set profit
 };
 
 export type Costs = {
@@ -19,7 +20,7 @@ export type Costs = {
 
 export type Rules = {
   profitFloor: number;     // 45: never make less than this on an oil change
-  bumpTo: number;          // price is raised to cost + this when under the floor
+  bumpTo: number;          // price is raised to cost + this when under the floor (= the floor, so there's no price cliff between similar cars)
   roundTo: number;         // raised prices round up to a tidy number, e.g. 5
   hstRate: number;         // 0.14
   freeTravelKm: number;    // 30
@@ -42,6 +43,12 @@ export const EURO_MARGIN: Record<VehicleClass, number> = {
   Sedan: 75, "SUV/Crossover": 85, "Large SUV": 95, Truck: 95, "Sports Car": 95,
 };
 export const SPORTS_MARGIN = 80;          // non-Euro sports cars (GR86, Mustang, WRX...)
+// Diesels (Cummins, Duramax, Power Stroke, EcoDiesel, TDI): 7 to 13 L of diesel oil, bigger filters, longer drain.
+// Priced as our cost + this profit, so a 12 L Cummins can never be charged like a 6 L gas truck.
+export const DIESEL_MARGIN: Record<VehicleClass, number> = {
+  Sedan: 70, "SUV/Crossover": 70, "Large SUV": 75, Truck: 75, "Sports Car": 75,
+};
+export const DIESEL_FILTER_GUESS = 20;    // used only when the filter price is not on file (flagged)
 export const EURO_FILTER_GUESS = 15;      // used only when the filter price is not on file (flagged)
 
 // Customer brings their own oil and/or filter (FAQ table)
@@ -53,7 +60,7 @@ const OWN_PARTS: Record<"both" | "oil" | "filter", Record<VehicleClass, number>>
 
 // Seasonal tire change (tires already on rims), per vehicle size
 export const TIRE_CHANGE: Record<VehicleClass, number> = {
-  Sedan: 80, "SUV/Crossover": 90, "Large SUV": 100, Truck: 110, "Sports Car": 100,   // sports: low and riskier to lift
+  Sedan: 80, "SUV/Crossover": 90, "Large SUV": 100, Truck: 100, "Sports Car": 100,   // business plan: large SUV / light truck $100 (seasonal truck package $215); sports: low and riskier to lift
 };
 
 // Prices agreed Oct 24
@@ -137,19 +144,26 @@ export function quoteOilChange(input: QuoteInput): Quote {
   const euroPrice = input.make ? EURO_BASE[input.make] : undefined;
   let price: number;
 
-  if (input.ownParts && (euroPrice || cls === "Sports Car")) {
+  const diesel = !!input.spec?.diesel && !euroPrice;
+  const setMargin = () => (euroPrice ? EURO_MARGIN[cls] : diesel ? DIESEL_MARGIN[cls] : SPORTS_MARGIN);
+  const filterGuess = () => (euroPrice ? EURO_FILTER_GUESS : diesel ? DIESEL_FILTER_GUESS : 10);
+  // a diesel oil we have no price for: use the dearest diesel oil we know (never undercharge), and flag it
+  const perLFor = (grade: string) => oilCostPerL(grade, input.costs.oilPerL)
+    ?? (diesel ? (Math.max(0, ...Object.entries(input.costs.oilPerL).filter(([k]) => /^diesel/i.test(k)).map(([, v]) => v)) || null) : null);
+
+  if (input.ownParts && (euroPrice || cls === "Sports Car" || diesel)) {
     // Euro / sports car, customer brings parts: we keep the same profit as a full job (riskier, slower work),
     // they only skip paying for what they brought. Oil + filter brought = the profit alone, e.g. BMW sedan $75.
-    const margin = euroPrice ? EURO_MARGIN[cls] : SPORTS_MARGIN;
+    const margin = setMargin();
     const who = input.ownParts === "both" ? "oil and filter" : input.ownParts;
     let ours = 0;                          // what we still supply, at our cost
     let known = true;
     if (input.ownParts === "oil") {        // we bring the filter
       let filter = input.costs.filterCost;
-      if (filter == null) { filter = euroPrice ? EURO_FILTER_GUESS : 10; needsReview.push("Filter price not on file (estimated)"); }
+      if (filter == null) { filter = filterGuess(); needsReview.push("Filter price not on file (estimated)"); }
       ours = filter;
     } else if (input.ownParts === "filter") {   // we bring the oil
-      const perL = input.spec ? oilCostPerL(input.spec.grade, input.costs.oilPerL) : null;
+      const perL = input.spec ? perLFor(input.spec.grade) : null;
       if (perL == null || !input.spec) { known = false; needsReview.push(input.spec ? `No oil price on file for ${input.spec.grade}` : "Oil type and capacity not on file for this car"); }
       else ours = input.spec.capacityL * perL;
     }
@@ -163,12 +177,13 @@ export function quoteOilChange(input: QuoteInput): Quote {
       const perL = oilCostPerL(input.spec.grade, input.costs.oilPerL);
       if (perL != null) cost = r2(input.spec.capacityL * perL + input.costs.consumables);
     }
-  } else if ((euroPrice || cls === "Sports Car") && input.spec) {
-    // Euro / sports: cost + set profit
-    const margin = euroPrice ? EURO_MARGIN[cls] : SPORTS_MARGIN;
-    const perL = oilCostPerL(input.spec.grade, input.costs.oilPerL);
+  } else if ((euroPrice || cls === "Sports Car" || diesel) && input.spec) {
+    // Euro / sports / diesel: cost + set profit
+    const margin = setMargin();
+    const perL = perLFor(input.spec.grade);
+    if (diesel && oilCostPerL(input.spec.grade, input.costs.oilPerL) == null) needsReview.push(`No price on file for ${input.spec.grade} diesel oil (priced at our dearest diesel oil)`);
     let filter = input.costs.filterCost;
-    if (filter == null) { filter = euroPrice ? EURO_FILTER_GUESS : 10; needsReview.push("Filter price not on file (estimated)"); }
+    if (filter == null) { filter = filterGuess(); needsReview.push("Filter price not on file (estimated)"); }
     if (perL == null) {
       needsReview.push(`No oil price on file for ${input.spec.grade}`);
       price = euroPrice ?? OIL_BASE[cls];
@@ -176,7 +191,7 @@ export function quoteOilChange(input: QuoteInput): Quote {
       cost = r2(input.spec.capacityL * perL + filter + input.costs.consumables);
       price = r2(to99(cost + margin));
     }
-    lines.push({ label: `Full synthetic oil change (${input.spec.grade}, ${input.spec.capacityL} L)`, amount: price });
+    lines.push({ label: diesel ? `Diesel oil change (${input.spec.grade.replace(/^Diesel /i, "")} diesel oil, ${input.spec.capacityL} L)` : `Full synthetic oil change (${input.spec.grade}, ${input.spec.capacityL} L)`, amount: price });
   } else {
     price = euroPrice ?? OIL_BASE[cls];
     if (!input.spec) {

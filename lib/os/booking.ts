@@ -1,6 +1,7 @@
 // One place that creates bookings, used by the customer website and by owners booking by phone.
+import { vinOk, cleanVin } from "@/lib/os/vin";
 import { z } from "zod";
-import { sbGet, sbInsert, sbHeaders, enc } from "@/lib/os/db";
+import { sbGet, sbInsert, sbPatch, sbHeaders, enc } from "@/lib/os/db";
 import { buildQuote, filterInStock } from "@/lib/os/quote-service";
 import { drivingDistance, mapsReady } from "@/lib/os/maps";
 import { dayAvailability, jobMinutes as minutesFor, seasonWindows } from "@/lib/os/calendar";
@@ -26,6 +27,8 @@ export const BookingBody = z.object({
   km: z.number().min(0).max(300).optional(),
   placeId: z.string().max(300).optional(),    // picked from the address suggestions
   agreeTerms: z.boolean().optional(),          // website: cancellation (and diagnostic) terms ticked
+  photos: z.array(z.string().regex(/^\d{4}-\d{2}\/[0-9a-f-]{36}\.jpg$/)).max(3).optional(),   // VIN / engine label photo (optional)
+  vin: z.string().max(25).optional(),
 });
 export type BookingInput = z.infer<typeof BookingBody>;
 export const needsSomething = (b: Pick<BookingInput, "job" | "addons">) => b.job !== "parts" || b.addons.length > 0;
@@ -122,17 +125,18 @@ export async function createBooking(b: BookingInput, opts: {
     customer = c.data!;
   }
 
-  // 4) Find or create the car
+  // 4) Find or create the car (a VIN read from their photo is saved on it)
+  const vin = vinOk(b.vin) ? cleanVin(b.vin) : null;
   let [vehicle] = await sbGet<{ id: string }>(
     `vehicles?select=id&customer_id=eq.${customer.id}&year=eq.${b.car.year}&make=ilike.${enc(b.car.make)}&model=ilike.${enc(b.car.model)}`);
   if (!vehicle) {
     const v = await sbInsert<{ id: string }>("vehicles", {
-      customer_id: customer.id, year: b.car.year, make: b.car.make, model: b.car.model, engine: b.car.engine || null,
+      customer_id: customer.id, year: b.car.year, make: b.car.make, model: b.car.model, engine: b.car.engine || null, ...(vin ? { vin } : {}),
       spec_id: spec?.id ?? null, source: opts.source,
     });
     if (!v.ok) throw new Error(`vehicle: ${JSON.stringify(v.error)}`);
     vehicle = v.data!;
-  }
+  } else if (vin) await sbPatch("vehicles", `id=eq.${vehicle.id}`, { vin });
 
   // 5) Book it. The database refuses it if the time overlaps another booking.
   const manageToken = newManageToken();
@@ -140,7 +144,9 @@ export async function createBooking(b: BookingInput, opts: {
     customer_id: customer.id, vehicle_id: vehicle.id, starts_at: slotStart, ends_at: slotEnd, address: b.address,
     distance_km: km, status: "confirmed", pay_mode: opts.bookedBy ? b.payMode : "after",   // website: becomes "online" only once Converge confirms the payment
     quoted_total: quote.total, quote_breakdown: quote, cars: b.cars,
-    services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null, ...(b.agreeTerms ? { termsAgreedAt: new Date().toISOString() } : {}) }, needs_review: [...quote.needsReview, ...(noDistance ? ["Address not found on the map: check it, and add a travel fee if it's past 30 km"] : [])],
+    services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null, ...(b.agreeTerms ? { termsAgreedAt: new Date().toISOString() } : {}) }, needs_review: [...quote.needsReview, ...(noDistance ? ["Address not found on the map: check it, and add a travel fee if it's past 30 km"] : []),
+      ...(b.photos?.length ? [`Customer sent a photo of the ${vin ? `VIN (${vin})` : "VIN or engine label"}: check the engine before you go`] : [])],
+    photo_paths: b.photos?.length ? b.photos : null,
     source: opts.source, notes: b.notes || null, manage_token: manageToken,
   });
   if (!bk.ok) {

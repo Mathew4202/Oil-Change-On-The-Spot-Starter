@@ -66,7 +66,7 @@ export default function Faq() {
         <section className="flex flex-col gap-3">
           <h2 className="text-[30px] font-extrabold" style={cond}>The oil change</h2>
           <Q q="What oil do you use?">
-            <p>Full synthetic, matched to your engine&apos;s exact grade and spec, including the European approvals VW, Audi, BMW, Mercedes and Porsche ask for. A new filter every time.</p>
+            <p>Full synthetic, matched to your engine&apos;s exact grade and spec, including the European approvals VW, Audi, BMW, Mercedes and Porsche ask for. Diesels get the heavy-duty diesel oil their engine calls for. A new filter every time.</p>
           </Q>
           <Q q="What's in the inspection?">
             <p>We check your fluid levels, engine and cabin air filters and front wipers, and tell you what we find. Nothing extra is done without your OK.</p>
@@ -75,10 +75,23 @@ export default function Faq() {
             <p>Yes, and your price drops. Prices plus HST:</p>
             <Table head={["", "Sedan", "SUV", "3-row SUV", "Truck"]}
               rows={[["Your oil + filter", "$50", "$60", "$70", "$80"], ["Your oil only", "$60", "$70", "$80", "$90"], ["Your filter only", "$80", "$100", "$110", "$120"]]} />
-            <p>European and sports cars take longer and need more care, so with your own oil and filter they&apos;re $75 (European sedan), $85 (European SUV), $95 (European large SUV, truck or sports car) and $80 (other sports cars). If you bring only one of the two, we add the cost of the part we supply.</p>
+            <p>European and sports cars take longer and need more care, so with your own oil and filter they&apos;re $75 (European sedan), $85 (European SUV), $95 (European large SUV, truck or sports car) and $80 (other sports cars). Diesels are $70, or $75 for a diesel truck or large SUV. If you bring only one of the two, we add the cost of the part we supply.</p>
           </Q>
           <Q q="What happens to the old oil?">
-            <p>We take it with us and send it for proper recycling. Nothing is left on your driveway.</p>
+            <p>We take it with us for recycling. Mats go down before we start, and nothing is left on your driveway.</p>
+          </Q>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-[30px] font-extrabold" style={cond}>Other services</h2>
+          <Q q="What else do you do?">
+            <p>Seasonal tire swaps for tires already on rims, engine and cabin air filters, wiper blades, batteries and diagnostics. <Link href={"/services" as never} className="font-bold underline text-[#0d1b3e]">See every service and price</Link></p>
+          </Q>
+          <Q q="Do you do repairs?">
+            <p>We start with a $100 diagnostic to find the problem. If it&apos;s a straightforward fix we can do in the driveway, it&apos;s $100 an hour plus parts, and only with your OK. Bigger jobs we refer to a shop we trust. We don&apos;t do brakes.</p>
+          </Q>
+          <Q q="Not sure which engine your car has?">
+            <p>Pick &quot;Not sure&quot; when you book, or add a photo of your VIN (bottom of the windshield, driver&apos;s side). We match the exact engine and check it again when we arrive.</p>
           </Q>
         </section>
 

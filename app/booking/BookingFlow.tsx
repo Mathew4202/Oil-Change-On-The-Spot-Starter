@@ -1,5 +1,7 @@
 "use client";
 // Customer booking: car → services → time → details → confirm. Prices and times come from OCOTS OS.
+import VinPhoto, { type VinResult } from "@/components/VinPhoto";
+import { matchEngine } from "@/lib/os/vin";
 import { useEffect, useMemo, useState } from "react";
 import AddressField, { type Place } from "@/components/AddressField";
 import type { Profile } from "@/lib/os/customer-account";
@@ -57,6 +59,7 @@ export default function BookingFlow() {
   // details
   const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [email, setEmail] = useState("");
   const [address, setAddress] = useState(""); const [notes, setNotes] = useState("");
+  const [problem, setProblem] = useState("");   // diagnostic: what's going on with the car
   const [place, setPlace] = useState<Place | null>(null);   // distance + travel fee for the address
   // price + submit
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -71,6 +74,7 @@ export default function BookingFlow() {
   const [payNow, setPayNow] = useState(false); const [payOnline, setPayOnline] = useState(false);   // pay online when booking (only once Converge is set up)
   const [agree, setAgree] = useState(false);   // cancellation (and diagnostic) terms   // signed in with a text code (works on any phone)
   const [manualEngine, setManualEngine] = useState("");
+  const [vinPhoto, setVinPhoto] = useState<VinResult | null>(null);   // optional VIN / engine label photo
 
   const years = useMemo(() => { const y = new Date().getFullYear() + 1; return Array.from({ length: y - 1989 }, (_, i) => String(y - i)); }, []);
   useEffect(() => { fetch("/api/os/pay").then((r) => r.json()).then((d) => setPayOnline(!!d.ready)).catch(() => {}); }, []);
@@ -82,6 +86,12 @@ export default function BookingFlow() {
     // came from "See your price" on the home page with the car picked
     const q = new URLSearchParams(window.location.search);
     if (q.get("year") && q.get("make")) { setYear(q.get("year")!); setMake(q.get("make")!); if (q.get("model")) setModel(q.get("model")!); }
+    // came from a Book button on the services page: that service is already picked
+    const j = q.get("job") as JobId | null;
+    if (j && ["oil_change", "seasonal", "tires", "parts", "diagnostic"].includes(j)) setJob(j);
+    const add = q.get("add");
+    if (add === "own") setOwn("both");
+    else if (add && PARTS_ONLY.includes(add)) setAddons([add]);
     // signed in with a text code before: their account wins (it's always up to date)
     fetch("/api/os/account").then((r) => r.json()).then((j) => { if (j.signedIn && j.profile) signedIn(j.profile); }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -146,6 +156,7 @@ export default function BookingFlow() {
     if (step === 0 && !carReady) return setErr("Pick your car's year, make and model.");
     if (step === 0 && quote?.engines && quote.engines.length > 0 && !engine) return setErr("Pick your engine, or choose “Not sure”.");
     if (step === 1 && job === "parts" && !addons.some((a) => PARTS_ONLY.includes(a))) return setErr("Pick at least one thing for us to do.");
+    if (step === 1 && job === "diagnostic" && problem.trim().length < 5) return setErr("Tell us a bit about what's going on with the car.");
     if (step === 2 && !slot) return setErr("Pick a time.");
     if (step === 3) {
       if (!name.trim()) return setErr("Add your name.");
@@ -169,7 +180,8 @@ export default function BookingFlow() {
         car: { year: Number(year), make, model, ...(engine && engine !== "unsure" ? { engine } : {}) },
         job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [],
         own: (job === "oil_change" || job === "seasonal") && own ? own : null,
-        start: slot.start, payMode: payOnline && payNow ? "online" : "after", notes: notes.trim() || undefined, agreeTerms: agree,
+        ...(vinPhoto ? { photos: [vinPhoto.photo], ...(vinPhoto.vin ? { vin: vinPhoto.vin } : {}) } : {}),
+        start: slot.start, payMode: payOnline && payNow ? "online" : "after", notes: [job === "diagnostic" && problem.trim() ? `Problem: ${problem.trim()}` : "", notes.trim()].filter(Boolean).join("\n").slice(0, 1000) || undefined, agreeTerms: agree,
       }),
     });
     const j = await r.json().catch(() => ({}));
@@ -266,9 +278,16 @@ export default function BookingFlow() {
                 </label>
               )}
               {carReady && (
+                <VinPhoto done={vinPhoto} onClear={() => setVinPhoto(null)} onResult={(r) => {
+                  setVinPhoto(r);
+                  const hit = matchEngine(r.engineL, quote?.engines ?? []);
+                  if (hit) setEngine(hit); else if (r.engineL && !(quote?.engines ?? []).length) { setManualEngine(`${r.engineL}L`); setEngine(`${r.engineL}L`); }
+                }} />
+              )}
+              {carReady && (
                 <div className="rounded-xl bg-[#eef1f6] p-4 text-[15px] leading-relaxed text-[#4a5878]" aria-live="polite">
                   {pricing && !quote ? "Looking up your car… (first time for a car can take up to 20 seconds)" :
-                    quote?.spec ? <>Your car takes <strong className="text-[#0d1b3e]">{quote.spec.grade.replace(/^Euro /, "")} full synthetic, {quote.spec.capacityL} L</strong>. We bring the right oil and filter.</> :
+                    quote?.spec ? <>Your car takes <strong className="text-[#0d1b3e]">{quote.spec.grade.replace(/^Euro /, "")} {/diesel|cummins|duramax|power\s*stroke|ecodiesel|tdi/i.test(quote.spec.engine || "") ? "diesel oil" : "full synthetic"}, {quote.spec.capacityL} L</strong>. We bring the right oil and filter.</> :
                     "We'll bring the right oil for your car."}
                 </div>
               )}
@@ -291,6 +310,15 @@ export default function BookingFlow() {
                   </button>
                 ))}
               </div>
+
+              {job === "diagnostic" && (
+                <label className={labelCls}>What&apos;s going on with the car?
+                  <textarea value={problem} onChange={(e) => { setProblem(e.target.value.slice(0, 600)); setErr(""); }} rows={4}
+                    placeholder="e.g. Check engine light came on yesterday, it shakes at idle and it's hard to start in the morning."
+                    className="rounded-xl border p-3 text-base font-normal" style={{ borderColor: LINE }} />
+                  <span className="text-sm font-normal text-[#4a5878]">When it happens, any warning lights, sounds or smells. It helps us bring the right tools.</span>
+                </label>
+              )}
 
               {addonList.length > 0 && (
                 <>
@@ -381,6 +409,8 @@ export default function BookingFlow() {
                 <p className="text-[#4a5878]">{year} {make} {model}{engine && engine !== "unsure" ? ` · ${engine}` : ""}</p>
                 <p className="text-[#4a5878]">{address}</p>
                 <p className="text-[#4a5878]">{name} · {phone}</p>
+                {job === "diagnostic" && problem.trim() && <p className="text-[#4a5878]">Problem: {problem.trim()}</p>}
+                {vinPhoto && <p className="text-[#4a5878]">VIN photo added{vinPhoto.vin ? ` (${vinPhoto.vin})` : ""}</p>}
               </div>
               <div className="rounded-xl bg-[#eef1f6] p-4 flex flex-col gap-2 text-[15px]">
                 {quote.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span>{l.label}</span><span>{money(l.amount)}</span></div>)}
@@ -429,7 +459,7 @@ export default function BookingFlow() {
                 </div>
               )}
               {saveState === "saved" && <p className="rounded-xl bg-[#eef1f6] p-4 text-[15px]">Saved. Next time it&apos;s all filled in for you.</p>}
-              <button onClick={() => { setStep(0); setYear(""); setMake(""); setModel(""); setEngine(""); setManualEngine(""); setAddons([]); setJob("oil_change"); setSlot(null); setDone(null); setQuote(null); setSaveState("ask"); }}
+              <button onClick={() => { setStep(0); setYear(""); setMake(""); setModel(""); setEngine(""); setManualEngine(""); setVinPhoto(null); setProblem(""); setAddons([]); setJob("oil_change"); setSlot(null); setDone(null); setQuote(null); setSaveState("ask"); }}
                 className="self-start font-bold underline text-base">Book another car</button>
             </div>
           )}

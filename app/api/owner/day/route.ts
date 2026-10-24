@@ -1,4 +1,5 @@
 // Everything the calendar needs for one day: jobs, totals, what to bring, time off.
+import { bookingPhotoLink } from "@/lib/os/vin-photo";
 import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
 import { sbGet } from "@/lib/os/db";
@@ -44,6 +45,15 @@ export async function GET(req: NextRequest) {
     : [];
   const stock = Object.fromEntries(parts.map((p) => [p.part_number, Number(p.on_hand)]));
 
+  // VIN / engine-label photos customers sent (signed links, good for an hour). Skipped if that column isn't there yet.
+  const photoLinks: Record<string, string[]> = {};
+  if (rows.length) {
+    try {
+      const withPhotos = await sbGet<{ id: string; photo_paths: string[] | null }>(`bookings?select=id,photo_paths&id=in.(${rows.map((r) => r.id).join(",")})&photo_paths=not.is.null`);
+      for (const b of withPhotos) photoLinks[b.id] = (await Promise.all((b.photo_paths ?? []).map((p) => bookingPhotoLink(p)))).filter(Boolean) as string[];
+    } catch { /* migration 0019 not run yet */ }
+  }
+
   const jobs = rows.map((r) => {
     const s = r.vehicles?.vehicle_specs;
     const name = [r.customers?.first_name, r.customers?.last_name].filter(Boolean).join(" ") || "Customer";
@@ -56,7 +66,7 @@ export async function GET(req: NextRequest) {
       job: r.services?.job ?? "oil_change", addons: r.services?.addons ?? [],
       oil: s && (!r.services?.job || ["oil_change", "seasonal"].includes(r.services.job)) ? { grade: s.oil_grade, litres: Number(s.capacity_l), filter: s.oil_filter_part, spec: s.oil_spec } : null,
       lines: r.quote_breakdown?.lines ?? [], total: r.quoted_total != null ? Number(r.quoted_total) : null,
-      profit: r.quote_breakdown?.profit ?? null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import",
+      profit: r.quote_breakdown?.profit ?? null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
     };
   });
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { NAVY, GOLD, PHONE, PHONE_TEL, EMAIL } from "./brand";
 
-const LINKS: [string, string][] = [["/booking", "Book"], ["/faq", "FAQ"], ["/about", "About us"], ["/fleet-request", "Fleets"], ["/maintenance-plan", "Maintenance plan"],
+const LINKS: [string, string][] = [["/booking", "Book"], ["/services", "Services and prices"], ["/faq", "FAQ"], ["/about", "About us"], ["/fleet-request", "Fleets"], ["/maintenance-plan", "Maintenance plan"],
   ["/gallery", "Gallery"], ["/contact", "Contact"], ["/privacy", "Privacy"], ["/terms", "Terms"]];
 
 export default function SiteFooter() {

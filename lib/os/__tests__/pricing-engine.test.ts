@@ -119,9 +119,9 @@ test("visit profit counts the visit fee (parts margin not counted)", () => {
   assert.equal(quoteVisit({ job: "diagnostic" }).profit, 100);
 });
 
-test("tire change: $80 sedan, $90 SUV, $100 large SUV, $110 truck", () => {
+test("tire change: $80 sedan, $90 SUV, $100 large SUV and truck", () => {
   const p = (c: "Sedan" | "SUV/Crossover" | "Large SUV" | "Truck") => quoteVisit({ job: "tires", vehicleClass: c }).subtotal;
-  assert.deepEqual([p("Sedan"), p("SUV/Crossover"), p("Large SUV"), p("Truck")], [80, 90, 100, 110]);
+  assert.deepEqual([p("Sedan"), p("SUV/Crossover"), p("Large SUV"), p("Truck")], [80, 90, 100, 100]);
 });
 
 test("oil change + tire change on one visit (SUV): $110 + $90", () => {
@@ -210,4 +210,28 @@ test("a Euro oil with no price on file is never priced as cheap regular oil", ()
   const q = quoteOilChange({ vehicleClass: "Sedan", make: "Volkswagen", spec: { grade: "Euro 0W-40", capacityL: 5.7 }, costs: { ...costs(15), oilPerL: { "5W-40": 7.30 } } });
   assert.ok(q.needsReview.some((n) => /No oil price on file/.test(n)));
   assert.equal(q.lines[0].amount, 169.99);   // safe Euro fallback price, flagged
+});
+
+test("Diesel: 6.7L Cummins 11.4 L of diesel 15W-40 = cost + $75, never the plain truck price", () => {
+  const q = quoteOilChange({ vehicleClass: "Truck", spec: { grade: "Diesel 15W-40", capacityL: 11.4, diesel: true },
+    costs: { oilPerL: { "Diesel 15W-40": 11.44, "5W-30": 6.61 }, filterCost: 22, consumables: 1 } });
+  assert.equal(q.cost, 153.42);              // 11.4 x 11.44 + 22 + 1
+  assert.equal(q.lines[0].amount, 229.99);   // 228.42 -> 229.99
+  assert.ok(q.profit! >= 75);
+});
+
+test("Diesel oil with no price on file uses the dearest diesel oil we know, and flags it", () => {
+  const q = quoteOilChange({ vehicleClass: "Truck", spec: { grade: "Diesel 5W-40", capacityL: 9.5, diesel: true },
+    costs: { oilPerL: { "Diesel 15W-40": 11.44, "Diesel 0W-20": 13.25 }, filterCost: null, consumables: 1 } });
+  assert.equal(q.cost, 146.88);              // 9.5 x 13.25 + 20 (filter guess) + 1
+  assert.ok(q.needsReview.some((n) => /diesel oil/.test(n)));
+  assert.ok(q.needsReview.some((n) => /Filter price not on file/.test(n)));
+});
+
+test("Two gas engines in the same truck keep the truck price while profit clears $45", () => {
+  const c = { oilPerL: { "5W-20": 6.61 }, filterCost: 8, consumables: 1 };
+  const a = quoteOilChange({ vehicleClass: "Truck", spec: { grade: "5W-20", capacityL: 5.7 }, costs: c });
+  const b = quoteOilChange({ vehicleClass: "Truck", spec: { grade: "5W-20", capacityL: 6.6 }, costs: c });
+  assert.equal(a.lines[0].amount, 130); assert.equal(b.lines[0].amount, 130);
+  assert.ok(b.profit! < a.profit!);
 });

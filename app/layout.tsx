@@ -84,7 +84,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         'Mo 17:00-21:00','Tu 16:00-21:00','We 17:00-21:00',
         'Th 17:00-21:00','Fr 17:00-21:00','Sa 17:00-21:00','Su 17:00-21:00'
       ],
-      priceRange: '$80–$150+'
+      priceRange: '$50 to $250'
     })
   }}
 />

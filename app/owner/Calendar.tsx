@@ -12,7 +12,7 @@ type Job = {
   name: string; phone: string | null; address: string | null; car: string; engine: string | null;
   oil: { grade: string; litres: number; filter: string | null; spec: string | null } | null;
   lines: { label: string; amount: number }[]; total: number | null; profit: number | null;
-  notes: string | null; checks: string[]; imported: boolean; job?: string; addons?: string[];
+  notes: string | null; checks: string[]; imported: boolean; photos?: string[]; job?: string; addons?: string[];
 };
 type Day = {
   date: string; jobs: Job[]; timeOff: { id: string; starts_at: string; ends_at: string; reason: string | null }[];
@@ -187,6 +187,13 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 {j.oil && <p className="text-[15px] text-[#4a5878]">{j.oil.grade} · {j.oil.litres} L{j.oil.filter ? ` · filter ${j.oil.filter}` : ""}{j.oil.spec && !/^API/.test(j.oil.spec) ? ` · ${j.oil.spec}` : ""}</p>}
                 {j.address && <p className="text-[15px] text-[#4a5878]">{j.address}</p>}
                 {j.checks.length > 0 && <p className="text-[13px] font-semibold text-[#8a5a00] bg-[#fff6dd] rounded-lg px-2 py-1">{j.checks.join(" · ")}</p>}
+                {(j.photos ?? []).length > 0 && (
+                  <div className="flex gap-2">{j.photos!.map((u, i) => (
+                    <a key={u} href={u} target="_blank" rel="noreferrer" className="block w-16 h-16 rounded-lg overflow-hidden border border-[#c8d0e0]" aria-label={`Customer's VIN photo ${i + 1}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={u} alt="" className="w-full h-full object-cover" />
+                    </a>))}</div>
+                )}
               </button>
 
               {expanded && (

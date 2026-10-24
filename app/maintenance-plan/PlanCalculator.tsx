@@ -5,12 +5,13 @@ import { FREQUENCIES } from "@/lib/os/plan";
 import { trackLead } from "@/lib/site/track";
 import { NAVY, GOLD, LINE, MUTED } from "@/components/site/brand";
 
-type Res = { car: string; regular: number; oil: string; plan: { visits: number; swaps: number; perVisit: number; discount: number; swapPrice: number; year: number; monthly: number; hst: number; monthlyWithHst: number; savedPerYear: number } };
+type Res = { car: string; regular: number; oil: string; engines?: string[]; plan: { visits: number; swaps: number; perVisit: number; discount: number; swapPrice: number; year: number; monthly: number; hst: number; monthlyWithHst: number; savedPerYear: number } };
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 export default function PlanCalculator() {
   const [makes, setMakes] = useState<string[]>([]); const [models, setModels] = useState<string[]>([]);
   const [year, setYear] = useState(""); const [make, setMake] = useState(""); const [model, setModel] = useState("");
+  const [engine, setEngine] = useState(""); const [engines, setEngines] = useState<string[]>([]);
   const [visits, setVisits] = useState(6); const [swaps, setSwaps] = useState(0);
   const [res, setRes] = useState<Res | null>(null); const [loading, setLoading] = useState(false);
   const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [email, setEmail] = useState("");
@@ -18,22 +19,22 @@ export default function PlanCalculator() {
   const years = useMemo(() => { const y = new Date().getFullYear() + 1; return Array.from({ length: y - 1989 }, (_, i) => String(y - i)); }, []);
   useEffect(() => { fetch("/api/makes").then((r) => r.json()).then((d) => setMakes(d.makes || [])).catch(() => {}); }, []);
   useEffect(() => {
-    setModels([]); setModel(""); if (!year || !make) return;
+    setModels([]); setModel(""); setEngine(""); setEngines([]); if (!year || !make) return;
     fetch(`/api/models?make=${encodeURIComponent(make)}&year=${year}`).then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {});
   }, [year, make]);
   useEffect(() => {
     if (!year || !make || !model) { setRes(null); return; }
     setLoading(true);
-    const t = setTimeout(() => fetch(`/api/os/plan?${new URLSearchParams({ year, make, model, visits: String(visits), swaps: String(swaps) })}`)
-      .then((r) => r.json()).then((j) => setRes(j.error ? null : j)).catch(() => setRes(null)).finally(() => setLoading(false)), 300);
+    const t = setTimeout(() => fetch(`/api/os/plan?${new URLSearchParams({ year, make, model, engine, visits: String(visits), swaps: String(swaps) })}`)
+      .then((r) => r.json()).then((j) => { setRes(j.error ? null : j); if (j.engines) setEngines(j.engines); }).catch(() => setRes(null)).finally(() => setLoading(false)), 300);
     return () => clearTimeout(t);
-  }, [year, make, model, visits, swaps]);
+  }, [year, make, model, engine, visits, swaps]);
 
   async function ask(e: React.FormEvent) {
     e.preventDefault(); setErr("");
     if (!name.trim() || phone.replace(/\D/g, "").length < 10) return setErr("Add your name and a 10-digit mobile number.");
     setBusy(true);
-    const r = await fetch("/api/os/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year, make, model, visits, swaps, name, phone, email }) })
+    const r = await fetch("/api/os/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ year, make, model, engine, visits, swaps, name, phone, email }) })
       .then(async (x) => ({ ok: x.ok, ...(await x.json().catch(() => ({}))) })).catch(() => ({ ok: false, error: "No connection. Try again." }));
     setBusy(false);
     if (!r.ok) return setErr(r.error || "Couldn't send it.");
@@ -48,10 +49,17 @@ export default function PlanCalculator() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <select aria-label="Year" value={year} onChange={(e) => setYear(e.target.value)} className={sel} style={{ borderColor: LINE }}><option value="">Year</option>{years.map((y) => <option key={y}>{y}</option>)}</select>
           <select aria-label="Make" value={make} onChange={(e) => setMake(e.target.value)} className={sel} style={{ borderColor: LINE }}><option value="">Make</option>{makes.map((m) => <option key={m}>{m}</option>)}</select>
-          <select aria-label="Model" value={model} onChange={(e) => setModel(e.target.value)} disabled={!models.length} className={`${sel} disabled:bg-[#f4f6fa]`} style={{ borderColor: LINE }}>
+          <select aria-label="Model" value={model} onChange={(e) => { setModel(e.target.value); setEngine(""); setEngines([]); }} disabled={!models.length} className={`${sel} disabled:bg-[#f4f6fa]`} style={{ borderColor: LINE }}>
             <option value="">{year && make && !models.length ? "Loading…" : "Model"}</option>{models.map((m) => <option key={m}>{m}</option>)}
           </select>
         </div>
+        {model && engines.length > 1 && (
+          <label className="flex flex-col gap-1 font-semibold">Engine
+            <select value={engine} onChange={(e) => setEngine(e.target.value)} className={sel} style={{ borderColor: LINE }}>
+              <option value="">Not sure</option>{engines.map((e) => <option key={e}>{e}</option>)}
+            </select>
+          </label>
+        )}
         <p className="font-bold text-[20px]">2. How often do you need an oil change?</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {FREQUENCIES.map(([v, t]) => <button key={v} type="button" onClick={() => setVisits(v)} aria-pressed={visits === v} className="h-12 rounded-xl border-2 font-bold text-[15px]" style={chip(visits === v)}>{t} ({v} a year)</button>)}

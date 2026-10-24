@@ -3,6 +3,7 @@ import Link from "next/link";
 import QuickPrice from "@/components/site/QuickPrice";
 import Reviews from "@/components/site/Reviews";
 import ScrollPhotos from "@/components/site/ScrollPhotos";
+import { getReviews } from "@/lib/site/reviews";
 import { NAVY, GOLD, MUTED, LIGHT, PHONE, PHONE_TEL } from "@/components/site/brand";
 
 export const revalidate = 3600;
@@ -18,7 +19,10 @@ function Cta({ children = "Get my price", href = "/booking" }: { children?: Reac
   return <Link href={href as never} className="inline-block rounded-xl px-6 py-4 text-[18px] font-extrabold no-underline" style={{ background: GOLD, color: NAVY }}>{children}</Link>;
 }
 
-export default function Home() {
+export default async function Home() {
+  // the real Google rating and count when the Maps key is set (no made-up numbers)
+  const g = await getReviews().catch(() => null);
+  const badge = g?.rating && g?.count ? `${g.rating.toFixed(1)}★ on Google, ${g.count} reviews` : "Real Google reviews";
   return (
     <div className="text-[#0d1b3e]" id="top">
       {/* Hero */}
@@ -48,7 +52,7 @@ export default function Home() {
       {/* Why us */}
       <section aria-label="Why customers pick us" style={{ background: GOLD }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-3 text-center font-extrabold text-[17px]">
-          <p>5-star Google reviews</p><p>Full synthetic every time</p><p>Free travel within 30 km</p><p>Pay online or after</p>
+          <p>{badge}</p><p>Full synthetic every time</p><p>Free travel within 30 km</p><p>Pay online or after</p>
         </div>
       </section>
 
@@ -86,21 +90,21 @@ export default function Home() {
             <div className="rounded-2xl border-2 p-5 flex flex-col gap-3" style={{ borderColor: NAVY }}>
               <h3 className="text-[24px] font-bold">Full synthetic oil change</h3>
               <p className="text-[36px] font-extrabold leading-none" style={cond}>from $90</p>
-              <p className="leading-relaxed" style={{ color: MUTED }}>Sedan $90 · SUV $110 · 3-row SUV $120 · Truck $130. European and sports cars are priced on the exact oil they need. Includes the right oil, a new filter and a basic inspection.</p>
-              <div className="mt-auto pt-2"><Cta>Book an oil change</Cta></div>
+              <p className="leading-relaxed" style={{ color: MUTED }}>Sedan $90 · SUV $110 · 3-row SUV $120 · Truck $130. European cars, sports cars and diesels are priced on the exact oil they need. Includes the right oil, a new filter and a basic inspection.</p>
+              <div className="mt-auto pt-2"><Cta href="/booking?job=oil_change">Book an oil change</Cta></div>
             </div>
             <div className="rounded-2xl p-5 flex flex-col gap-3 relative" style={{ background: "#fff6dd", border: `2px solid ${GOLD}` }}>
               <p className="absolute -top-3 left-5 rounded-full px-3 py-1 text-xs font-extrabold" style={{ background: GOLD }}>SAVE $15</p>
               <h3 className="text-[24px] font-bold">Seasonal package</h3>
               <p className="text-[36px] font-extrabold leading-none" style={cond}>from $155</p>
               <p className="leading-relaxed" style={{ color: MUTED }}>Oil change plus a swap of tires already on their own rims, pressures set and wheels torqued. Offered at the start of winter and summer. Any other time, tires added to an oil change are $10 off.</p>
-              <div className="mt-auto pt-2"><Cta>Book the package</Cta></div>
+              <div className="mt-auto pt-2"><Cta href="/booking?job=seasonal">Book the package</Cta></div>
             </div>
             <div className="rounded-2xl border p-5 flex flex-col gap-3" style={{ borderColor: "#c8d0e0" }}>
               <h3 className="text-[24px] font-bold">Everything else</h3>
               <p className="text-[36px] font-extrabold leading-none" style={cond}>from $50</p>
               <p className="leading-relaxed" style={{ color: MUTED }}>Diagnostics $100 · On-rim tire swap from $80 · Battery, wipers or air filters on their own from $50 + parts. Added to an oil change: wipers $15, air filters $10 + parts, washer fluid $5.</p>
-              <div className="mt-auto pt-2"><Cta>See all services</Cta></div>
+              <div className="mt-auto pt-2"><Cta href="/services">See all services and prices</Cta></div>
             </div>
           </div>
           <Link href={"/maintenance-plan" as never} className="rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 no-underline text-white" style={{ background: NAVY }}>

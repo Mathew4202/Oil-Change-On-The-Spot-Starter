@@ -7,10 +7,10 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { NAVY, GOLD, PHONE, PHONE_TEL } from "./brand";
 
-const LINKS: [string, string][] = [["/#services", "Services and prices"], ["/maintenance-plan", "Maintenance plan"], ["/#fleet", "Fleets"], ["/#reviews", "Reviews"],
+const LINKS: [string, string][] = [["/services", "Services and prices"], ["/maintenance-plan", "Maintenance plan"], ["/#fleet", "Fleets"], ["/#reviews", "Reviews"],
   ["/#area", "Service area"], ["/faq", "FAQ"], ["/about", "About us"], ["/booking", "Sign in"]];
 // the row on big screens (Service area and Sign in stay in the footer / booking page to keep it uncluttered)
-const ROW: [string, string][] = [["/#services", "Services"], ["/maintenance-plan", "Maintenance plan"], ["/#fleet", "Fleets"], ["/#reviews", "Reviews"], ["/faq", "FAQ"], ["/about", "About"]];
+const ROW: [string, string][] = [["/services", "Services"], ["/maintenance-plan", "Maintenance plan"], ["/#fleet", "Fleets"], ["/#reviews", "Reviews"], ["/faq", "FAQ"], ["/about", "About"]];
 
 export default function SiteHeader() {
   const [open, setOpen] = useState(false);
