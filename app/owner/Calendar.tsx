@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import NewBooking from "./NewBooking";
 
 type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
@@ -35,6 +36,7 @@ export default function Calendar({ owner }: { owner: string }) {
   const [unread, setUnread] = useState(0);
   const [showAlerts, setShowAlerts] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [booking, setBooking] = useState(false);
 
   const load = useCallback(async (d: string) => {
     setError("");
@@ -227,6 +229,16 @@ export default function Calendar({ owner }: { owner: string }) {
           </div>
         </div>
       )}
+
+      {/* New booking (phone customers) */}
+      {!booking && !showAlerts && !blocking && (
+        <button onClick={() => setBooking(true)} aria-label="New booking"
+          className="fixed z-20 right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] h-14 px-5 rounded-full shadow-lg font-extrabold text-base flex items-center gap-2"
+          style={{ background: GOLD, color: NAVY }}>
+          <span className="text-2xl leading-none" aria-hidden>+</span> New booking
+        </button>
+      )}
+      {booking && <NewBooking date={date} onClose={(d) => { setBooking(false); if (d) { if (d === date) load(date); else setDate(d); loadAlerts(); } }} />}
 
       {blocking && <BlockTime date={date} onClose={(saved) => { setBlocking(false); if (saved) load(date); }} />}
     </div>

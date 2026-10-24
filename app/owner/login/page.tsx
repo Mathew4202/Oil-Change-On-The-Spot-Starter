@@ -19,7 +19,7 @@ export default function OwnerLogin() {
     <div className="min-h-dvh bg-[#0d1b3e] flex items-center justify-center px-4">
       <form onSubmit={submit} className="w-full max-w-sm bg-white rounded-2xl p-6 flex flex-col gap-4 shadow-xl">
         <div className="flex flex-col gap-1">
-          <p className="text-[#c98a00] font-bold tracking-widest text-xs">OIL CHANGE ON THE SPOT</p>
+          <p className="text-[#c98a00] font-bold tracking-widest text-xs">OCOTS HQ</p>
           <h1 className="text-3xl font-extrabold text-[#0d1b3e]" style={{ fontFamily: "var(--font-condensed)" }}>Owner sign in</h1>
         </div>
         <label className="flex flex-col gap-1 text-sm font-semibold text-[#0d1b3e]">Name

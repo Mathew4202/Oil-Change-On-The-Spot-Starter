@@ -1,6 +1,6 @@
 {
-  "name": "OCOTS Calendar",
-  "short_name": "OCOTS",
+  "name": "OCOTS HQ",
+  "short_name": "OCOTS HQ",
   "start_url": "/owner",
   "scope": "/owner",
   "display": "standalone",
