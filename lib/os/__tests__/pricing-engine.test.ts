@@ -23,10 +23,35 @@ test("2022 Camry 0W-16 4.5 L at sedan price would make under $45, so it is raise
   assert.ok(q.profit! >= 45);
 });
 
-test("2021 VW Atlas Euro 0W-30 5.5 L uses the VW price", () => {
-  const q = quoteOilChange({ vehicleClass: "SUV/Crossover", make: "Volkswagen", spec: { grade: "Euro 0W-30", capacityL: 5.5, euro: true }, costs: costs(13.1) });
-  assert.equal(q.lines[0].amount, 169.99);
-  assert.equal(q.raised, false);
+test("Euro: 2021 VW Atlas (3-row) Euro 0W-30 5.5 L = cost + $95, ends in .99", () => {
+  const q = quoteOilChange({ vehicleClass: "Large SUV", make: "Volkswagen", spec: { grade: "Euro 0W-30", capacityL: 5.5, euro: true }, costs: costs(13.1) });
+  assert.equal(q.cost, 73.11);               // 5.5 x 10.73 + 13.10 + 1 = 73.115
+  assert.equal(q.lines[0].amount, 169.99);   // 168.11 -> 169.99
+});
+
+test("Euro: 2015 VW Tiguan (SUV) VW 5W-40 4.7 L = cost + $85", () => {
+  const q = quoteOilChange({ vehicleClass: "SUV/Crossover", make: "Volkswagen", spec: { grade: "Euro 5W-40", capacityL: 4.7, euro: true }, costs: costs(9.1) });
+  assert.equal(q.cost, 44.41);
+  assert.equal(q.lines[0].amount, 129.99);
+});
+
+test("Euro: 2010 Mercedes C300 (sedan) 7 L 5W-40 = cost + $75", () => {
+  const q = quoteOilChange({ vehicleClass: "Sedan", make: "Mercedes-Benz", spec: { grade: "Euro 5W-40", capacityL: 7, euro: true }, costs: costs(10.17) });
+  assert.equal(q.cost, 62.27);
+  assert.equal(q.lines[0].amount, 139.99);
+  assert.ok(q.profit! >= 75);
+});
+
+test("Sports: GR86 0W-20 5.4 L = cost + $80", () => {
+  const q = quoteOilChange({ vehicleClass: "Sports Car", make: "Toyota", spec: { grade: "0W-20", capacityL: 5.4 }, costs: costs(6.0) });
+  assert.equal(q.cost, 45.77);
+  assert.equal(q.lines[0].amount, 129.99);
+});
+
+test("Euro with unknown oil spec falls back to the old fixed price and is flagged", () => {
+  const q = quoteOilChange({ vehicleClass: "Sedan", make: "BMW", spec: null, costs: costs(null) });
+  assert.equal(q.lines[0].amount, 159.99);
+  assert.ok(q.needsReview.length > 0);
 });
 
 test("unknown car is still priced at the normal price but flagged for review", () => {
