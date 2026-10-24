@@ -196,3 +196,32 @@ export function quoteStandalone(opts: {
   return { lines, subtotal, hst, total: r2(subtotal + hst), cost: null, profit: null, raised: false,
     needsReview: opts.partRetail == null && !["diagnostic", "labour"].includes(opts.kind) ? ["Part price not on file"] : [] };
 }
+
+export type JobType = "oil_change" | "parts" | "diagnostic";
+export const JOB_NAMES: Record<JobType, string> = { oil_change: "Oil change", parts: "Parts visit (no oil change)", diagnostic: "Diagnostic" };
+const PART_NAMES = { battery: "Battery", wipers: "Wiper blades", cabin_filter: "Cabin air filter", engine_filter: "Engine air filter" } as const;
+
+/** A visit with no oil change: one $50 call-out for any number of parts, or a $100 diagnostic. */
+export function quoteVisit(opts: { job: Exclude<JobType, "oil_change">; items?: Addon[]; distanceKm?: number | null; rules?: Rules }): Quote {
+  const rules = opts.rules ?? DEFAULT_RULES;
+  const lines: Line[] = [];
+  const needsReview: string[] = [];
+  if (opts.job === "diagnostic") {
+    lines.push({ label: "Diagnostic", amount: SERVICE_PRICES.diagnostic });
+  } else {
+    lines.push({ label: "Mobile service call", amount: SERVICE_PRICES.standaloneCallout });
+    for (const a of opts.items ?? []) {
+      const price = a.partRetail ?? a.partCost;
+      if (!price) needsReview.push(`${PART_NAMES[a.kind]} price to confirm`);
+      lines.push({ label: PART_NAMES[a.kind], amount: r2(price || 0) });
+    }
+  }
+  const travel = travelFee(opts.distanceKm, rules.freeTravelKm);
+  if (travel) lines.push({ label: `Travel (${Math.round(opts.distanceKm!)} km)`, amount: travel });
+  const subtotal = r2(lines.reduce((t, l) => t + l.amount, 0));
+  const hst = r2(subtotal * rules.hstRate);
+  // Profit (on the safe side): the visit fee itself; any margin on parts is extra
+  const fee = opts.job === "diagnostic" ? SERVICE_PRICES.diagnostic : SERVICE_PRICES.standaloneCallout;
+  const partsTotal = r2(lines.filter((l) => !/^Travel|^Mobile service call|^Diagnostic/.test(l.label)).reduce((t, l) => t + l.amount, 0));
+  return { lines, subtotal, hst, total: r2(subtotal + hst), cost: partsTotal, profit: fee, raised: false, needsReview };
+}

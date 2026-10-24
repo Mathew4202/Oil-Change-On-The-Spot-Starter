@@ -35,6 +35,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
   const [year, setYear] = useState(""); const [make, setMake] = useState(""); const [model, setModel] = useState(""); const [engine, setEngine] = useState("");
   const [cars, setCars] = useState(1);
   // Job
+  const [job, setJob] = useState<"oil_change" | "parts" | "diagnostic">("oil_change");
   const [addons, setAddons] = useState<string[]>([]);
   const [own, setOwn] = useState<"" | "both" | "oil" | "filter">("");
   const [date, setDate] = useState(initialDate);
@@ -75,8 +76,8 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
   // Open times for the chosen day
   useEffect(() => {
     setSlots(null); setTime("");
-    fetch(`/api/os/slots?date=${date}&cars=${cars}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
-  }, [date, cars]);
+    fetch(`/api/os/slots?date=${date}&cars=${cars}&job=${job}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
+  }, [date, cars, job]);
 
   // Live price
   const carReady = /^\d{4}$/.test(year) && make.trim() && model.trim();
@@ -86,13 +87,14 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
       setPricing(true);
       const p = new URLSearchParams({ year, make: make.trim(), model: model.trim(), cars: String(cars) });
       if (engine.trim()) p.set("engine", engine.trim());
-      if (addons.length) p.set("addons", addons.join(","));
-      if (own) p.set("own", own);
+      p.set("job", job);
+      if (job !== "diagnostic" && addons.length) p.set("addons", addons.join(","));
+      if (job === "oil_change" && own) p.set("own", own);
       const r = await fetch(`/api/os/quote?${p}`);
       setQuote(await r.json()); setPricing(false);
     }, 600);
     return () => clearTimeout(t);
-  }, [year, make, model, engine, addons, own, cars, carReady]);
+  }, [year, make, model, engine, addons, own, cars, carReady, job]);
 
   const startIso = useMemo(() => {
     if (otherTime) return halifaxIso(date, otherTime);
@@ -104,6 +106,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
     if (!first.trim() || phone.replace(/\D/g, "").length < 10) return setErr("Add their name and a 10-digit phone number.");
     if (!address.trim()) return setErr("Add the address for the job.");
     if (!carReady) return setErr("Add the car: year, make and model.");
+    if (job === "parts" && !addons.length) return setErr("Pick what they need for the parts visit.");
     if (!startIso) return setErr("Pick a time.");
     setBusy(true);
     const r = await fetch("/api/owner/book", {
@@ -111,7 +114,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
       body: JSON.stringify({
         firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(),
         car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() ? { engine: engine.trim() } : {}) },
-        addons, own: own || null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
+        job, addons: job === "diagnostic" ? [] : addons, own: job === "oil_change" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
         priceOverride: special.trim() ? Number(special) : null,
         customerId: customer?.id ?? null,
       }),
@@ -204,18 +207,32 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
           {/* 3. Job */}
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
             <h3 className="font-extrabold text-lg">3. Job</h3>
-            <p className="text-sm font-semibold">Add-ons</p>
-            <div className="flex flex-wrap gap-2">
-              {ADDONS.map(([k, n]) => (
-                <button key={k} onClick={() => setAddons((a) => a.includes(k) ? a.filter((x) => x !== k) : [...a, k])} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(addons.includes(k))}>{n}</button>
+            <div className="grid grid-cols-3 gap-2">
+              {([["oil_change", "Oil change"], ["parts", "Parts only"], ["diagnostic", "Diagnostic"]] as const).map(([k, n]) => (
+                <button key={k} onClick={() => setJob(k)} className="h-11 rounded-lg border text-sm font-bold" style={chip(job === k)}>{n}</button>
               ))}
             </div>
-            <p className="text-sm font-semibold">Customer supplies</p>
-            <div className="flex flex-wrap gap-2">
-              {([["", "Nothing"], ["both", "Oil + filter"], ["oil", "Oil only"], ["filter", "Filter only"]] as const).map(([k, n]) => (
-                <button key={k} onClick={() => setOwn(k)} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(own === k)}>{n}</button>
-              ))}
-            </div>
+            {job === "diagnostic" && <p className="text-sm text-[#4a5878]">$100 to find the problem. Any repair is quoted after.</p>}
+            {job !== "diagnostic" && (
+              <>
+                <p className="text-sm font-semibold">{job === "parts" ? "What do they need? ($50 visit + parts)" : "Add-ons"}</p>
+                <div className="flex flex-wrap gap-2">
+                  {ADDONS.map(([k, n]) => (
+                    <button key={k} onClick={() => setAddons((a) => a.includes(k) ? a.filter((x) => x !== k) : [...a, k])} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(addons.includes(k))}>{n}</button>
+                  ))}
+                </div>
+              </>
+            )}
+            {job === "oil_change" && (
+              <>
+                <p className="text-sm font-semibold">Customer supplies</p>
+                <div className="flex flex-wrap gap-2">
+                  {([["", "Nothing"], ["both", "Oil + filter"], ["oil", "Oil only"], ["filter", "Filter only"]] as const).map(([k, n]) => (
+                    <button key={k} onClick={() => setOwn(k)} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(own === k)}>{n}</button>
+                  ))}
+                </div>
+              </>
+            )}
           </section>
 
           {/* 4. Time */}
@@ -238,7 +255,7 @@ export default function NewBooking({ date: initialDate, onClose }: { date: strin
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
             <h3 className="font-extrabold text-lg">5. Price</h3>
             {!carReady ? <p className="text-sm text-[#4a5878]">Add the car to see the price.</p> : pricing || !quote ? (
-              <p className="text-sm text-[#4a5878]">Working out the price… (a car we&apos;ve never done takes up to 20 seconds the first time)</p>
+              <p className="text-sm text-[#4a5878]">Working out the price…{job === "oil_change" ? " (a car we've never done takes up to 20 seconds the first time)" : ""}</p>
             ) : quote.error ? <p className="text-sm text-red-700">{quote.error}</p> : (
               <div className="flex flex-col gap-1 text-[15px]">
                 {quote.spec && <p className="text-[#4a5878]">{quote.spec.grade} · {quote.spec.capacityL} L{quote.spec.filter ? ` · filter ${quote.spec.filter}` : ""}</p>}

@@ -7,7 +7,7 @@ type Job = {
   name: string; phone: string | null; address: string | null; car: string; engine: string | null;
   oil: { grade: string; litres: number; filter: string | null; spec: string | null } | null;
   lines: { label: string; amount: number }[]; total: number | null; profit: number | null;
-  notes: string | null; checks: string[]; imported: boolean;
+  notes: string | null; checks: string[]; imported: boolean; job?: string; addons?: string[];
 };
 type Day = {
   date: string; jobs: Job[]; timeOff: { id: string; starts_at: string; ends_at: string; reason: string | null }[];
@@ -161,6 +161,11 @@ export default function Calendar({ owner }: { owner: string }) {
                   </span>
                 </div>
                 <p className="font-bold text-[17px]">{j.name}{j.car ? ` · ${j.car}` : ""}{j.cars > 1 ? ` (${j.cars} cars)` : ""}</p>
+                {j.job && j.job !== "oil_change" && (
+                  <p className="text-[15px] font-semibold text-[#c98a00]">
+                    {j.job === "diagnostic" ? "Diagnostic" : `Parts visit: ${(j.addons ?? []).map((a) => ({ wipers: "wipers", cabin_filter: "cabin filter", engine_filter: "engine air filter", battery: "battery" } as Record<string, string>)[a] ?? a).join(", ")}`}
+                  </p>
+                )}
                 {j.oil && <p className="text-[15px] text-[#4a5878]">{j.oil.grade} · {j.oil.litres} L{j.oil.filter ? ` · filter ${j.oil.filter}` : ""}{j.oil.spec && !/^API/.test(j.oil.spec) ? ` · ${j.oil.spec}` : ""}</p>}
                 {j.address && <p className="text-[15px] text-[#4a5878]">{j.address}</p>}
                 {j.checks.length > 0 && <p className="text-[13px] font-semibold text-[#8a5a00] bg-[#fff6dd] rounded-lg px-2 py-1">{j.checks.join(" · ")}</p>}

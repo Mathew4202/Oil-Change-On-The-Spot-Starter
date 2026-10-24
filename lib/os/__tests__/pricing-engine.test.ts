@@ -86,3 +86,27 @@ test("standalone: diagnostic $100, battery $50 + battery, labour $100/h", () => 
   assert.equal(quoteStandalone({ kind: "battery", partRetail: 189.99 }).subtotal, 239.99);
   assert.equal(quoteStandalone({ kind: "labour", hours: 1.5 }).subtotal, 150);
 });
+
+import { quoteVisit } from "../pricing-engine.ts";
+
+test("parts visit: one $50 call-out for any number of parts", () => {
+  const q = quoteVisit({ job: "parts", items: [{ kind: "wipers", partCost: 22 }, { kind: "cabin_filter", partCost: 22 }] });
+  assert.deepEqual(q.lines.map((l) => [l.label, l.amount]), [["Mobile service call", 50], ["Wiper blades", 22], ["Cabin air filter", 22]]);
+  assert.equal(q.subtotal, 94);
+  assert.equal(q.total, 107.16);
+});
+
+test("battery only: $50 + battery", () => {
+  assert.equal(quoteVisit({ job: "parts", items: [{ kind: "battery", partCost: 200 }] }).subtotal, 250);
+});
+
+test("diagnostic visit: $100, plus travel when far", () => {
+  assert.equal(quoteVisit({ job: "diagnostic" }).subtotal, 100);
+  assert.equal(quoteVisit({ job: "diagnostic", distanceKm: 42 }).subtotal, 130);
+});
+
+test("visit profit counts the visit fee (parts margin not counted)", () => {
+  const q = quoteVisit({ job: "parts", items: [{ kind: "battery", partCost: 200 }] });
+  assert.equal(q.profit, 50); assert.equal(q.cost, 200);
+  assert.equal(quoteVisit({ job: "diagnostic" }).profit, 100);
+});

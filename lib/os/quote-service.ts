@@ -1,6 +1,6 @@
 // Loads what the pricing engine needs, looks up unknown cars automatically, and returns a quote.
 import { sbGet, sbInsert, enc } from "@/lib/os/db";
-import { quoteOilChange, DEFAULT_RULES, type VehicleClass, type Addon, type Quote } from "@/lib/os/pricing-engine";
+import { quoteOilChange, quoteVisit, DEFAULT_RULES, type VehicleClass, type Addon, type Quote, type JobType } from "@/lib/os/pricing-engine";
 import { lookupOilSpec } from "@/lib/os/spec-lookup";
 import { detectClassFromModel } from "@/data/vehicleClass";
 
@@ -13,6 +13,7 @@ const EURO = ["Volkswagen", "Audi", "Volvo", "Mercedes-Benz", "BMW", "Porsche"];
 export type QuoteRequest = {
   year: number; make: string; model: string; engine?: string | null; vehicleClass?: VehicleClass | null;
   addons?: Addon["kind"][]; own?: "both" | "oil" | "filter" | null; km?: number | null;
+  job?: JobType;   // oil_change (default), parts (no oil change) or diagnostic
   cars?: number;   // same car, several vehicles (e.g. a fleet visit): everything but travel is per car
 };
 
@@ -68,6 +69,16 @@ async function filterCostFor(part: string | null): Promise<number | null> {
 }
 
 export async function buildQuote(req: QuoteRequest) {
+  if (req.job && req.job !== "oil_change") {
+    // No oil change: no need to look up the oil (saves the lookup cost)
+    const rules = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value");
+    const r = Object.fromEntries(rules.map((x) => [x.key, Number(x.value)]));
+    const items: Addon[] = req.job === "parts" ? (req.addons ?? []).map((k) => ({ kind: k, partCost: r[`addon_part_${k}`] ?? 0 })) : [];
+    const quote = quoteVisit({ job: req.job, items, distanceKm: req.km ?? null,
+      rules: { ...DEFAULT_RULES, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30 } });
+    const vehicleClass = (req.vehicleClass || detectClassFromModel(req.model) || "Sedan") as VehicleClass;
+    return { quote, spec: null as Spec | null, engines: [] as string[], lookedUp: false, vehicleClass, rules: r };
+  }
   const [{ rows, lookedUp }, oil, rules] = await Promise.all([
     findSpecs(req.year, req.make, req.model, req.engine),
     sbGet<{ grade: string; cost_per_l: number }>("oil_prices?select=grade,cost_per_l&active=is.true"),

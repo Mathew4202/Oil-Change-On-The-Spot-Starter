@@ -4,7 +4,7 @@ import { slotsForDay, halifaxToDate, DEFAULT_SLOT_RULES, type Hours, type Busy }
 
 const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 
-export async function dayAvailability(date: string, opts: { cars?: number; filterInStock?: boolean; now?: Date } = {}) {
+export async function dayAvailability(date: string, opts: { cars?: number; filterInStock?: boolean; now?: Date; minutes?: number } = {}) {
   const from = halifaxToDate(date, 0).toISOString();
   const to = halifaxToDate(date, 26 * 60).toISOString();   // covers late jobs running past midnight
   const [hours, bookings, off, closed, rules] = await Promise.all([
@@ -22,10 +22,17 @@ export async function dayAvailability(date: string, opts: { cars?: number; filte
     date, now: opts.now ?? new Date(), hours: h.length ? h : undefined, busy,
     partsClosedDates: closed.map((c) => c.day), needsPartsRun: !opts.filterInStock, cars: opts.cars,
     rules: {
-      jobMinutes: r.job_minutes ?? DEFAULT_SLOT_RULES.jobMinutes,
+      jobMinutes: opts.minutes ?? r.job_minutes ?? DEFAULT_SLOT_RULES.jobMinutes,
       stepMinutes: r.slot_step_minutes ?? DEFAULT_SLOT_RULES.stepMinutes,
       minNoticeMinutes: r.min_notice_minutes ?? DEFAULT_SLOT_RULES.minNoticeMinutes,
       maxDaysAhead: r.max_days_ahead ?? DEFAULT_SLOT_RULES.maxDaysAhead,
     },
   });
+}
+
+/** Minutes in the calendar per car for each job type (settings can override). */
+export function jobMinutes(job: string | undefined, r: Record<string, number>): number {
+  if (job === "parts") return r.job_minutes_parts ?? 45;
+  if (job === "diagnostic") return r.job_minutes_diagnostic ?? 60;
+  return r.job_minutes ?? 75;
 }

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 type Row = {
   id: string; starts_at: string; ends_at: string; status: string; pay_mode: string; address: string | null;
   quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; profit?: number | null } | null; needs_review: string[] | null; notes: string | null; cars: number;
-  services: { own?: "both" | "oil" | "filter" | null; addons?: string[] } | null; source: string | null;
+  services: { job?: string; own?: "both" | "oil" | "filter" | null; addons?: string[] } | null; source: string | null;
   customers: { first_name: string | null; last_name: string | null; phone: string | null; address: string | null } | null;
   vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null;
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec: string | null } | null } | null;
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const filters: Record<string, number> = {};
   for (const r of rows) {
     const s = r.vehicles?.vehicle_specs;
-    if (!s || r.services?.own === "both") continue;
+    if (!s || r.services?.own === "both" || (r.services?.job && r.services.job !== "oil_change")) continue;
     if (r.services?.own !== "oil") oil[s.oil_grade] = Math.round(((oil[s.oil_grade] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
     if (s.oil_filter_part && r.services?.own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
   }
@@ -51,7 +51,8 @@ export async function GET(req: NextRequest) {
       id: r.id, start: r.starts_at, end: r.ends_at, status: r.status, payMode: r.pay_mode, cars: r.cars,
       name, phone: r.customers?.phone ?? null, address: r.address || r.customers?.address || null, car,
       engine: r.vehicles?.engine ?? null,
-      oil: s ? { grade: s.oil_grade, litres: Number(s.capacity_l), filter: s.oil_filter_part, spec: s.oil_spec } : null,
+      job: r.services?.job ?? "oil_change", addons: r.services?.addons ?? [],
+      oil: s && (!r.services?.job || r.services.job === "oil_change") ? { grade: s.oil_grade, litres: Number(s.capacity_l), filter: s.oil_filter_part, spec: s.oil_spec } : null,
       lines: r.quote_breakdown?.lines ?? [], total: r.quoted_total != null ? Number(r.quoted_total) : null,
       profit: r.quote_breakdown?.profit ?? null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import",
     };

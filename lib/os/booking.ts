@@ -2,8 +2,8 @@
 import { z } from "zod";
 import { sbGet, sbInsert, sbHeaders, enc } from "@/lib/os/db";
 import { buildQuote, filterInStock } from "@/lib/os/quote-service";
-import { dayAvailability } from "@/lib/os/calendar";
-import { halifaxDate, DEFAULT_SLOT_RULES, label } from "@/lib/os/slots";
+import { dayAvailability, jobMinutes as minutesFor } from "@/lib/os/calendar";
+import { halifaxDate, label } from "@/lib/os/slots";
 
 export const BookingBody = z.object({
   firstName: z.string().trim().min(1).max(60),
@@ -12,6 +12,7 @@ export const BookingBody = z.object({
   email: z.string().trim().email().optional().or(z.literal("")),
   address: z.string().trim().min(4).max(200),
   car: z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1), model: z.string().trim().min(1), engine: z.string().trim().optional() }),
+  job: z.enum(["oil_change", "parts", "diagnostic"]).optional().default("oil_change"),
   addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery"])).optional().default([]),
   own: z.enum(["both", "oil", "filter"]).nullable().optional(),
   start: z.string().datetime(),
@@ -21,6 +22,7 @@ export const BookingBody = z.object({
   km: z.number().min(0).max(300).optional(),
 });
 export type BookingInput = z.infer<typeof BookingBody>;
+export const needsSomething = (b: Pick<BookingInput, "job" | "addons">) => b.job !== "parts" || b.addons.length > 0;
 
 export function e164(phone: string) {
   const d = phone.replace(/\D/g, "");
@@ -46,7 +48,8 @@ export async function createBooking(b: BookingInput, opts: {
   customerId?: string | null;    // owners picked an existing customer: update them instead of making a duplicate
 }): Promise<BookingResult> {
   // 1) Price, worked out on the server
-  const { quote, spec, rules } = await buildQuote({ ...b.car, addons: b.addons, own: b.own ?? null, km: b.km ?? null, cars: b.cars });
+  if (!needsSomething(b)) return { ok: false, status: 400, error: "Pick at least one part for a parts visit." };
+  const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: b.job === "oil_change" ? b.own ?? null : null, km: b.km ?? null, cars: b.cars });
   if (opts.priceOverride != null && opts.priceOverride >= 0) {
     const r2 = (x: number) => Math.round(x * 100) / 100;
     const sub = r2(opts.priceOverride);
@@ -60,12 +63,14 @@ export async function createBooking(b: BookingInput, opts: {
   // 2) Time: customers must pick an open slot; owners can pick any time that isn't taken
   const start = new Date(b.start);
   const date = halifaxDate(start);
-  const jobMinutes = (rules.job_minutes ?? DEFAULT_SLOT_RULES.jobMinutes) * b.cars;
+  const perCar = minutesFor(b.job, rules);
+  const jobMinutes = perCar * b.cars;
   let slotStart = start.toISOString();
   let slotEnd = new Date(start.getTime() + jobMinutes * 60000).toISOString();
   let when = label(halifaxMinutes(start));
   if (!opts.anyTime) {
-    const day = await dayAvailability(date, { cars: b.cars, filterInStock: await filterInStock(spec?.oil_filter_part) });
+    const day = await dayAvailability(date, { cars: b.cars, minutes: perCar,
+      filterInStock: b.job === "diagnostic" ? true : b.job === "parts" ? false : await filterInStock(spec?.oil_filter_part) });
     const slot = day.slots.find((s) => s.start === start.toISOString());
     if (!slot) return { ok: false, status: 409, error: "Sorry, that time was just taken. Please pick another time.", slots: day.slots };
     slotStart = slot.start; slotEnd = slot.end; when = slot.label;
@@ -117,7 +122,7 @@ export async function createBooking(b: BookingInput, opts: {
     customer_id: customer.id, vehicle_id: vehicle.id, starts_at: slotStart, ends_at: slotEnd, address: b.address,
     distance_km: b.km ?? null, status: "confirmed", pay_mode: b.payMode,
     quoted_total: quote.total, quote_breakdown: quote, cars: b.cars,
-    services: { addons: b.addons, own: b.own ?? null, bookedBy: opts.bookedBy ?? null }, needs_review: quote.needsReview,
+    services: { job: b.job, addons: b.addons, own: b.job === "oil_change" ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null }, needs_review: quote.needsReview,
     source: opts.source, notes: b.notes || null,
   });
   if (!bk.ok) {
@@ -132,7 +137,7 @@ export async function createBooking(b: BookingInput, opts: {
   try {
     await sbInsert("notifications", {
       kind: "new_booking", booking_id: bk.data!.id,
-      title: `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}`,
+      title: `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : ""}`,
       body: `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? "paid online" : "pay after"}`,
     });
   } catch (e) { console.error("alert failed", e); }
