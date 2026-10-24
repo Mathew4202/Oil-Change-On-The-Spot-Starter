@@ -5,13 +5,13 @@ import { slotsForDay, halifaxToDate, DEFAULT_SLOT_RULES, type Hours, type Busy }
 
 const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 
-export async function dayAvailability(date: string, opts: { cars?: number; filterInStock?: boolean; now?: Date; minutes?: number } = {}) {
+export async function dayAvailability(date: string, opts: { cars?: number; filterInStock?: boolean; now?: Date; minutes?: number; ignoreBookingId?: string } = {}) {
   const from = halifaxToDate(date, 0).toISOString();
   const to = halifaxToDate(date, 26 * 60).toISOString();   // covers late jobs running past midnight
   const [hours, bookings, off, closed, rules] = await Promise.all([
     sbGet<{ dow: number; first_start: string; last_start: string }>("business_hours?select=dow,first_start,last_start"),
     sbGet<{ starts_at: string; ends_at: string }>(
-      `bookings?select=starts_at,ends_at&status=in.(requested,confirmed,in_progress)&starts_at=lt.${to}&ends_at=gt.${from}`),
+      `bookings?select=starts_at,ends_at&status=in.(requested,confirmed,in_progress)&starts_at=lt.${to}&ends_at=gt.${from}${opts.ignoreBookingId ? `&id=neq.${opts.ignoreBookingId}` : ""}`),
     sbGet<{ starts_at: string; ends_at: string }>(`time_off?select=starts_at,ends_at&starts_at=lt.${to}&ends_at=gt.${from}`),
     sbGet<{ day: string }>(`parts_closed_days?select=day&day=eq.${date}`),
     sbGet<{ key: string; value: number }>("pricing_rules?select=key,value"),

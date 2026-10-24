@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import NewBooking from "./NewBooking";
 import PushToggle from "./PushToggle";
 import JobSheet from "./JobSheet";
+import ChangeBooking from "./ChangeBooking";
 
 type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
@@ -41,6 +42,7 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
   const [blocking, setBlocking] = useState(false);
   const [booking, setBooking] = useState(false);
   const [jobOpen, setJobOpen] = useState<string | null>(null);
+  const [changing, setChanging] = useState<{ id: string; name: string } | null>(null);
 
   const load = useCallback(async (d: string) => {
     setError("");
@@ -186,6 +188,9 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
                   {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>Est. profit</span><span>{money(j.profit)}</span></div>}
                   {j.notes && <p className="text-[#4a5878] mt-1">Note: {j.notes}</p>}
                   {j.imported && <p className="text-xs text-[#4a5878] mt-1">Imported from Square</p>}
+                  {(j.status === "confirmed" || j.status === "requested") && (
+                    <button onClick={() => setChanging({ id: j.id, name: j.name.split(" ")[0] })} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Move or cancel</button>
+                  )}
                 </div>
               )}
 
@@ -258,7 +263,7 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
       )}
 
       {/* New booking (phone customers) */}
-      {!booking && !showAlerts && !blocking && !jobOpen && (
+      {!booking && !showAlerts && !blocking && !jobOpen && !changing && (
         <button onClick={() => setBooking(true)} aria-label="New booking"
           className="fixed z-20 right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] h-14 px-5 rounded-full shadow-lg font-extrabold text-base flex items-center gap-2"
           style={{ background: GOLD, color: NAVY }}>
@@ -267,6 +272,8 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
       )}
       {booking && <NewBooking date={date} onClose={(d) => { setBooking(false); if (d) { if (d === date) load(date); else setDate(d); loadAlerts(); } }} />}
 
+      {changing && <ChangeBooking bookingId={changing.id} name={changing.name} date={date}
+        onClose={(nd) => { setChanging(null); if (nd === undefined) return; if (nd && nd !== date) setDate(nd); else load(date); loadAlerts(); }} />}
       {jobOpen && <JobSheet bookingId={jobOpen} owner={owner} onClose={(changed) => { setJobOpen(null); if (changed) load(date); }} />}
 
       {blocking && <BlockTime date={date} onClose={(saved) => { setBlocking(false); if (saved) load(date); }} />}
