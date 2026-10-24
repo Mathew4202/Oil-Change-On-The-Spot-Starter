@@ -29,3 +29,18 @@ export async function sbInsert<T = any>(table: string, row: object, opts: { upse
   if (!res.ok) return { ok: false, status: res.status, error: body };
   return { ok: true, status: res.status, data: Array.isArray(body) ? body[0] : body };
 }
+
+export async function sbPatch(table: string, filter: string, patch: object): Promise<boolean> {
+  const res = await fetch(`${URL_()}/rest/v1/${table}?${filter}`, {
+    method: "PATCH", headers: sbHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }), body: JSON.stringify(patch),
+  });
+  return res.ok;
+}
+
+export async function sbRpc<T = unknown>(fn: string, args: object = {}): Promise<T> {
+  const res = await fetch(`${URL_()}/rest/v1/rpc/${fn}`, {
+    method: "POST", headers: sbHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(args),
+  });
+  if (!res.ok) throw new Error(`rpc ${fn}: ${res.status} ${await res.text()}`);
+  return res.json();
+}

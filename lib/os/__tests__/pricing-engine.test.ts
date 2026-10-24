@@ -136,3 +136,11 @@ test("profit includes tire change and add-on labour, not part prices", () => {
     addons: [{ kind: "tires", partCost: 0 }, { kind: "wipers", partCost: 22 }, { kind: "coolant", partCost: 25 }] });
   assert.equal(q.profit, 58.75 + 80 + 15);   // oil + tire change + wiper labour; wiper blades and coolant not counted
 });
+
+import { receiptHtml } from "../receipt.ts";
+test("receipt shows HST number, lines, total, payment and escapes names", () => {
+  const h = receiptHtml({ receiptNo: 1001, date: "Oct 28, 2026", customer: "<b>Kim</b> Smith", car: "2019 Honda Civic",
+    lines: [{ label: "Full synthetic oil change", amount: 90 }, { label: "Oil + tire change discount", amount: -10 }],
+    subtotal: 80, hst: 11.2, total: 91.2, paidWith: "etransfer", km: 84210, nextDueKm: 92210, nextDueDate: "Apr 28, 2027" });
+  for (const want of ["RECEIPT #1001", "780152179RC0001", "$91.20", "E-transfer", "−$10.00", "92,210 km", "Thanks, &lt;b&gt;Kim&lt;/b&gt;."]) assert.ok(h.includes(want), want);
+});

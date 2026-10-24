@@ -2,9 +2,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import NewBooking from "./NewBooking";
 import PushToggle from "./PushToggle";
+import JobSheet from "./JobSheet";
 
 type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
+  paid?: boolean; receiptNo?: number | null; finalTotal?: number | null;
   name: string; phone: string | null; address: string | null; car: string; engine: string | null;
   oil: { grade: string; litres: number; filter: string | null; spec: string | null } | null;
   lines: { label: string; amount: number }[]; total: number | null; profit: number | null;
@@ -38,6 +40,7 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
   const [showAlerts, setShowAlerts] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const [booking, setBooking] = useState(false);
+  const [jobOpen, setJobOpen] = useState<string | null>(null);
 
   const load = useCallback(async (d: string) => {
     setError("");
@@ -158,8 +161,8 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-2xl font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>{time(j.start)}</p>
                   <span className="text-[13px] font-bold px-2.5 py-1 rounded-full"
-                    style={paid ? { background: "#dff3e6", color: "#1d6b3a" } : { background: "#eef1f6", color: INK }}>
-                    {j.status === "done" ? "Done" : paid ? "Paid online" : "Pay after"}
+                    style={j.status === "done" && !j.paid ? { background: "#fde2e1", color: "#9b1c1c" } : j.status === "in_progress" ? { background: "#fff6dd", color: "#8a5a00" } : paid || j.paid ? { background: "#dff3e6", color: "#1d6b3a" } : { background: "#eef1f6", color: INK }}>
+                    {j.status === "done" ? (j.paid ? "Done · paid" : "Done · not paid") : j.status === "in_progress" ? "In progress" : paid ? "Paid online" : "Pay after"}
                   </span>
                 </div>
                 <p className="font-bold text-[17px]">{j.name}{j.car ? ` · ${j.car}` : ""}{j.cars > 1 ? ` (${j.cars} cars)` : ""}</p>
@@ -192,6 +195,19 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
                 <a href={j.phone ? `tel:${j.phone}` : undefined} className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.phone}>Call</a>
                 <a href={j.phone ? `sms:${j.phone}` : undefined} className="h-11 rounded-lg flex items-center justify-center font-bold text-sm text-white aria-disabled:opacity-40" style={{ background: NAVY }} aria-disabled={!j.phone}>Text</a>
               </div>
+              {!j.imported && (
+                j.status === "confirmed" || j.status === "requested" ? (
+                  <button onClick={async () => { await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", bookingId: j.id }) }); setJobOpen(j.id); load(date); }}
+                    className="h-12 rounded-xl font-extrabold text-base" style={{ background: GOLD, color: NAVY }}>Start job</button>
+                ) : j.status === "in_progress" ? (
+                  <button onClick={() => setJobOpen(j.id)} className="h-12 rounded-xl font-extrabold text-base" style={{ background: GOLD, color: NAVY }}>Finish job</button>
+                ) : j.status === "done" ? (
+                  <button onClick={() => setJobOpen(j.id)} className="h-12 rounded-xl font-bold text-base border"
+                    style={j.paid ? { borderColor: "#c8d0e0" } : { background: GOLD, color: NAVY, borderColor: GOLD }}>
+                    {j.paid ? `Receipt #${j.receiptNo ?? ""}` : `Mark paid${j.finalTotal != null ? ` · ${money(j.finalTotal)}` : ""}`}
+                  </button>
+                ) : null
+              )}
             </article>
           );
         })(job!))}
@@ -242,7 +258,7 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
       )}
 
       {/* New booking (phone customers) */}
-      {!booking && !showAlerts && !blocking && (
+      {!booking && !showAlerts && !blocking && !jobOpen && (
         <button onClick={() => setBooking(true)} aria-label="New booking"
           className="fixed z-20 right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] h-14 px-5 rounded-full shadow-lg font-extrabold text-base flex items-center gap-2"
           style={{ background: GOLD, color: NAVY }}>
@@ -250,6 +266,8 @@ export default function Calendar({ owner, initialDate }: { owner: string; initia
         </button>
       )}
       {booking && <NewBooking date={date} onClose={(d) => { setBooking(false); if (d) { if (d === date) load(date); else setDate(d); loadAlerts(); } }} />}
+
+      {jobOpen && <JobSheet bookingId={jobOpen} owner={owner} onClose={(changed) => { setJobOpen(null); if (changed) load(date); }} />}
 
       {blocking && <BlockTime date={date} onClose={(saved) => { setBlocking(false); if (saved) load(date); }} />}
     </div>

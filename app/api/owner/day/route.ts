@@ -7,7 +7,8 @@ import { halifaxToDate, halifaxDate } from "@/lib/os/slots";
 export const dynamic = "force-dynamic";
 
 type Row = {
-  id: string; starts_at: string; ends_at: string; status: string; pay_mode: string; address: string | null;
+  id: string; starts_at: string; ends_at: string; status: string; pay_mode: string; address: string | null; paid_at: string | null;
+  jobs: { receipt_no: number | null; total: number | null }[] | null;
   quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; profit?: number | null } | null; needs_review: string[] | null; notes: string | null; cars: number;
   services: { job?: string; own?: "both" | "oil" | "filter" | null; addons?: string[] } | null; source: string | null;
   customers: { first_name: string | null; last_name: string | null; phone: string | null; address: string | null } | null;
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
   const from = halifaxToDate(date, 0).toISOString(), to = halifaxToDate(date, 24 * 60).toISOString();
 
   const [rows, off] = await Promise.all([
-    sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,quoted_total,quote_breakdown,needs_review,notes,cars,services,source,` +
+    sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,` +
       `customers(first_name,last_name,phone,address),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec))` +
       `&starts_at=gte.${from}&starts_at=lt.${to}&status=neq.cancelled&order=starts_at`),
     sbGet<{ id: string; starts_at: string; ends_at: string; reason: string | null }>(
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
     const car = r.vehicles ? [r.vehicles.year, r.vehicles.make, r.vehicles.model].filter(Boolean).join(" ") : "";
     return {
       id: r.id, start: r.starts_at, end: r.ends_at, status: r.status, payMode: r.pay_mode, cars: r.cars,
+      paid: !!r.paid_at, receiptNo: r.jobs?.[0]?.receipt_no ?? null, finalTotal: r.jobs?.[0]?.total != null ? Number(r.jobs[0].total) : null,
       name, phone: r.customers?.phone ?? null, address: r.address || r.customers?.address || null, car,
       engine: r.vehicles?.engine ?? null,
       job: r.services?.job ?? "oil_change", addons: r.services?.addons ?? [],
