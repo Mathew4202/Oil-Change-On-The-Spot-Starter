@@ -14,3 +14,18 @@ export async function sbGet<T = any>(path: string): Promise<T[]> {
 }
 
 export const enc = encodeURIComponent;
+
+export async function sbInsert<T = any>(table: string, row: object, opts: { upsertOn?: string } = {}): Promise<{ ok: boolean; status: number; data?: T; error?: any }> {
+  const q = opts.upsertOn ? `?on_conflict=${opts.upsertOn}` : "";
+  const res = await fetch(`${URL_()}/rest/v1/${table}${q}`, {
+    method: "POST",
+    headers: sbHeaders({
+      "Content-Type": "application/json",
+      Prefer: `return=representation${opts.upsertOn ? ",resolution=merge-duplicates" : ""}`,
+    }),
+    body: JSON.stringify(row),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) return { ok: false, status: res.status, error: body };
+  return { ok: true, status: res.status, data: Array.isArray(body) ? body[0] : body };
+}
