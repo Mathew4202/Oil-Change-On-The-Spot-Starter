@@ -2,6 +2,7 @@
 // Customer booking: car → services → time → details → confirm. Prices and times come from OCOTS OS.
 import { useEffect, useMemo, useState } from "react";
 import AddressField, { type Place } from "@/components/AddressField";
+import type { Profile } from "@/lib/os/customer-account";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type JobId = "oil_change" | "seasonal" | "tires" | "parts" | "diagnostic";
@@ -64,15 +65,23 @@ export default function BookingFlow() {
   // "Save my info on this phone" (optional). Text-code accounts come with texting.
   const [saved, setSaved] = useState<Saved | null>(null);
   const [saveState, setSaveState] = useState<"ask" | "saved" | "declined">("ask");
+  const [account, setAccount] = useState<Profile | null>(null);   // signed in with a text code (works on any phone)
   const [manualEngine, setManualEngine] = useState("");
 
   const years = useMemo(() => { const y = new Date().getFullYear() + 1; return Array.from({ length: y - 1989 }, (_, i) => String(y - i)); }, []);
   useEffect(() => { fetch("/api/makes").then((r) => r.json()).then((d) => setMakes(d.makes || [])).catch(() => {}); }, []);
   // Returning customer on this phone: fill in their details
+  function fillInfo(v: Saved) { setSaved(v); setName(v.name); setPhone(v.phone); setEmail(v.email || ""); setAddress(v.address); }
   useEffect(() => {
-    const v = readSaved(); if (!v) return;
-    setSaved(v); setName(v.name); setPhone(v.phone); setEmail(v.email || ""); setAddress(v.address);
-  }, []);
+    const v = readSaved(); if (v) fillInfo(v);
+    // signed in with a text code before: their account wins (it's always up to date)
+    fetch("/api/os/account").then((r) => r.json()).then((j) => { if (j.signedIn && j.profile) signedIn(j.profile); }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  function signedIn(p: Profile) {
+    setAccount(p);
+    fillInfo({ name: p.name, phone: p.phone, email: p.email, address: p.address, cars: p.cars });
+    if (p.cars[0] && !year) pickSavedCar(p.cars[0]);
+  }
   function pickSavedCar(c: SavedCar) { setYear(c.year); setMake(c.make); setModel(c.model); setEngine(c.engine || ""); }
   function saveHere() {
     const car: SavedCar = { year, make, model, engine: engine === "unsure" ? "" : engine };
@@ -80,7 +89,10 @@ export default function BookingFlow() {
     const v: Saved = { name: name.trim(), phone: phone.trim(), email: email.trim(), address: address.trim(), cars: [car, ...others].slice(0, 5) };
     writeSaved(v); setSaved(v); setSaveState("saved");
   }
-  function forget() { writeSaved(null); setSaved(null); setName(""); setPhone(""); setEmail(""); setAddress(""); }
+  function forget() {
+    writeSaved(null); setSaved(null); setName(""); setPhone(""); setEmail(""); setAddress("");
+    if (account) { setAccount(null); fetch("/api/os/account", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "signout" }) }).catch(() => {}); }
+  }
   useEffect(() => {
     setModels([]); if (!make || !year) return;
     fetch(`/api/models?make=${encodeURIComponent(make)}&year=${year}`).then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {});
@@ -199,9 +211,15 @@ export default function BookingFlow() {
                         className="h-11 px-4 rounded-full border-2 font-bold text-[15px]" style={{ borderColor: NAVY, background: on ? NAVY : "#fff", color: on ? "#fff" : NAVY }}>{c.year} {c.make} {c.model}</button>;
                     })}
                   </div>
-                  <p className="text-sm text-[#4a5878]">Tap your car, or pick a different one below. Not {saved.name.split(" ")[0]}? <button onClick={forget} className="underline font-semibold">Clear saved info</button></p>
+                  {account?.upcoming.map((u) => (
+                    <p key={u.when + u.car} className="text-[15px] rounded-xl bg-white px-3 py-2">
+                      <strong>Booked: {u.when}</strong>{u.car ? ` · ${u.car}` : ""}{u.manage && <> · <a href={u.manage} className="underline font-semibold">Change or cancel</a></>}
+                    </p>
+                  ))}
+                  <p className="text-sm text-[#4a5878]">Tap your car, or pick a different one below. Not {saved.name.split(" ")[0]}? <button onClick={forget} className="underline font-semibold">{account ? "Sign out" : "Clear saved info"}</button></p>
                 </div>
               )}
+              {!saved && <SignIn onDone={signedIn} />}
               <h1 className="text-[22px] font-bold">Which car is it?</h1>
               <label className={labelCls}>Year
                 <select value={year} onChange={(e) => { setYear(e.target.value); setModel(""); setEngine(""); setManualEngine(""); }} className={input} style={{ borderColor: LINE }}>
@@ -374,10 +392,11 @@ export default function BookingFlow() {
               <h1 className="text-[34px] font-extrabold leading-none" style={{ fontFamily: "var(--font-condensed)" }}>You&apos;re booked.</h1>
               <p className="text-[17px] leading-relaxed">{dayParts(done.date).long} at {done.when}. Total {money(done.total)}, paid after the job.</p>
               <p className="text-[15px] text-[#4a5878]">Need to change it? Call or text <a className="font-bold underline" href="tel:7826408341">782-640-8341</a>.</p>
-              {saveState === "ask" && !(saved && saved.cars.some((c) => c.year === year && c.make === make && c.model === model)) && (
+              {account && <p className="rounded-xl bg-[#eef1f6] p-4 text-[15px]">It&apos;s in your account. Next time your cars and address fill in on any phone.</p>}
+              {!account && saveState === "ask" && !(saved && saved.cars.some((c) => c.year === year && c.make === make && c.model === model)) && (
                 <div className="rounded-2xl border-2 p-4 flex flex-col gap-3" style={{ borderColor: NAVY }}>
                   <p className="font-bold text-[18px]">Save your info for next time?</p>
-                  <p className="text-[15px] leading-relaxed text-[#4a5878]">Next time your car, address and number are already filled in. It&apos;s saved only on this phone, and you can clear it any time.</p>
+                  <p className="text-[15px] leading-relaxed text-[#4a5878]">Next time your car, address and number are already filled in. It&apos;s saved only on this phone, and you can clear it any time. On another phone, tap &quot;Booked with us before?&quot; and we&apos;ll text you a code.</p>
                   <button onClick={saveHere} className="h-[50px] rounded-xl text-white text-[17px] font-bold" style={{ background: NAVY }}>Save on this phone</button>
                   <button onClick={() => setSaveState("declined")} className="h-11 text-base font-semibold text-[#4a5878] underline">No thanks</button>
                 </div>
@@ -406,6 +425,58 @@ export default function BookingFlow() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** "Booked with us before?" Sign in with a code we text to their phone. */
+function SignIn({ onDone }: { onDone: (p: Profile) => void }) {
+  const [open, setOpen] = useState(false); const [phone, setPhone] = useState(""); const [code, setCode] = useState("");
+  const [sent, setSent] = useState(false); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState("");
+  const call = (body: object) => fetch("/api/os/account", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    .then(async (r) => ({ ok: r.ok, ...(await r.json().catch(() => ({}))) })).catch(() => ({ ok: false, error: "No connection. Try again." }));
+  async function send() {
+    setBusy(true); setMsg("");
+    const j = await call({ action: "send", phone }); setBusy(false);
+    if (!j.ok) return setMsg(j.error || "Couldn't send a code.");
+    setSent(true); setCode("");
+  }
+  async function verify() {
+    setBusy(true); setMsg("");
+    const j = await call({ action: "verify", phone, code }); setBusy(false);
+    if (!j.ok || !j.profile) return setMsg(j.error || "That didn't work.");
+    onDone(j.profile);
+  }
+  const field = "h-[52px] rounded-xl border px-4 text-[17px] w-full bg-white";
+  if (!open) return (
+    <button onClick={() => setOpen(true)} className="rounded-2xl border p-4 text-left flex items-center justify-between gap-3" style={{ borderColor: "#c8d0e0" }}>
+      <span><span className="block font-bold text-[17px]">Booked with us before?</span><span className="block text-[15px] text-[#4a5878]">Get your cars and address with a code we text you.</span></span>
+      <span aria-hidden className="text-2xl font-bold">›</span>
+    </button>
+  );
+  return (
+    <div className="rounded-2xl border-2 p-4 flex flex-col gap-3" style={{ borderColor: "#0d1b3e" }}>
+      <p className="font-bold text-[17px]">{sent ? "Enter the code we texted you" : "Your mobile number"}</p>
+      {!sent ? (
+        <>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" placeholder="902-555-0123" className={field} style={{ borderColor: "#c8d0e0" }} aria-label="Mobile number" />
+          <button onClick={send} disabled={busy || phone.replace(/\D/g, "").length < 10} className="h-[50px] rounded-xl text-white text-[17px] font-bold disabled:opacity-50" style={{ background: "#0d1b3e" }}>{busy ? "Sending…" : "Text me a code"}</button>
+        </>
+      ) : (
+        <>
+          <p className="text-[15px] text-[#4a5878]">If {phone} has booked with us, a 6-digit code is on its way.</p>
+          <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="123456"
+            className={`${field} tracking-[0.4em] font-bold text-center`} style={{ borderColor: "#c8d0e0" }} aria-label="6-digit code" />
+          <button onClick={verify} disabled={busy || code.length !== 6} className="h-[50px] rounded-xl text-white text-[17px] font-bold disabled:opacity-50" style={{ background: "#0d1b3e" }}>{busy ? "Checking…" : "Sign in"}</button>
+          <div className="flex justify-between text-sm">
+            <button onClick={send} disabled={busy} className="underline font-semibold">Send a new code</button>
+            <button onClick={() => { setSent(false); setMsg(""); }} className="underline font-semibold">Different number</button>
+          </div>
+          <p className="text-xs text-[#4a5878]">No text after a minute? You might not be on file yet, so just book below. If you replied STOP to our texts before, text START to 782-640-8341 first.</p>
+        </>
+      )}
+      {msg && <p className="text-sm font-semibold text-[#9b1c1c]" role="alert">{msg}</p>}
+      <button onClick={() => setOpen(false)} className="self-start text-sm underline text-[#4a5878]">Cancel</button>
     </div>
   );
 }
