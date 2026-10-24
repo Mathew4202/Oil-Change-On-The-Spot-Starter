@@ -11,6 +11,7 @@ const Check = z.object({ status: z.enum(["ok", "soon", "now"]), note: z.string()
 const Finish = z.object({
   action: z.literal("finish"), bookingId: z.string().uuid(),
   km: z.number().int().min(0).max(2_000_000).nullable().optional(),
+  vin: z.string().max(25).nullable().optional(),
   oilGrade: z.string().max(20).nullable().optional(), oilLitres: z.number().min(0).max(40).nullable().optional(),
   filterPart: z.string().max(20).nullable().optional(),
   inspection: z.record(z.string(), Check).optional(),

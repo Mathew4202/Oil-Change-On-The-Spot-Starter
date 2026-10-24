@@ -141,6 +141,7 @@ import { receiptHtml } from "../receipt.ts";
 test("receipt shows HST number, lines, total, payment and escapes names", () => {
   const h = receiptHtml({ receiptNo: 1001, date: "Oct 28, 2026", customer: "<b>Kim</b> Smith", car: "2019 Honda Civic",
     lines: [{ label: "Full synthetic oil change", amount: 90 }, { label: "Oil + tire change discount", amount: -10 }],
-    subtotal: 80, hst: 11.2, total: 91.2, paidWith: "etransfer", km: 84210, nextDueKm: 92210, nextDueDate: "Apr 28, 2027" });
-  for (const want of ["RECEIPT #1001", "780152179RC0001", "$91.20", "E-transfer", "−$10.00", "92,210 km", "Thanks, &lt;b&gt;Kim&lt;/b&gt;."]) assert.ok(h.includes(want), want);
+    subtotal: 80, hst: 11.2, total: 91.2, paidWith: "etransfer", km: 84210, nextDueKm: 92210, nextDueDate: "Apr 28, 2027",
+    vin: "2HGFC2F59KH512345", filter: "NAPA ProFormer 27356", logoUrl: "https://x/email-logo.png" });
+  for (const want of ["RECEIPT", "#1001", "780152179RC0001", "$91.20", "E-transfer", "−$10.00", "92,210 km", "Thanks, &lt;b&gt;Kim&lt;/b&gt;.", "2HGFC2F59KH512345", "NAPA ProFormer 27356", "email-logo.png"]) assert.ok(h.includes(want), want);
 });

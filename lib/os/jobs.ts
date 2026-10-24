@@ -15,7 +15,7 @@ export type JobContext = {
     services: { job?: string; addons?: string[]; own?: string | null } | null; cars: number; notes: string | null; paid_at: string | null;
     customer_id: string | null; vehicle_id: string | null };
   customer: { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; review_asked_at: string | null } | null;
-  vehicle: { id: string; year: number | null; make: string | null; model: string | null; engine: string | null; last_km: number | null;
+  vehicle: { id: string; year: number | null; make: string | null; model: string | null; engine: string | null; last_km: number | null; vin: string | null;
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null } | null } | null;
   job: Record<string, unknown> | null;
 };
@@ -26,7 +26,7 @@ export async function jobContext(bookingId: string): Promise<JobContext | null> 
   if (!b) return null;
   const [[customer], [vehicle], [job]] = await Promise.all([
     b.customer_id ? sbGet<NonNullable<JobContext["customer"]>>(`customers?select=id,first_name,last_name,phone,email,review_asked_at&id=eq.${b.customer_id}`) : Promise.resolve([null]),
-    b.vehicle_id ? sbGet<NonNullable<JobContext["vehicle"]>>(`vehicles?select=id,year,make,model,engine,last_km,vehicle_specs(oil_grade,capacity_l,oil_filter_part)&id=eq.${b.vehicle_id}`) : Promise.resolve([null]),
+    b.vehicle_id ? sbGet<NonNullable<JobContext["vehicle"]>>(`vehicles?select=id,year,make,model,engine,last_km,vin,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec)&id=eq.${b.vehicle_id}`) : Promise.resolve([null]),
     sbGet<Record<string, unknown>>(`jobs?select=*&booking_id=eq.${id}&order=done_at.desc&limit=1`),
   ]);
   return { booking: b, customer: customer ?? null, vehicle: vehicle ?? null, job: job ?? null };
@@ -39,6 +39,7 @@ export async function startJob(bookingId: string) {
 export type FinishInput = {
   bookingId: string;
   km?: number | null;
+  vin?: string | null;
   oilGrade?: string | null; oilLitres?: number | null; filterPart?: string | null;
   inspection?: Record<string, { status: "ok" | "soon" | "now"; note?: string }>;
   extraLines?: { label: string; amount: number }[];     // things added on site (negative = discount)
@@ -107,7 +108,8 @@ export async function finishJob(input: FinishInput, owner: string) {
   if (!job.ok) return { ok: false as const, error: `Couldn't save the job: ${JSON.stringify(job.error)}` };
 
   await sbPatch("bookings", `id=eq.${ctx.booking.id}`, { status: "done", finished_at: now });
-  if (km && ctx.vehicle) await sbPatch("vehicles", `id=eq.${ctx.vehicle.id}`, { last_km: km });
+  const vin = (input.vin || "").toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "");
+  if (ctx.vehicle && (km || vin)) await sbPatch("vehicles", `id=eq.${ctx.vehicle.id}`, { ...(km ? { last_km: km } : {}), ...(vin.length === 17 ? { vin } : {}) });
   if (input.email && ctx.customer && !ctx.customer.email) await sbPatch("customers", `id=eq.${ctx.customer.id}`, { email: input.email.trim().toLowerCase() });
 
   // Stock: one filter per car comes off the shelf if we had it
@@ -136,33 +138,38 @@ const siteUrl = () => process.env.SITE_URL || (process.env.VERCEL_BRANCH_URL ? `
 export async function receiptFor(where: string): Promise<{ data: ReceiptData; jobId: string; email: string | null; customerId: string | null; reviewAsked: boolean } | null> {
   const [j] = await sbGet<{ id: string; receipt_no: number; receipt_token: string; done_at: string; lines: { label: string; amount: number }[];
     subtotal: number; hst: number; total: number; payment_method: string | null; km: number | null; next_due_km: number | null; next_due_date: string | null;
-    oil_grade: string | null; oil_litres: number | null; vehicle_text: string | null; customer_id: string | null; booking_id: string | null }>(`jobs?select=*&${where}&limit=1`);
+    oil_grade: string | null; oil_litres: number | null; vehicle_text: string | null; customer_id: string | null; booking_id: string | null;
+    filter_part: string | null; vehicle_id: string | null }>(`jobs?select=*&${where}&limit=1`);
   if (!j) return null;
   const [c] = j.customer_id ? await sbGet<{ first_name: string | null; last_name: string | null; email: string | null; review_asked_at: string | null }>(
     `customers?select=first_name,last_name,email,review_asked_at&id=eq.${j.customer_id}`) : [];
   const [b] = j.booking_id ? await sbGet<{ address: string | null }>(`bookings?select=address&id=eq.${j.booking_id}`) : [];
+  const [v] = j.vehicle_id ? await sbGet<{ vin: string | null; vehicle_specs: { oil_spec: string | null } | null }>(`vehicles?select=vin,vehicle_specs(oil_spec)&id=eq.${j.vehicle_id}`) : [];
+  const [fp] = j.filter_part ? await sbGet<{ brand: string | null }>(`parts?select=brand&part_number=eq.${enc(j.filter_part)}&limit=1`) : [];
+  const spec = v?.vehicle_specs?.oil_spec && !/^API\s*S/i.test(v.vehicle_specs.oil_spec) ? v.vehicle_specs.oil_spec : null;
   return {
     jobId: j.id, email: c?.email ?? null, customerId: j.customer_id, reviewAsked: !!c?.review_asked_at,
     data: {
       receiptNo: j.receipt_no, date: nice(new Date(j.done_at)), customer: [c?.first_name, c?.last_name].filter(Boolean).join(" ") || "Customer",
       car: j.vehicle_text || "", address: b?.address ?? null, lines: j.lines ?? [], subtotal: Number(j.subtotal), hst: Number(j.hst), total: Number(j.total),
       paidWith: j.payment_method, km: j.km, nextDueKm: j.next_due_km, nextDueDate: j.next_due_date ? nice(new Date(`${j.next_due_date}T12:00:00Z`)) : null,
-      oil: j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
+      oil: j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${spec ? ` (meets ${spec})` : ""}${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
+      filter: j.filter_part ? `${fp?.brand || "NAPA ProFormer"} ${j.filter_part}` : null,
+      vin: v?.vin ?? null,
       receiptUrl: `${siteUrl()}/receipt/${j.receipt_token}`,
+      logoUrl: `${siteUrl()}/email-logo.png`,
     },
   };
 }
 
-/** Email the receipt. The first time a customer gets one, it also asks for a Google review. */
+/** Email the receipt. (The review request is its own message, sent separately.) */
 export async function sendReceipt(jobId: string, emailOverride: string | null): Promise<{ sent: boolean; reason?: string }> {
   const r = await receiptFor(`id=eq.${enc(jobId)}`);
   if (!r) return { sent: false, reason: "job not found" };
   const to = (emailOverride || r.email || "").trim();
   if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return { sent: false, reason: "no email on file" };
   if (!process.env.RESEND_API_KEY) return { sent: false, reason: "email service not set up" };
-  const place = process.env.NEXT_PUBLIC_GOOGLE_PLACE_ID;
-  const askReview = !r.reviewAsked && !!place;
-  const data = { ...r.data, reviewUrl: askReview ? `https://search.google.com/local/writereview?placeid=${encodeURIComponent(place!)}` : null };
+  const data = r.data;
   try {
     await new Resend(process.env.RESEND_API_KEY).emails.send({
       from: process.env.EMAIL_FROM || "Oil Change On The Spot <onboarding@resend.dev>",
@@ -171,7 +178,6 @@ export async function sendReceipt(jobId: string, emailOverride: string | null): 
       html: receiptHtml(data), text: receiptText(data),
     });
   } catch (e) { return { sent: false, reason: String(e).slice(0, 120) }; }
-  await sbPatch("jobs", `id=eq.${r.jobId}`, { receipt_sent_at: new Date().toISOString(), review_requested: askReview });
-  if (askReview && r.customerId) await sbPatch("customers", `id=eq.${r.customerId}`, { review_asked_at: new Date().toISOString() });
+  await sbPatch("jobs", `id=eq.${r.jobId}`, { receipt_sent_at: new Date().toISOString() });
   return { sent: true };
 }

@@ -8,7 +8,7 @@ type Ctx = {
   booking: { id: string; status: string; starts_at: string; address: string | null; pay_mode: string; quote_breakdown: { lines?: Line[] } | null;
     services: { job?: string; own?: string | null } | null; cars: number; paid_at: string | null };
   customer: { first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
-  vehicle: { year: number | null; make: string | null; model: string | null; last_km: number | null;
+  vehicle: { year: number | null; make: string | null; model: string | null; last_km: number | null; vin: string | null;
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null } | null } | null;
   job: { receipt_no: number; total: number; payment_method: string | null; receipt_sent_at: string | null } | null;
 };
@@ -27,6 +27,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
   const [result, setResult] = useState<string>("");
   // form
   const [km, setKm] = useState("");
+  const [vin, setVin] = useState("");
   const [grade, setGrade] = useState(""); const [litres, setLitres] = useState(""); const [filter, setFilter] = useState("");
   const [checks, setChecks] = useState<Record<string, "ok" | "soon" | "now">>(Object.fromEntries(CHECKS.map(([k]) => [k, "ok"])));
   const [extras, setExtras] = useState<{ label: string; amount: string }[]>([]);
@@ -40,7 +41,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       setCtx(c);
       const s = c.vehicle?.vehicle_specs;
       if (s) { setGrade(s.oil_grade); setLitres(String(Number(s.capacity_l) * (c.booking.cars || 1))); setFilter(s.oil_filter_part || ""); }
-      setEmail(c.customer?.email || "");
+      setEmail(c.customer?.email || ""); setVin(c.vehicle?.vin || "");
       if (c.booking.pay_mode === "online") setPay("card_online");
     }).catch(() => setErr("Couldn't load this job"));
   }, [bookingId]);
@@ -68,9 +69,11 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       : rc.reason === "waiting for payment" ? " The receipt goes out when you mark it paid." : ` Receipt not sent (${rc.reason}).`;
 
   async function finish() {
+    const v = vin.trim().toUpperCase().replace(/\s/g, "");
+    if (v && !/^[A-HJ-NPR-Z0-9]{17}$/.test(v)) return setErr("A VIN is 17 letters and numbers (no I, O or Q). Check it, or leave it empty.");
     if (withOil && km && Number(km) < (ctx?.vehicle?.last_km ?? 0)) return setErr(`That's less than last time (${ctx?.vehicle?.last_km?.toLocaleString()} km). Check the odometer.`);
     const j = await post({
-      action: "finish", km: km ? Number(km.replace(/\D/g, "")) : null,
+      action: "finish", km: km ? Number(km.replace(/\D/g, "")) : null, vin: vin.trim() || null,
       oilGrade: withOil ? grade || null : null, oilLitres: withOil && litres ? Number(litres) : null, filterPart: withOil ? filter || null : null,
       inspection: Object.fromEntries(Object.entries(checks).map(([k, v]) => [k, { status: v }])),
       extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined,
@@ -137,6 +140,10 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 <h3 className="font-extrabold text-lg">The car</h3>
                 <label className="flex flex-col gap-1 text-sm font-semibold">Odometer (km)
                   <input value={km} onChange={(e) => setKm(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" placeholder={ctx.vehicle?.last_km ? `Last time: ${ctx.vehicle.last_km.toLocaleString()} km` : "e.g. 84210"} className={field} style={{ borderColor: LINE }} />
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-semibold">VIN (optional, prints on the receipt for warranty)
+                  <input value={vin} onChange={(e) => setVin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17))} autoCapitalize="characters"
+                    placeholder="17 characters, bottom of windshield" className={`${field} font-mono tracking-wide`} style={{ borderColor: LINE }} />
                 </label>
                 {withOil && ctx.booking.services?.own !== "both" && (
                   <div className="grid grid-cols-3 gap-2">
