@@ -43,7 +43,7 @@ Reply with ONLY this JSON, no other text:
 `.trim();
 
 /** NAPA Canada numbers are the US NAPA Gold number with a 2 in front (US 7356 -> 27356, US 100290 -> 2100290).
- *  If only a WIX number is known: WIX 57356 -> 27356, WIX WL10033 -> 2100033. Exported for tests. */
+ *  If only a WIX number is known: WIX 57356 -> 27356, WIX WL10290 -> 2100290. Exported for tests. */
 export function toNapaCanada(napa: string | null, wix: string | null): string | null {
   const d = (v: string | null) => (v ?? "").replace(/\D/g, "");
   let n = d(napa);
@@ -53,7 +53,7 @@ export function toNapaCanada(napa: string | null, wix: string | null): string | 
   }
   const w = d(wix);
   if (/^5\d{4}$/.test(w)) return "2" + w.slice(1);       // WIX 5xxxx -> NAPA 2xxxx
-  if (/^1\d{5}$/.test(w)) return "2" + w;                // WIX WL1xxxxx -> NAPA 21xxxxx
+  if (/^1\d{4}$/.test(w)) return "210" + w.slice(1);      // WIX WL10290 -> NAPA 100290 -> 2100290
   return n || null;
 }
 
