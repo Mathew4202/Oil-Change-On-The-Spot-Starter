@@ -39,7 +39,7 @@ def parse_vehicle(t):
                 if re.match(r'^\d\.\d', xl) or xl in ('oil','engine','v6','v8','my','hybrid','lt','le','lx','se','sv','ex','gt','xle','essential','platinum','limited','classic','awd','eco','i4'): break
                 if re.match(r'^(19|20)\d\d$', xl): continue
                 if re.match(r'^\d+$', xl) and mw: break
-                if xl in ('lost','cabin','customer','turbo','all','terrain'): break
+                if xl in ('lost','cabin','customer','turbo','all') or (xl == 'terrain' and mw): break   # 'Sierra 1500 all terrain', but 'GMC Terrain' is a model
                 mw.append(MODEL_FIX.get(xl, x if not x.islower() else x.capitalize()))
                 if len(mw) == 2 or xl in ('cruze','civic','corolla','camry','accord','elantra','tucson','sonata','rogue','altima','maxima','pilot','kona','soul','rio','malibu','f150','tundra','pathfinder','equinox','journey','fusion','escape','outback','impreza','venue','kicks','sentra','terrain','highlander','rav4','trax','ilx','tiguan','atlas','cx-30','lancer','rvr','outlander','4runner','sierra','x3','c300','qashqai','sorento','forester','foresta','crv','orlando','accent','santa','grand','eclipse','genesis','im','200','1500','6','3'):
                     if xl in ('grand','eclipse','santa','genesis') and len(mw)==1: continue

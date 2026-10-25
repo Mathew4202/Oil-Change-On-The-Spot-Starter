@@ -13,7 +13,8 @@ type Job = {
   paid?: boolean; receiptNo?: number | null; finalTotal?: number | null;
   name: string; phone: string | null; address: string | null; car: string; engine: string | null;
   oil: { grade: string; litres: number; filter: string | null; spec: string | null; engine?: string | null; diesel?: boolean; wix?: string | null;
-    checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterCost?: number | null } | null;
+    checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterCost?: number | null; filterNote?: string | null } | null;
+  partNos?: string[];
   lines: { label: string; amount: number }[]; total: number | null; profit: number | null;
   notes: string | null; checks: string[]; imported: boolean; photos?: string[]; vin?: string | null; vinCar?: string | null; job?: string; addons?: string[];
 };
@@ -218,9 +219,12 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                     <span className="text-[#4a5878]">Oil</span><span className="font-semibold">{j.oil.grade.replace(/^Euro /, "")}{j.oil.diesel ? " diesel oil" : " full synthetic"}, {j.oil.litres} L</span>
                     <span className="text-[#4a5878]">Must meet</span><span className="font-semibold">{j.oil.spec || "not on file"}</span>
                     <span className="text-[#4a5878]">Oil filter</span><span className="font-semibold">{j.oil.filter ? `NAPA ${j.oil.filter}` : "find on site"}{j.oil.wix ? ` · WIX ${j.oil.wix}` : ""}{j.oil.filter ? (j.oil.filterInStock ? " · in stock" : " · buy") : ""}{j.oil.filterCost != null ? ` · $${j.oil.filterCost.toFixed(2)}` : ""}</span>
+                    {j.oil.filterNote && <span className="col-span-2 text-[12px] text-[#8a5a00]">{j.oil.filterNote}</span>}
+                    {(j.partNos ?? []).length > 0 && <><span className="text-[#4a5878]">Used before</span><span className="font-semibold">{j.partNos!.join(" · ")}</span></>}
                     {j.oil.lowConfidence && <span className="col-span-2 text-[12px] text-[#8a5a00]">Found online but not sure: check the oil cap or the manual.</span>}
                   </div>
                 )}
+                {!j.oil && (j.partNos ?? []).length > 0 && <p className="text-[14px] rounded-lg bg-[#f4f6fa] px-3 py-2"><span className="text-[#4a5878]">Used before </span><span className="font-semibold">{j.partNos!.join(" · ")}</span></p>}
                 {j.address && <p className="text-[15px] text-[#4a5878]">{j.address}</p>}
                 {j.checks.length > 0 && <p className="text-[13px] font-semibold text-[#8a5a00] bg-[#fff6dd] rounded-lg px-2 py-1">{j.checks.join(" · ")}</p>}
                 {j.vin && <p className="text-[14px]"><span className="font-semibold">VIN</span> <span className="font-mono select-all">{j.vin}</span>{j.vinCar ? <span className="text-[#4a5878]"> · {j.vinCar}</span> : null}</p>}

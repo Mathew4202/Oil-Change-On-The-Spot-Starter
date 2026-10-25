@@ -21,8 +21,10 @@ export async function customerDetail(id: string) {
     sbGet<CustRow & { notes: string | null; review_asked_at: string | null; city: string | null; sms_opt_out_at: string | null; sms_opt_out_by: string | null }>(
       `customers?select=id,first_name,last_name,phone,email,address,city,notes,sms_opt_out,sms_opt_out_at,sms_opt_out_by,created_at,source,review_asked_at,vehicles(year,make,model)&id=eq.${i}`),
     sbGet<{ id: string; year: number | null; make: string | null; model: string | null; engine: string | null; vin: string | null; last_km: number | null;
-      vehicle_specs: { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null } | null }>(
-      `vehicles?select=id,year,make,model,engine,vin,last_km,vehicle_specs(oil_grade,capacity_l,oil_filter_part)&customer_id=eq.${i}&order=created_at.desc`),
+      vehicle_specs: { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; cabin_filter_part?: string | null; air_filter_part?: string | null;
+        wiper_driver?: string | null; wiper_passenger?: string | null } | null }>(
+      `vehicles?select=id,year,make,model,engine,vin,last_km,vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger)&customer_id=eq.${i}&order=created_at.desc`)
+      .catch(() => sbGet<never>(`vehicles?select=id,year,make,model,engine,vin,last_km,vehicle_specs(oil_grade,capacity_l,oil_filter_part)&customer_id=eq.${i}&order=created_at.desc`)),   // before migration 0026
     sbGet<{ id: string; done_at: string; revenue: number | null; hst: number | null; tip: number | null; total: number | null; service: string | null; vehicle_text: string | null;
       payment_method: string | null; receipt_token: string | null; receipt_no: number | null; imported_from: string | null; km: number | null;
       next_due_date: string | null; next_due_km: number | null; oil_grade: string | null; notes: string | null }>(
@@ -47,7 +49,9 @@ export async function customerDetail(id: string) {
       cancelled: bookings.filter((b) => b.status === "cancelled").length, noShows: bookings.filter((b) => b.status === "no_show").length },
     vehicles: vehicles.map((v) => ({ id: v.id, name: [v.year, v.make, v.model].filter(Boolean).join(" ") || "Car", engine: v.engine, vin: v.vin, lastKm: v.last_km,
       oil: v.vehicle_specs ? [v.vehicle_specs.oil_grade, v.vehicle_specs.capacity_l ? `${v.vehicle_specs.capacity_l} L` : null].filter(Boolean).join(", ") : null,
-      filter: v.vehicle_specs?.oil_filter_part ?? null })),
+      filter: v.vehicle_specs?.oil_filter_part ?? null,
+      parts: v.vehicle_specs ? [v.vehicle_specs.cabin_filter_part && `Cabin ${v.vehicle_specs.cabin_filter_part}`, v.vehicle_specs.air_filter_part && `Air ${v.vehicle_specs.air_filter_part}`,
+        (v.vehicle_specs.wiper_driver || v.vehicle_specs.wiper_passenger) && `Wipers ${[v.vehicle_specs.wiper_driver, v.vehicle_specs.wiper_passenger].filter(Boolean).join(" / ")}`].filter(Boolean).join(" · ") || null : null })),
     upcoming: upcoming.map((b) => ({ id: b.id, date: day(b.starts_at), at: b.starts_at, status: b.status, total: b.quoted_total, job: b.services?.job ?? null })),
     jobs: jobs.map((j) => ({ id: j.id, date: day(j.done_at), car: j.vehicle_text, service: j.service, amount: Number(j.revenue ?? 0), tip: Number(j.tip ?? 0),
       paidWith: j.payment_method, receipt: j.receipt_token ? `/receipt/${j.receipt_token}` : null, receiptNo: j.receipt_no, fromSheet: j.imported_from === "job_tracker",

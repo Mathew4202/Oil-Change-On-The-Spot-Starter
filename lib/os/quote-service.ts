@@ -1,5 +1,6 @@
 // Loads what the pricing engine needs, looks up unknown cars automatically, and returns a quote.
-import { sbGet, sbInsert, enc } from "@/lib/os/db";
+import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
+import { sameCar } from "@/lib/os/car-match";
 import { euroOilKey, quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUNT, type VehicleClass, type Addon, type Quote, type JobType } from "@/lib/os/pricing-engine";
 
 // Customer price for each add-on part or top-up (settings can override; part prices get replaced by the parts lookup later)
@@ -9,9 +10,13 @@ import { lookupOilSpec } from "@/lib/os/spec-lookup";
 import { detectClassFromModel } from "@/data/vehicleClass";
 
 export type Spec = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_grade: string;
-  capacity_l: number; oil_filter_part: string | null; verified: boolean; source: string; confidence: string | null; oil_spec: string | null; fuel?: string | null };
+  capacity_l: number; oil_filter_part: string | null; verified: boolean; source: string; confidence: string | null; oil_spec: string | null; fuel?: string | null;
+  cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null; filter_note?: string | null };
 
-const SPEC_COLS = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec,fuel";
+const SPEC_COLS = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec,fuel,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger,filter_note";
+const SPEC_COLS_OLD = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec,fuel";   // before migration 0026
+const PART_FIELDS = ["cabin_filter_part", "air_filter_part", "wiper_driver", "wiper_passenger"] as const;
+const hasOil = (r: Spec) => !!r.oil_grade && Number(r.capacity_l) > 0;
 const DIESEL_WORDS = /diesel|cummins|duramax|power\s*stroke|powerstroke|ecodiesel|\btdi\b|bluetec|\bcrd\b/i;
 export const isDiesel = (s: { fuel?: string | null; engine?: string | null; oil_spec?: string | null } | null) =>
   !!s && (s.fuel === "diesel" || DIESEL_WORDS.test(s.engine || "") || /\bC[JK]-4\b|\bFA-4\b|dexos\s*D/i.test(s.oil_spec || ""));
@@ -31,35 +36,66 @@ const engineMatches = (want: string, have: string | null) => {
   return !!have && (norm(have).includes(norm(want)) || norm(want).includes(norm(have)) || (!!size(want) && size(want) === size(have)));
 };
 
+async function specRows(q: string) {
+  return sbGet<Spec>(`vehicle_specs?select=${SPEC_COLS}&${q}`).catch(() => sbGet<Spec>(`vehicle_specs?select=${SPEC_COLS_OLD}&${q}`));
+}
+
+/** Every row we have for this car in this year, matched by name loosely ("Chevy Cruze LT" finds "Chevrolet Cruze"). */
 async function specsFor(year: number, make: string, model: string) {
-  return sbGet<Spec>(`vehicle_specs?select=${SPEC_COLS}&year_from=eq.${year}&make=ilike.${enc(make)}&model=ilike.${enc(model)}`);
+  return sameCar(await specRows(`year_from=lte.${year}&year_to=gte.${year}`), make, model);
+}
+
+/** Cars we only did filters or wipers on have no oil row: their part numbers ride along on the oil rows. */
+function withParts(rows: Spec[]) {
+  const oil = rows.filter(hasOil), partsOnly = rows.filter((r) => !hasOil(r));
+  return oil.map((r) => {
+    const x = { ...r };
+    for (const f of PART_FIELDS) if (!x[f]) x[f] = partsOnly.find((p) => p[f] && p.year_from === r.year_from)?.[f] ?? null;
+    return x;
+  });
 }
 
 /** Find this exact car (year/make/model). If we've never seen it, look it up once and save it. */
 export async function findSpecs(year: number, make: string, model: string, engine?: string | null) {
-  let rows = await specsFor(year, make, model);
+  const all = await specsFor(year, make, model);
+  let rows = withParts(all);
   let lookedUp = false;
-  if (!rows.length || (engine && !rows.some((r) => engineMatches(engine, r.engine)))) {
+  const ours = rows.filter((r) => r.source === "sheet" || r.source === "job_history" || r.verified);
+  const needLookup = !rows.length || (engine && !rows.some((r) => engineMatches(engine, r.engine)));
+  // we did this car but nobody wrote the filter down: get just the filter number online and keep it
+  const needFilter = !needLookup && ours.length > 0 && ours.every((r) => !r.oil_filter_part && !r.filter_note);   // filter_note set = already tried once
+  if (needLookup || needFilter) {
     const found = await lookupOilSpec(year, make, model, engine).catch(() => null);   // lookup down: fall back below, never break the quote
     if (found) {
       lookedUp = true;
       for (const e of found.engines) {
+        if (e.napaFilter) await sbInsert("parts", { part_number: e.napaFilter, brand: "NAPA ProFormer", description: "Oil filter", category: "oil_filter" }, { upsertOn: "part_number,brand" });
+        if (needFilter) continue;
         await sbInsert("vehicle_specs", {
           year_from: year, year_to: year, make, model, engine: e.engine, fuel: e.fuel, oil_grade: e.oilGrade, oil_spec: e.oilSpec,
           capacity_l: e.capacityL, oil_filter_part: e.napaFilter, wix_filter: e.wixFilter, source: "ai_lookup", verified: false,
           confidence: found.confidence, sources: found.sources, looked_up_at: new Date().toISOString(),
         });
-        if (e.napaFilter) await sbInsert("parts", { part_number: e.napaFilter, brand: "NAPA ProFormer", description: "Oil filter", category: "oil_filter" }, { upsertOn: "part_number,brand" });
       }
-      rows = await specsFor(year, make, model);
+      if (needFilter) {
+        for (const r of ours) {
+          const e = found.engines.length === 1 ? found.engines[0] : found.engines.find((x) => r.engine ? engineMatches(r.engine, x.engine) : false);
+          await sbPatch("vehicle_specs", `id=eq.${r.id}`, e?.napaFilter ? { oil_filter_part: e.napaFilter, filter_note: "Filter number found online, check it at NAPA" }
+            : { filter_note: "No filter number found online, look it up at NAPA" }).catch(() => null);
+        }
+      }
+      rows = withParts(await specsFor(year, make, model));
     }
   }
   // Last resort (lookup unavailable): same model within 4 years
   if (!rows.length) {
-    const near = await sbGet<Spec>(`vehicle_specs?select=${SPEC_COLS}&make=ilike.${enc(make)}&model=ilike.${enc(model)}&year_from=gte.${year - 4}&year_from=lte.${year + 4}`);
+    const near = withParts(sameCar(await specRows(`year_from=gte.${year - 4}&year_from=lte.${year + 4}`), make, model));
     near.sort((a, b) => Math.abs(a.year_from - year) - Math.abs(b.year_from - year));
     rows = near.length ? near.filter((r) => r.year_from === near[0].year_from) : [];
   }
+  // our own record of this car beats an online lookup of it
+  const mine = rows.filter((r) => r.source === "sheet" || r.source === "job_history");
+  if (mine.length && (!engine || mine.some((r) => engineMatches(engine, r.engine)))) rows = mine;
   return { rows, lookedUp };
 }
 

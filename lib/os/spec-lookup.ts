@@ -24,7 +24,7 @@ const EURO_SPEC = /(VW\s*5\d\d|MB\s*229|BMW\s*LL|Longlife|Porsche\s*[AC]\d\d|Vol
 
 const PROMPT = (year: number, make: string, model: string, engine?: string | null) => `
 Find the engine oil specification for a ${year} ${make} ${model}${engine ? ` with the ${engine} engine` : ""}, Canadian market.
-Search the web. Prefer the owner's manual, the manufacturer, or a reputable parts catalogue (NAPA Canada, WIX, Mobil, Castrol, Pennzoil).
+Search the web. Prefer the owner's manual, the manufacturer, or a reputable parts catalogue (Mobil, Castrol, Pennzoil). For the filter use NAPA Canada (napacanada.com), ProFormer line.
 
 If this model was sold with more than one engine in that year${engine ? " and the engine above is unclear" : ""}, list each engine separately.
 
@@ -34,7 +34,7 @@ For each engine give:
 - oil_grade: SAE grade the manual recommends for Canada, e.g. "0W-20"
 - oil_spec: the approval the oil must meet if any, e.g. "dexos1 Gen 3", "VW 508 00", "MB 229.71", "BMW LL-17 FE+", else "API SP"
 - capacity_l: oil capacity WITH filter change, in litres (convert quarts x 0.946)
-- napa_filter: NAPA ProFormer oil filter number as sold by NAPA Canada (napacanada.com lists them as "PPF 27356", "PPF 2100290"). If you only find the US NAPA Gold number (e.g. 7356, 100290), give that. null if not found.
+- napa_filter: the NAPA ProFormer oil filter number from NAPA Canada. Search napacanada.com for this car's oil filter and use the ProFormer one, shown as "PPF" then the number (PPF 27356, PPF 21394, PPF 2100290); give just the number. Do NOT give a NAPA Gold number (FIL / 1xxx, 7xxx), a NAPA Platinum number, or any other brand here. Only if you cannot find the ProFormer listing, give the US NAPA Gold number (e.g. 7356, 100290) and say so in notes. null if not found.
 - wix_filter: WIX number (e.g. 57356) or null
 
 Reply with ONLY this JSON, no other text:

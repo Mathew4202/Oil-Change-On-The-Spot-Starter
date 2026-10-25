@@ -214,16 +214,22 @@ async function createOne(b: BookingInput, opts: Opts & {
   const decoded = vin ? await decodeVin(vin).catch(() => null) : null;
   const vinCar = decoded ? [decoded.year, decoded.make, decoded.model, decoded.engineL ? `${decoded.engineL}L` : null, /diesel/i.test(decoded.fuel || "") ? "diesel" : null].filter(Boolean).join(" ") : null;
   const sameCar = !decoded || ((!decoded.year || decoded.year === b.car.year) && (!decoded.make || decoded.make.toLowerCase() === b.car.make.toLowerCase()));
-  let [vehicle] = opts.vehicleId ? [{ id: opts.vehicleId }] : await sbGet<{ id: string }>(
-    `vehicles?select=id&customer_id=eq.${customer.id}&year=eq.${b.car.year}&make=ilike.${enc(b.car.make)}&model=ilike.${enc(b.car.model)}`);
+  let [vehicle] = opts.vehicleId ? [{ id: opts.vehicleId, spec_id: null as string | null }] : await sbGet<{ id: string; spec_id: string | null }>(
+    `vehicles?select=id,spec_id&customer_id=eq.${customer.id}&year=eq.${b.car.year}&make=ilike.${enc(b.car.make)}&model=ilike.${enc(b.car.model)}`);
   if (!vehicle) {
-    const v = await sbInsert<{ id: string }>("vehicles", {
+    const v = await sbInsert<{ id: string; spec_id: string | null }>("vehicles", {
       customer_id: customer.id, year: b.car.year, make: b.car.make, model: b.car.model, engine: b.car.engine || null, ...(vin ? { vin } : {}),
       spec_id: spec?.id ?? null, source: opts.source,
     });
     if (!v.ok) throw new Error(`vehicle: ${JSON.stringify(v.error)}`);
     vehicle = v.data!;
-  } else if (vin) await sbPatch("vehicles", `id=eq.${vehicle.id}`, { vin });
+  } else {
+    // a car we already had: save its VIN, and link it to its oil spec and part numbers if it wasn't yet
+    const patch: Record<string, unknown> = {};
+    if (vin) patch.vin = vin;
+    if (spec?.id && !vehicle.spec_id && !opts.vehicleId) patch.spec_id = spec.id;
+    if (Object.keys(patch).length) await sbPatch("vehicles", `id=eq.${vehicle.id}`, patch);
+  }
 
   // 4b) On a maintenance plan? The oil change (and their swaps) are covered, filter and wiper labour free, small top-ups included.
   let planId: string | null = null;
@@ -265,7 +271,13 @@ async function createOne(b: BookingInput, opts: Opts & {
   // what to bring, right in the alert: oil, how much, and the filter number (in stock or buy)
   const bring = withOil && spec && b.own !== "both" ? ` · ${spec.oil_grade.replace(/^Euro /, "")}${spec.oil_spec && !/^API/i.test(spec.oil_spec) ? ` (${spec.oil_spec})` : ""} ${Number(spec.capacity_l)} L`
     + (spec.oil_filter_part && b.own !== "filter" ? ` · filter NAPA ${spec.oil_filter_part} (${(await filterInStock(spec.oil_filter_part).catch(() => false)) ? "in stock" : "buy"})` : spec.oil_filter_part ? "" : " · filter: find on site") : "";
-  const body = `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? (opts.bookedBy ? "already paid" : "paying online now") : "pay after"}${bring}`;
+  // part numbers we've used on this car before, for the add-ons they picked
+  const partNo = [
+    b.addons.includes("cabin_filter") && spec?.cabin_filter_part ? `cabin filter ${spec.cabin_filter_part}` : null,
+    b.addons.includes("engine_filter") && spec?.air_filter_part ? `air filter ${spec.air_filter_part}` : null,
+    b.addons.includes("wipers") && (spec?.wiper_driver || spec?.wiper_passenger) ? `wipers ${[spec?.wiper_driver, spec?.wiper_passenger].filter(Boolean).join(" / ")}` : null,
+  ].filter(Boolean).join(" · ");
+  const body = `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? (opts.bookedBy ? "already paid" : "paying online now") : "pay after"}${bring}${partNo ? ` · ${partNo}` : ""}`;
   try { await sbInsert("notifications", { kind: "new_booking", booking_id: bk.data!.id, title, body }); }
   catch (e) { console.error("alert failed", e); }
   const dayWord = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric" }).format(new Date(slotStart));

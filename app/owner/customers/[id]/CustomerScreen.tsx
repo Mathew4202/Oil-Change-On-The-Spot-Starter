@@ -11,7 +11,7 @@ const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878", G
 type Detail = {
   customer: { id: string; firstName: string | null; lastName: string | null; name: string; phone: string | null; email: string | null; address: string | null; notes: string | null; smsOff: boolean; smsOffAt: string | null; smsOffBy: string | null; since: string; source: string | null; reviewAsked: boolean };
   stats: { visits: number; spent: number; average: number; lastVisit: string | null; nextDue: string | null; nextDueKm: number | null; due: string; cancelled: number; noShows: number };
-  vehicles: { id: string; name: string; engine: string | null; vin: string | null; lastKm: number | null; oil: string | null; filter: string | null }[];
+  vehicles: { id: string; name: string; engine: string | null; vin: string | null; lastKm: number | null; oil: string | null; filter: string | null; parts?: string | null }[];
   upcoming: { id: string; date: string; at: string; status: string; total: number | null; job: string | null }[];
   jobs: { id: string; date: string; car: string | null; service: string | null; amount: number; tip: number; paidWith: string | null; receipt: string | null; receiptNo: number | null; fromSheet: boolean; km: number | null; oil: string | null; notes: string | null }[];
   texts: { kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null; direction: string | null }[];
@@ -78,6 +78,7 @@ export default function CustomerScreen({ id }: { id: string }) {
           <div key={v.id} className="rounded-xl p-3 bg-[#f4f6fa] text-[15px]">
             <p className="font-extrabold">{v.name}{v.engine ? ` · ${v.engine}` : ""}</p>
             {(v.oil || v.filter) && <p>{[v.oil ? `Oil: ${v.oil}` : "", v.filter ? `Filter: ${v.filter}` : ""].filter(Boolean).join(" · ")}</p>}
+            {v.parts && <p>{v.parts}</p>}
             {v.lastKm != null && <p style={{ color: MUTED }}>Last odometer: {v.lastKm.toLocaleString()} km</p>}
             {v.vin && <p className="font-mono text-sm" style={{ color: MUTED }}>VIN {v.vin}</p>}
           </div>
