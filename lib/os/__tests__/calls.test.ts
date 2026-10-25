@@ -34,3 +34,13 @@ test("pick the slot that matches what they asked for", () => {
   assert.equal(pickSlot(slots, { part: "evening" })?.time, "18:00");
   assert.equal(pickSlot(slots, {})?.time, "09:00");
 });
+
+test("caller number from object participants, fromPhoneNumber, or the transcript", () => {
+  const a = parseCallEvent({ type: "call.completed", data: { resource: { id: "AC9", direction: "incoming", status: "answered" }, context: { participants: { external: [{ phoneNumber: "+17826408341" }] } } } })!;
+  assert.equal(a.phone, "+17826408341");
+  const b = parseCallEvent({ type: "call.summary.completed", data: { resource: { callId: "AC9", processingStatus: "completed", summary: ["Wants an oil change"], fromPhoneNumber: "+17826408341" }, context: {} } })!;
+  assert.equal(b.phone, "+17826408341"); assert.equal(b.callId, "AC9");
+  const t = parseCallEvent({ type: "call.transcript.completed", data: { resource: { callId: "AC9", processingStatus: "completed",
+    dialogue: [{ userId: null, identifier: "+17826408341", content: "Hi I need an oil change" }, { userId: "US1", identifier: null, content: "Sure thing" }] }, context: {} } })!;
+  assert.equal(t.phone, "+17826408341");
+});

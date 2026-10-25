@@ -53,3 +53,8 @@ export async function sbRpc<T = unknown>(fn: string, args: object = {}): Promise
   if (!res.ok) throw new Error(`rpc ${fn}: ${res.status} ${await res.text()}`);
   return res.json();
 }
+
+export async function sbDelete(table: string, filter: string): Promise<boolean> {
+  const res = await fetch(`${URL_()}/rest/v1/${table}?${filter}`, { method: "DELETE", headers: sbHeaders({ Prefer: "return=minimal" }) });
+  return res.ok;
+}

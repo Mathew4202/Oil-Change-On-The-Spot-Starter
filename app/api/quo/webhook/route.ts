@@ -7,7 +7,7 @@ import { sendSms } from "@/lib/os/sms";
 import { pushToOwners } from "@/lib/os/push";
 import { parseQuoEvent, intentOf, verifyQuo } from "@/lib/os/inbound-sms";
 import { parseCallEvent } from "@/lib/os/call-events";
-import { handleCallEvent } from "@/lib/os/calls";
+import { handleCallEvent, handleTextIn } from "@/lib/os/calls";
 import { agreeByText } from "@/lib/os/plans";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +29,8 @@ export async function POST(req: NextRequest) {
   if (!ok) return NextResponse.json({ error: "bad signature" }, { status: 401 });
 
   let json: unknown; try { json = JSON.parse(raw.toString("utf8")); } catch { return NextResponse.json({ ok: true, ignored: "not json" }); }
+  // keep what Quo sent for two weeks, so any problem can be traced (migration 0028)
+  await sbInsert("webhook_log", { type: String((json as { type?: string })?.type ?? ""), body: json }).catch(() => null);
   // Calls: save them and work out what the caller wants (one-tap hold + link in HQ)
   const call = parseCallEvent(json);
   if (call) return NextResponse.json(await handleCallEvent(call).catch((e) => ({ error: String(e).slice(0, 200) })));
@@ -67,9 +69,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, action: "texts_on" });
   }
   if (intent === "cancel") {
-    await alertOwners(`${name} texted "${m.text.trim().slice(0, 40)}"`, "Sounds like they want to cancel a booking. Their texts are still on. Open Quo to reply.", page, `cancel-${from}`);
-    return NextResponse.json({ ok: true, action: "alerted" });
+    await alertOwners(`${name} texted "${m.text.trim().slice(0, 40)}"`, "Sounds like they want to cancel a booking. Their texts are still on. Reply from HQ or Quo.", page, `cancel-${from}`);
   }
-  // Anything else: it's a normal conversation, you'll see it in the Quo app like always
-  return NextResponse.json({ ok: true, action: "logged" });
+  // Every other text lands in HQ next to the calls: read for what they want, one tap to hold a time, or reply right there
+  const r = await handleTextIn({ phone: from, text: m.text, messageId: m.messageId ?? m.eventId }).catch((e) => ({ error: String(e).slice(0, 200) }));
+  return NextResponse.json({ ok: true, action: intent === "cancel" ? "alerted" : "to_hq", ...r });
 }

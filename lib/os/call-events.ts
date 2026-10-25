@@ -16,7 +16,10 @@ export function parseCallEvent(raw: unknown): CallEvent | null {
   const c = d.context ?? {};
   const callId = String(r.callId ?? r.id ?? "");
   if (!callId) return null;
-  const ext = c.participants?.external?.[0] ?? r.fromPhoneNumber ?? (r.direction === "incoming" ? r.from : Array.isArray(r.to) ? r.to[0] : r.to) ?? r.from ?? null;
+  // the caller's number: participants (a string or an object), the summary's fromPhoneNumber, or the transcript's outside speaker
+  const asNum = (x: any) => (x == null ? null : typeof x === "string" ? x : x.phoneNumber ?? x.identifier ?? x.number ?? x.value ?? null);
+  const fromDialogue = Array.isArray(r.dialogue) ? r.dialogue.find((x: any) => !x.userId && x.identifier)?.identifier : null;
+  const ext = asNum(c.participants?.external?.[0]) ?? r.fromPhoneNumber ?? fromDialogue ?? (r.direction === "incoming" ? r.from : Array.isArray(r.to) ? r.to[0] : r.to) ?? r.from ?? null;
   const done = (r.processingStatus ?? r.status) === "completed" || kind === "completed";
   const fields: Record<string, string> = {};
   for (const job of r.jobs ?? []) for (const f of job?.result?.data ?? []) if (f?.name && f?.value != null) fields[String(f.name)] = String(f.value);

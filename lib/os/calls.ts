@@ -1,3 +1,4 @@
+import crypto from "crypto";
 // Calls from Quo turned into one-tap actions: read what the caller wants from Quo's summary / transcript,
 // find the open time that matches, and let an owner hold it + text the link with a single tap.
 import { sbGet, sbInsert, sbPatch, sbPatchRows, enc } from "@/lib/os/db";
@@ -15,14 +16,21 @@ export type Extract = { name: string | null; year: number | null; make: string |
 
 export type CallRow = { id: string; provider_id: string; phone: string | null; direction: string | null; status: string | null; duration: number | null; started_at: string | null;
   summary: string[] | null; next_steps: string[] | null; transcript: string | null; extract: Extract | null; suggested_start: string | null; customer_id: string | null;
-  hold_id: string | null; state: string; created_at: string };
+  hold_id: string | null; state: string; created_at: string; channel?: string; texts?: TextLine[] };
+export type TextLine = { at: string; from: "them" | "us"; body: string; by?: string | null };
 const COLS = "id,provider_id,phone,direction,status,duration,started_at,summary,next_steps,transcript,extract,suggested_start,customer_id,hold_id,state,created_at";
+const COLS_TEXT = `${COLS},channel,texts`;   // migration 0028
+async function rows(q: string) { return sbGet<CallRow>(`calls?select=${COLS_TEXT}&${q}`).catch(() => sbGet<CallRow>(`calls?select=${COLS}&${q}`)); }
 const e164 = (p: string) => { const d = p.replace(/\D/g, ""); return d.length === 10 ? `+1${d}` : `+${d}`; };
 
 /** Save what Quo sent about a call; once we know what they said, work out what they want and tell the owners. */
 export async function handleCallEvent(ev: CallEvent) {
   if (ev.direction && ev.direction !== "incoming") return { ignored: "outgoing call" };
-  const [existing] = await sbGet<CallRow>(`calls?select=${COLS}&provider_id=eq.${enc(ev.callId)}`);
+  let [existing] = await sbGet<CallRow>(`calls?select=${COLS}&provider_id=eq.${enc(ev.callId)}`);
+  // a summary or transcript we can't tie to a call or a number: it belongs to the latest call still waiting for one
+  if (!existing && !ev.phone && ev.kind !== "completed") {
+    [existing] = await sbGet<CallRow>(`calls?select=${COLS}&summary=is.null&transcript=is.null&created_at=gte.${new Date(Date.now() - 30 * 60000).toISOString()}&order=created_at.desc&limit=1`).catch(() => []);
+  }
   const phone = ev.phone ? e164(ev.phone) : existing?.phone ?? null;
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString(), ...(phone ? { phone } : {}) };
   if (ev.direction) patch.direction = ev.direction;
@@ -132,8 +140,48 @@ export async function suggestStart(x: Extract): Promise<string | null> {
 /** Calls still waiting for something from us (last 3 days). */
 export async function openCalls(): Promise<CallRow[]> {
   try {
-    return await sbGet<CallRow>(`calls?select=${COLS}&state=eq.open&created_at=gte.${new Date(Date.now() - 3 * 86400000).toISOString()}&order=created_at.desc&limit=20`);
+    return await rows(`state=eq.open&updated_at=gte.${new Date(Date.now() - 3 * 86400000).toISOString()}&order=updated_at.desc&limit=25`);
   } catch { return []; }   // migration 0024 not run yet
+}
+
+/** A customer texted our number: it lands in HQ next to the calls, read the same way (car, service, when),
+ *  so holding a time and texting the link is still one tap. Texts from the same number within 2 days stay together. */
+export async function handleTextIn(input: { phone: string; text: string; messageId: string | null; at?: string }) {
+  const phone = e164(input.phone);
+  const line: TextLine = { at: input.at || new Date().toISOString(), from: "them", body: input.text.slice(0, 1600) };
+  let [row] = await rows(`channel=eq.text&phone=eq.${enc(phone)}&state=eq.open&created_at=gte.${new Date(Date.now() - 2 * 86400000).toISOString()}&order=created_at.desc&limit=1`).catch(() => []);
+  const [c] = await sbGet<{ id: string; first_name: string | null }>(`customers?select=id,first_name&phone=eq.${enc(phone)}`);
+  if (row) {
+    [row] = await sbPatchRows<CallRow>("calls", `id=eq.${row.id}`, { texts: [...(row.texts ?? []), line], updated_at: new Date().toISOString() });
+  } else {
+    const r = await sbInsert<CallRow>("calls", { provider_id: `sms:${input.messageId || crypto.randomUUID()}`, channel: "text", phone, direction: "incoming", status: "text",
+      started_at: line.at, texts: [line], customer_id: c?.id ?? null });
+    if (!r.ok) return { error: "couldn't save the text (run migration 0028)" };
+    row = r.data!;
+  }
+  // read everything they've texted so far
+  const said = (row.texts ?? []).filter((t) => t.from === "them").map((t) => `Customer texted: ${t.body}`).join("\n");
+  const x = await readCall(said).catch(() => null);
+  let suggested: string | null = null;
+  if (x) {
+    suggested = x.wantsBooking ? await suggestStart(x).catch(() => null) : null;
+    await sbPatch("calls", `id=eq.${row.id}`, { extract: x, suggested_start: suggested });
+  }
+  const who = x?.name || c?.first_name || phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3");
+  await alert(row, `Text from ${who}`, input.text.slice(0, 140) + (suggested ? ` · Tap to hold ${whenText(suggested)}` : ""));
+  return { ok: true, id: row.id };
+}
+
+/** Reply from HQ: goes out from the business number and shows in the thread. */
+export async function replyToText(id: string, body: string, owner: string) {
+  const [row] = await rows(`id=eq.${enc(id)}`);
+  if (!row?.phone) return { ok: false as const, error: "No number to reply to" };
+  const text = body.trim().slice(0, 1000);
+  if (!text) return { ok: false as const, error: "Type a message" };
+  const sms = await sendSms(row.phone, text, { kind: "reply", customerId: row.customer_id });
+  if (!sms.sent) return { ok: false as const, error: sms.error || "The text didn't go out" };
+  await sbPatch("calls", `id=eq.${row.id}`, { texts: [...(row.texts ?? []), { at: new Date().toISOString(), from: "us", body: text, by: owner }], updated_at: new Date().toISOString() });
+  return { ok: true as const };
 }
 
 /** One tap: hold the suggested (or picked) time and text them the link. */
@@ -160,9 +208,12 @@ export async function linkFromCall(id: string) {
   if (x?.year && x.make) { q.set("year", String(x.year)); q.set("make", x.make); if (x.model) q.set("model", x.model); }
   if (x?.job) q.set("job", x.job);
   const link = `${siteUrl()}/booking${q.toString() ? `?${q}` : ""}`;
-  const body = await template("book_link");
-  const sms = body ? await sendSms(c.phone, fill(body, { first_name: x?.name || "there", link }), { kind: "book_link", customerId: c.customer_id }) : { sent: false, status: "template_off" };
-  await sbPatch("calls", `id=eq.${c.id}`, { state: "linked" });
+  const [t] = await rows(`id=eq.${c.id}`);
+  const isText = t?.channel === "text";
+  const body = (isText ? await template("book_link_text") : null) || await template("book_link");
+  const msg = body ? fill(body, { first_name: x?.name || "there", link }) : "";
+  const sms = body ? await sendSms(c.phone, msg, { kind: "book_link", customerId: c.customer_id }) : { sent: false, status: "template_off" };
+  await sbPatch("calls", `id=eq.${c.id}`, { state: "linked", ...(isText && sms.sent ? { texts: [...(t?.texts ?? []), { at: new Date().toISOString(), from: "us", body: msg }] } : {}) });
   return { ok: true as const, sms, link };
 }
 
