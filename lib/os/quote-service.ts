@@ -71,7 +71,10 @@ export async function findSpecs(year: number, make: string, model: string, engin
   const needFilter = !needLookup && ours.length > 0 && ours.every((r) => !r.oil_filter_part && !r.filter_note);   // filter_note set = already tried once
   if (needLookup || needFilter) {
     // costs money: once per car ever, never two at once, daily cap (see ai-budget.ts)
-    const key = lookupKey(year, make, model, needFilter ? "filter" : "");
+    // a car we know, but not this engine (Santa Fe 2.5L on file, customer has the 1.6L hybrid): that engine gets its own one-time lookup
+    const engineOnly = !needFilter && rows.length > 0 && !!engine;
+    const engTag = engine ? `eng${engine.match(/\d\.\d/)?.[0] ?? engine.toLowerCase().replace(/[^a-z0-9]/g, "")}${/hybrid/i.test(engine) ? "h" : ""}${/plug-?in/i.test(engine) ? "p" : ""}${/diesel/i.test(engine) ? "d" : ""}` : "";
+    const key = lookupKey(year, make, model, needFilter ? "filter" : engineOnly ? engTag : "");
     const go = (await claimLookup(key)) === "go";
     const found = go ? await lookupOilSpec(year, make, model, engine).catch(() => null) : null;   // lookup down: fall back below, never break the quote
     if (go) await finishLookup(key, !!found);
@@ -80,6 +83,7 @@ export async function findSpecs(year: number, make: string, model: string, engin
       for (const e of found.engines) {
         if (e.napaFilter) await sbInsert("parts", { part_number: e.napaFilter, brand: "NAPA ProFormer", description: "Oil filter", category: "oil_filter" }, { upsertOn: "part_number,brand" });
         if (needFilter) continue;
+        if (rows.some((r) => engineMatches(e.engine, r.engine))) continue;   // already on file for this engine: keep ours
         await sbInsert("vehicle_specs", {
           year_from: year, year_to: year, make, model, engine: e.engine, fuel: e.fuel, oil_grade: e.oilGrade, oil_spec: e.oilSpec,
           capacity_l: e.capacityL, oil_filter_part: e.napaFilter, wix_filter: e.wixFilter, source: "ai_lookup", verified: false,
@@ -102,6 +106,8 @@ export async function findSpecs(year: number, make: string, model: string, engin
     near.sort((a, b) => Math.abs(a.year_from - year) - Math.abs(b.year_from - year));
     rows = near.length ? near.filter((r) => r.year_from === near[0].year_from) : [];
   }
+  // an engine was picked: never price it with a different engine's oil (the quote shows it as "not on file" instead)
+  if (engine && rows.length && !rows.some((r) => engineMatches(engine, r.engine)) && rows.some((r) => r.engine)) rows = rows.filter((r) => !r.engine);
   // our own record of this car beats an online lookup of it
   const mine = rows.filter((r) => r.source === "sheet" || r.source === "job_history");
   if (mine.length && (!engine || mine.some((r) => engineMatches(engine, r.engine)))) rows = mine;
@@ -169,7 +175,11 @@ export async function buildQuote(req: QuoteRequest) {
   let spec: Spec | null = null;
   let quote: Quote;
   const chosen = req.engine ? rows.find((x) => engineMatches(req.engine!, x.engine)) : undefined;
-  if (chosen || rows.length <= 1) {
+  if (req.engine && !chosen) {
+    // their engine isn't on file (yet): class price, flagged for HQ, never another engine's oil
+    spec = rows.find((x) => !x.engine) ?? null;
+    quote = await priceWith(spec);
+  } else if (chosen || rows.length <= 1) {
     spec = chosen ?? rows[0] ?? null;
     quote = await priceWith(spec);
   } else {
