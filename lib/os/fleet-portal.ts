@@ -95,3 +95,18 @@ export async function portalAddVehicle(accountId: string, input: Record<string, 
   }
   return r;
 }
+
+/** "Fleet login": they type the mobile or email on their account and we text the link to the account's phone.
+ *  Always answers the same way, so nobody can find out which numbers are fleet accounts. */
+export async function sendPortalLink(contact: string) {
+  const c = contact.trim();
+  const digits = c.replace(/\D/g, "");
+  const phone = digits.length >= 10 ? `+${digits.length === 10 ? `1${digits}` : digits}` : null;
+  const email = /@/.test(c) ? c.toLowerCase() : null;
+  if (!phone && !email) return { ok: false as const, error: "Enter the mobile number or email on your fleet account." };
+  const or = [phone ? `phone.eq.${enc(phone)}` : "", email ? `email.ilike.${enc(email)}` : "", email ? `invoice_email.ilike.${enc(email)}` : ""].filter(Boolean).join(",");
+  const [a] = await sbGet<{ id: string; phone: string | null; active: boolean; portal_sent_at: string | null }>(`fleet_accounts?select=id,phone,active,portal_sent_at&or=(${or})&limit=1`).catch(() => []);
+  // one text a minute per account at most
+  if (a?.active !== false && a?.phone && !(a.portal_sent_at && Date.now() - new Date(a.portal_sent_at).getTime() < 60000)) await textPortal(a.id).catch(() => null);
+  return { ok: true as const };
+}
