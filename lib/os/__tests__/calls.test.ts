@@ -44,3 +44,17 @@ test("caller number from object participants, fromPhoneNumber, or the transcript
     dialogue: [{ userId: null, identifier: "+17826408341", content: "Hi I need an oil change" }, { userId: "US1", identifier: null, content: "Sure thing" }] }, context: {} } })!;
   assert.equal(t.phone, "+17826408341");
 });
+
+test("no-AI backup reads car, service and day", async () => {
+  const { basicExtract } = await import("../call-events.ts");
+  const makes = ["Honda", "Toyota", "Chevrolet", "Mercedes-Benz", "Land Rover"];
+  // Sunday Oct 25 2026
+  const a = basicExtract("Hi, can I book an oil change for my 2019 Honda Civic Thursday afternoon? My name is Mike", makes, "2026-10-25")!;
+  assert.equal(a.year, 2019); assert.equal(a.make, "Honda"); assert.equal(a.model, "Civic"); assert.equal(a.job, "oil_change");
+  assert.equal(a.date, "2026-10-29"); assert.equal(a.part, "afternoon"); assert.equal(a.name, "Mike");
+  const b = basicExtract("need winter tires swapped on my chevy cruze tomorrow at 3pm", makes, "2026-10-25")!;
+  assert.equal(b.make, "Chevrolet"); assert.equal(b.model, "cruze"); assert.equal(b.job, "tires"); assert.equal(b.date, "2026-10-26"); assert.equal(b.time, "15:00");
+  const c = basicExtract("oil change and tire swap for 2 cars sunday", makes, "2026-10-25")!;
+  assert.equal(c.job, "seasonal"); assert.equal(c.cars, 2); assert.equal(c.date, "2026-11-01");
+  assert.equal(basicExtract("thanks!", makes, "2026-10-25"), null);
+});

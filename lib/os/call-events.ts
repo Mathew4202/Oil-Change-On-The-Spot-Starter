@@ -49,3 +49,44 @@ export function pickSlot<T extends { time: string }>(slots: T[], want: Want): T 
   const range = want.part === "morning" ? [0, 720] : want.part === "afternoon" ? [720, 1020] : want.part === "evening" ? [1020, 1440] : [0, 1440];
   return slots.find((s) => min(s.time) >= range[0] && min(s.time) < range[1]) ?? null;
 }
+
+/** No-AI backup: pull the car, service and day out of a call summary or text with plain rules.
+ *  Used when the free AI isn't available, so a call or text still comes with its details. todayIso = Halifax "YYYY-MM-DD". */
+export function basicExtract(text: string, makes: string[], todayIso: string) {
+  const t = ` ${text.replace(/\s+/g, " ")} `;
+  const low = t.toLowerCase();
+  const year = Number(t.match(/\b(19[89]\d|20[0-3]\d)\b/)?.[1]) || null;
+  const alias: Record<string, string> = { chevy: "Chevrolet", vw: "Volkswagen", mercedes: "Mercedes-Benz", benz: "Mercedes-Benz" };
+  let make: string | null = null, at = -1;
+  for (const m of [...makes, ...Object.keys(alias)]) {
+    const i = low.search(new RegExp(`\\b${m.toLowerCase().replace(/[-\s]/g, "[-\\s]?")}\\b`));
+    if (i >= 0 && (at < 0 || i < at)) { make = alias[m] ?? m; at = i; }
+  }
+  // the word or two after the make, up to a stop word ("2019 Honda Civic for Thursday" -> Civic)
+  let model: string | null = null;
+  if (make && at >= 0) {
+    const after = t.slice(at).replace(/^\s*\S+(\s+(benz|rover|martin|romeo))?/i, "").trim().split(/\s+/);
+    const stop = /^(for|on|at|in|this|next|tomorrow|today|and|with|please|oil|tire|tires|needs?|is|that|it|around|before|after|morning|afternoon|evening|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|my|name|swapped|changed|done|[,.!?])$/i;
+    const w: string[] = [];
+    for (const x of after) { const c = x.replace(/[,.!?]+$/, ""); if (!c || stop.test(c) || /^\d\.\d/.test(c) || w.length === 2) break; w.push(c); if (x !== c) break; }
+    model = w.join(" ") || null;
+  }
+  const job = /seasonal|oil.{0,20}(and|\+|plus|with).{0,10}tire|tire.{0,20}(and|\+|plus|with).{0,10}oil/.test(low) ? "seasonal"
+    : /rotat/.test(low) ? "rotation" : /\b(tire|tyre|wheel)s?\s*(swap|change)|\b(winter|summer) tires|swap.{0,10}tires/.test(low) ? "tires"
+    : /diagnos|check engine|warning light|won'?t start|noise|leak/.test(low) ? "diagnostic"
+    : /oil/.test(low) ? "oil_change" : /wiper|cabin filter|air filter|battery/.test(low) ? "parts" : null;
+  // the day: today, tomorrow, or a weekday (the next one)
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const base = new Date(`${todayIso}T12:00:00Z`);
+  const add = (n: number) => { const d = new Date(base); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  let date: string | null = /\btomorrow\b/.test(low) ? add(1) : /\btoday\b|\btonight\b/.test(low) ? add(0) : null;
+  if (!date) { const k = days.findIndex((d) => new RegExp(`\\b${d}\\b|\\b${d.slice(0, 3)}\\b`).test(low)); if (k >= 0) date = add(((k - base.getUTCDay() + 7) % 7) || 7); }
+  const part = /\bmorning\b|\bam\b/.test(low) ? "morning" : /\bafternoon\b/.test(low) ? "afternoon" : /\bevening\b|\btonight\b|after work/.test(low) ? "evening" : null;
+  const tm = low.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
+  const time = tm ? `${String((Number(tm[1]) % 12) + (tm[3] === "pm" ? 12 : 0)).padStart(2, "0")}:${tm[2] ?? "00"}` : null;
+  const name = t.match(/\b(?:[Mm]y name is|[Tt]his is|[Ii]t'?s|[Ii]'?m)\s+([A-Z][a-z]{1,15})\b/)?.[1] ?? null;
+  const cars = Number(low.match(/\b(two|2|three|3)\s+(cars|vehicles)\b/)?.[1]?.replace("two", "2").replace("three", "3")) || 1;
+  const found = !!(year || make || job || date);
+  return found ? { name, year, make, model, engine: low.match(/\b(\d\.\d)\s*l\b/)?.[1] ? `${low.match(/\b(\d\.\d)\s*l\b/)![1]}L` : null,
+    job, cars, date, time, part, wantsBooking: !!(job || date || year), notes: null } : null;
+}

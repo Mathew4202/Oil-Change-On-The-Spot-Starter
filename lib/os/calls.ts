@@ -8,7 +8,8 @@ import { halifaxDate } from "@/lib/os/slots";
 import { siteUrl, when as whenText } from "@/lib/os/customer-texts";
 import { sendSms, template, fill } from "@/lib/os/sms";
 import { createHold } from "@/lib/os/holds";
-import { pickSlot, type CallEvent } from "@/lib/os/call-events";
+import { pickSlot, basicExtract, type CallEvent } from "@/lib/os/call-events";
+import { MAKES } from "@/data/makes";
 import { askAI } from "@/lib/os/ai";
 
 export type Extract = { name: string | null; year: number | null; make: string | null; model: string | null; engine: string | null;
@@ -101,10 +102,14 @@ export async function readCall(text: string): Promise<Extract | null> {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", weekday: "long", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   // phone numbers never leave the app (free AI tiers may keep what they're sent)
   const clean = text.replace(/\+?1?[\s.(-]*\d{3}[\s.)-]*\d{3}[\s.-]*\d{4}/g, "[number]");
-  const a = await askAI({ prompt: PROMPT(today, clean), maxTokens: 400 });
-  if (!a) return null;
-  const out = a.text;
-  try { return cleanExtract(JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1))); } catch { return null; }
+  const a = await askAI({ prompt: PROMPT(today, clean), maxTokens: 400 }).catch(() => null);
+  if (a) {
+    const out = a.text;
+    try { return cleanExtract(JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1))); } catch { /* fall through to the rules */ }
+  }
+  // no AI (not set up, or today's free limit used): plain rules still get the car, service and day
+  const b = basicExtract(text, MAKES, halifaxDate(new Date()));
+  return b ? cleanExtract(b) : null;
 }
 
 const JOBS = ["oil_change", "seasonal", "tires", "rotation", "parts", "diagnostic"];
