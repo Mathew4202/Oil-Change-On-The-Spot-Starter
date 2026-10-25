@@ -119,9 +119,9 @@ test("visit profit counts the visit fee (parts margin not counted)", () => {
   assert.equal(quoteVisit({ job: "diagnostic" }).profit, 100);
 });
 
-test("tire change: $80 sedan, $90 SUV, $100 large SUV and truck", () => {
+test("tire change: $80 sedan, $90 SUV, $100 large SUV, $110 truck", () => {
   const p = (c: "Sedan" | "SUV/Crossover" | "Large SUV" | "Truck") => quoteVisit({ job: "tires", vehicleClass: c }).subtotal;
-  assert.deepEqual([p("Sedan"), p("SUV/Crossover"), p("Large SUV"), p("Truck")], [80, 90, 100, 100]);
+  assert.deepEqual([p("Sedan"), p("SUV/Crossover"), p("Large SUV"), p("Truck")], [80, 90, 100, 110]);
 });
 
 test("oil change + tire change on one visit (SUV): $110 + $90", () => {

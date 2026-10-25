@@ -60,7 +60,7 @@ const OWN_PARTS: Record<"both" | "oil" | "filter", Record<VehicleClass, number>>
 
 // Seasonal tire change (tires already on rims), per vehicle size
 export const TIRE_CHANGE: Record<VehicleClass, number> = {
-  Sedan: 80, "SUV/Crossover": 90, "Large SUV": 100, Truck: 100, "Sports Car": 100,   // business plan: large SUV / light truck $100 (seasonal truck package $215); sports: low and riskier to lift
+  Sedan: 80, "SUV/Crossover": 90, "Large SUV": 100, Truck: 110, "Sports Car": 100,   // owners confirmed Oct 24: truck $110 (seasonal truck package $225); sports: low and riskier to lift
 };
 
 // Tire rotation (wheels moved around on the car): listed "starting at $90" in the business plan

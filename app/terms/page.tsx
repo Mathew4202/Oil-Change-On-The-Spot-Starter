@@ -14,7 +14,7 @@ export default function Terms() {
       <section><h2>Weather and access</h2><p>We come in rain and snow. We only reschedule if the roads are unsafe, and we call you first. Please make sure we can safely and legally park next to the car, and leave the keys if you won&apos;t be home.</p></section>
       <section><h2>Parts you supply</h2><p>If you supply your own oil or filter, we install it as given. We can&apos;t guarantee parts we didn&apos;t supply.</p></section>
       <section><h2>Maintenance plans</h2><p>Plans run for 12 months, billed monthly plus HST, and start when you reply I AGREE to the terms we text you. They cover up to one oil change a month, and visits need 24 hours&apos; notice to change. Leaving early: you pay the regular price for the services you&apos;ve had, minus the plan payments you&apos;ve made.</p></section>
-      <section><h2>Our responsibility</h2><p>We use oil that meets your engine&apos;s spec and a new filter every time. If something isn&apos;t right, call or text us. Our liability is limited to the cost of the service.</p></section>
+      <section><h2>Our responsibility</h2><p>We use oil that meets your engine&apos;s spec and a new filter every time. If something isn&apos;t right, call or text us. If we make a mistake, we&apos;ll make it right.</p></section>
       <section><h2>Questions</h2><p>Call or text {PHONE}, or email {EMAIL}.</p></section>
     </PageShell>
   );
