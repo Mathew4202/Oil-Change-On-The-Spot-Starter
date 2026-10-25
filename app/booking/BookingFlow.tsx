@@ -254,8 +254,9 @@ export default function BookingFlow() {
   const jobLine = quote?.lines?.[0];
 
   return (
-    <div className="min-h-dvh bg-[#eef1f6] flex justify-center">
-      <div className="w-full max-w-md min-h-dvh bg-white flex flex-col text-[#0d1b3e] shadow-sm">
+    <div className="min-h-dvh bg-[#eef1f6] flex justify-center lg:items-start lg:py-8 lg:px-6">
+      {/* phone: one column like an app · computer: the form on the left, your visit and price on the right */}
+      <div className="w-full max-w-md lg:max-w-5xl min-h-dvh lg:min-h-0 bg-white flex flex-col text-[#0d1b3e] shadow-sm lg:rounded-3xl lg:overflow-clip">
         {/* Header */}
         <header className="sticky top-0 z-10 text-white px-5 pt-[max(16px,env(safe-area-inset-top))] pb-4 flex flex-col gap-3" style={{ background: NAVY }}>
           <div className="flex items-center gap-3">
@@ -274,7 +275,8 @@ export default function BookingFlow() {
           <div className="h-1.5 bg-[#22356a] rounded-full overflow-hidden"><div className="h-1.5 rounded-full transition-all" style={{ width: `${Math.round(((step + 1) / 6) * 100)}%`, background: GOLD }} /></div>
         </header>
 
-        <main className="flex-1 p-5 flex flex-col gap-4 pb-36">
+        <div className="flex-1 lg:flex lg:items-start">
+        <main className="flex-1 min-w-0 p-5 lg:p-8 flex flex-col gap-4 pb-36 lg:pb-10">
           {more.map((x) => <ExtraPricer key={x.key} value={x} date={date} onPatch={(p) => patchMore(x.key, p)} />)}
           {/* 0. Car */}
           {step === 0 && (
@@ -558,9 +560,41 @@ export default function BookingFlow() {
           )}
         </main>
 
+        {/* Computer: your visit, the price and the next button stay in view on the right */}
+        {step < 5 && (
+          <aside className="hidden lg:flex flex-col gap-4 w-[340px] shrink-0 sticky top-[112px] m-8 ml-0 rounded-2xl border p-5" style={{ borderColor: LINE }} aria-label="Your visit">
+            <p className="text-[13px] font-bold tracking-[0.12em] text-[#4a5878]">YOUR VISIT</p>
+            {carReady ? (
+              <div>
+                <p className="font-extrabold text-[18px] leading-tight">{year} {make} {model}</p>
+                {engine && engine !== "unsure" && <p className="text-[14px] text-[#4a5878]">{engine}</p>}
+                {more.filter((x) => x.year && x.make && x.model).map((x) => <p key={x.key} className="font-bold text-[15px] mt-1">+ {extraName(x)}</p>)}
+              </div>
+            ) : <p className="text-[15px] text-[#4a5878]">Pick your car to see your price.</p>}
+            {slot && <p className="text-[15px] font-semibold">{dayParts(date).long}, {slot.label}</p>}
+            {quote && carReady && !quote.error && (
+              <div className="flex flex-col gap-1.5 text-[14px] border-t pt-3" style={{ borderColor: LINE }}>
+                {quote.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span className="font-semibold whitespace-nowrap">{short(l.amount)}</span></div>)}
+                {more.filter((x) => x.quote).map((x) => <div key={x.key} className="flex justify-between gap-3"><span className="text-[#4a5878]">{extraName(x)}</span><span className="font-semibold">{short(x.quote!.subtotal)}</span></div>)}
+              </div>
+            )}
+            <div className="flex items-end justify-between gap-3 border-t pt-3" style={{ borderColor: LINE }}>
+              <span className="text-[13px] text-[#4a5878] font-semibold">Your price</span>
+              <span className="text-[30px] font-extrabold leading-none" style={{ fontFamily: "var(--font-condensed)" }} aria-live="polite">
+                {quote && carReady && !quote.error ? short(Math.round((quote.subtotal + more.reduce((t, x) => t + (x.quote?.subtotal ?? 0), 0)) * 100) / 100) : "–"} <span className="text-sm font-semibold text-[#4a5878]" style={{ fontFamily: "var(--font-barlow)" }}>+ HST</span>
+              </span>
+            </div>
+            {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
+            <button onClick={next} disabled={busy || (step === 0 && carReady && pricing && !quote)}
+              className="h-[54px] rounded-xl text-lg font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{nextLabel}</button>
+            <p className="text-[13px] text-[#4a5878]">Prices are before HST. Travel is free within 30 km, and you see the full price before you book.</p>
+          </aside>
+        )}
+        </div>
+
         {/* Price bar */}
         {step < 5 && (
-          <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-10 bg-white border-t border-[#dde3ee] px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex flex-col gap-2">
+          <div className="lg:hidden fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-10 bg-white border-t border-[#dde3ee] px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex flex-col gap-2">
             {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col">
