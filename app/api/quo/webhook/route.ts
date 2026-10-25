@@ -1,4 +1,4 @@
-// Quo calls this for every text a customer sends to our number.
+// Quo calls this for every text a customer sends to our number, and for calls (ended, summary ready, transcript ready).
 // STOP → texts off (one confirmation). START → texts back on. "Cancel" → alert us (they probably mean the booking).
 import { NextRequest, NextResponse } from "next/server";
 import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
@@ -6,6 +6,8 @@ import { e164 } from "@/lib/os/booking";
 import { sendSms } from "@/lib/os/sms";
 import { pushToOwners } from "@/lib/os/push";
 import { parseQuoEvent, intentOf, verifyQuo } from "@/lib/os/inbound-sms";
+import { parseCallEvent } from "@/lib/os/call-events";
+import { handleCallEvent } from "@/lib/os/calls";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,10 @@ export async function POST(req: NextRequest) {
   if (!ok) return NextResponse.json({ error: "bad signature" }, { status: 401 });
 
   let json: unknown; try { json = JSON.parse(raw.toString("utf8")); } catch { return NextResponse.json({ ok: true, ignored: "not json" }); }
+  // Calls: save them and work out what the caller wants (one-tap hold + link in HQ)
+  const call = parseCallEvent(json);
+  if (call) return NextResponse.json(await handleCallEvent(call).catch((e) => ({ error: String(e).slice(0, 200) })));
+
   const m = parseQuoEvent(json);
   if (!m) return NextResponse.json({ ok: true, ignored: "not an incoming text" });
   const from = e164(m.from);

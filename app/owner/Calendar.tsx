@@ -4,7 +4,8 @@ import NewBooking, { type Customer as BookCustomer } from "./NewBooking";
 import PushToggle from "./PushToggle";
 import JobSheet from "./JobSheet";
 import ChangeBooking from "./ChangeBooking";
-import HoldTime from "./HoldTime";
+import HoldTime, { type HoldPreset } from "./HoldTime";
+import CallsPanel from "./CallsPanel";
 import OwnerNav from "./OwnerNav";
 
 type Job = {
@@ -45,6 +46,10 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
   const [showAlerts, setShowAlerts] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const [holding, setHolding] = useState(false);
+  const [holdPreset, setHoldPreset] = useState<HoldPreset | undefined>(undefined);
+  const [callFocus, setCallFocus] = useState<string | null>(null);
+  const [callsKey, setCallsKey] = useState(0);
+  useEffect(() => { const c = new URLSearchParams(window.location.search).get("call"); if (c) setCallFocus(c); }, []);
   const [booking, setBooking] = useState(false);
   const [bookCustomer, setBookCustomer] = useState<BookCustomer | null>(null);
   // "Book" from a customer's page opens the booking form with them filled in
@@ -138,6 +143,9 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
       </header>
 
       <main className="flex-1 p-4 flex flex-col gap-3 pb-28">
+        <CallsPanel key={callsKey} focus={callFocus} onChanged={() => load(date)}
+          onPickTime={(c) => { setHoldPreset({ callId: c.id, name: c.extract?.name, phone: c.phone, job: c.extract?.job, cars: c.extract?.cars,
+            note: c.extract ? [[c.extract.year, c.extract.make, c.extract.model].filter(Boolean).join(" "), c.extract.notes].filter(Boolean).join(" · ") : null }); setHolding(true); }} />
         {error && <p className="rounded-xl bg-red-50 text-red-800 p-3 text-sm" role="alert">{error}</p>}
         <PushToggle compact />
         {!day && !error && <p className="text-center text-[#4a5878] py-10">Loading…</p>}
@@ -315,7 +323,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
         onClose={(nd) => { setChanging(null); if (nd === undefined) return; if (nd && nd !== date) setDate(nd); else load(date); loadAlerts(); }} />}
       {jobOpen && <JobSheet bookingId={jobOpen} owner={owner} onClose={(changed) => { setJobOpen(null); if (changed) load(date); }} />}
 
-      {holding && <HoldTime date={date} onClose={(saved) => { setHolding(false); if (saved) load(date); }} />}
+      {holding && <HoldTime date={date} preset={holdPreset} onClose={(saved) => { setHolding(false); setHoldPreset(undefined); if (saved) { load(date); setCallsKey((k) => k + 1); } }} />}
       {blocking && <BlockTime date={date} onClose={(saved) => { setBlocking(false); if (saved) load(date); }} />}
     </div>
   );

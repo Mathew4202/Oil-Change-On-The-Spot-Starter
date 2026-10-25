@@ -1,6 +1,6 @@
 "use client";
 // On a call: hold a time for them, and text them a link to finish booking with their own details.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 const field = "h-12 rounded-xl border px-3 text-base w-full bg-white font-normal";
@@ -17,17 +17,30 @@ function halifaxIso(date: string, hhmm: string) {
   return new Date(guess.getTime() - off(new Date(guess.getTime() - off(guess) * 60000)) * 60000).toISOString();
 }
 
-export default function HoldTime({ date, onClose }: { date: string; onClose: (saved: boolean) => void }) {
-  const [time, setTime] = useState("10:00"); const [name, setName] = useState(""); const [phone, setPhone] = useState("");
-  const [job, setJob] = useState("oil_change"); const [cars, setCars] = useState(1); const [hours, setHours] = useState(2); const [note, setNote] = useState("");
+export type HoldPreset = { callId?: string; name?: string | null; phone?: string | null; job?: string | null; cars?: number; note?: string | null };
+type Slot = { time: string; label: string; start: string };
+
+export default function HoldTime({ date: startDate, onClose, preset }: { date: string; onClose: (saved: boolean) => void; preset?: HoldPreset }) {
+  const [date, setDate] = useState(startDate);
+  const [time, setTime] = useState(""); const [name, setName] = useState(preset?.name ?? ""); const [phone, setPhone] = useState((preset?.phone ?? "").replace(/^\+1/, ""));
+  const [job, setJob] = useState(preset?.job || "oil_change"); const [cars, setCars] = useState(preset?.cars || 1); const [hours, setHours] = useState(2); const [note, setNote] = useState(preset?.note ?? "");
+  const [slots, setSlots] = useState<Slot[] | null>(null); const [custom, setCustom] = useState(false);
+  // open times for that day, the same ones customers see
+  useEffect(() => {
+    setSlots(null); setTime("");
+    fetch(`/api/os/slots?date=${date}&job=${job}&cars=${cars}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
+  }, [date, job, cars]);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [done, setDone] = useState<{ sent: boolean; status: string; link: string } | null>(null);
 
   async function save() {
     setErr("");
     if (phone.replace(/\D/g, "").length < 10) return setErr("Add their 10-digit mobile number.");
+    if (!time) return setErr("Tap a time.");
     setBusy(true);
-    const r = await fetch("/api/owner/hold", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "create", start: halifaxIso(date, time), firstName: name, phone, job, cars, hours, note }) });
+    const r = preset?.callId
+      ? await fetch("/api/owner/calls", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: preset.callId, action: "hold", start: halifaxIso(date, time) }) })
+      : await fetch("/api/owner/hold", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", start: halifaxIso(date, time), firstName: name, phone, job, cars, hours, note }) });
     const j = await r.json().catch(() => ({})); setBusy(false);
     if (!r.ok || !j.ok) return setErr(j.error || "Couldn't hold it");
     setDone({ sent: !!j.sms?.sent, status: j.sms?.status ?? "", link: j.link });
@@ -54,7 +67,14 @@ export default function HoldTime({ date, onClose }: { date: string; onClose: (sa
               <label className={lbl}>Their first name<input value={name} onChange={(e) => setName(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
               <label className={lbl}>Mobile<input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" className={field} style={{ borderColor: LINE }} /></label>
             </div>
-            <label className={lbl}>Start time<input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
+            <label className={lbl}>Day<input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
+            <div className="flex flex-col gap-1 text-sm font-semibold">Tap a time
+              {custom ? <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} style={{ borderColor: LINE }} />
+                : slots === null ? <p className="font-normal text-[#4a5878]">Loading open times…</p>
+                : slots.length === 0 ? <p className="font-normal text-[#4a5878]">No open times this day. Try another day, or set a time yourself.</p>
+                : <div className="grid grid-cols-4 gap-2">{slots.map((s) => <button key={s.start} type="button" onClick={() => setTime(s.time)} className="h-11 rounded-lg border text-sm font-bold" style={chip(time === s.time)}>{s.label}</button>)}</div>}
+              <button type="button" onClick={() => { setCustom((c) => !c); setTime(""); }} className="self-start text-sm underline font-semibold">{custom ? "Show open times" : "Set a time myself"}</button>
+            </div>
             <div className="flex flex-col gap-1 text-sm font-semibold">What for
               <div className="grid grid-cols-3 gap-2">{JOBS.map(([k, n]) => <button key={k} type="button" onClick={() => setJob(k)} className="h-11 rounded-lg border text-[13px] font-bold" style={chip(job === k)}>{n}</button>)}</div>
             </div>

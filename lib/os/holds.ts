@@ -9,8 +9,9 @@ import { jobMinutes } from "@/lib/os/calendar";
 const e164 = (p: string) => { const d = p.replace(/\D/g, ""); return d.length === 10 ? `+1${d}` : `+${d}`; };
 
 export type Hold = { id: string; token: string; starts_at: string; ends_at: string; expires_at: string; first_name: string | null; phone: string | null;
-  job: string; cars: number; note: string | null; created_by: string | null; status: string; booking_id: string | null };
-const COLS = "id,token,starts_at,ends_at,expires_at,first_name,phone,job,cars,note,created_by,status,booking_id";
+  job: string; cars: number; note: string | null; created_by: string | null; status: string; booking_id: string | null;
+  car_year?: number | null; car_make?: string | null; car_model?: string | null };
+const COLS = "*";
 export const JOBS = ["oil_change", "seasonal", "tires", "rotation", "parts", "diagnostic"] as const;
 
 export const holdLink = (token: string) => `${siteUrl()}/booking?hold=${token}`;

@@ -107,6 +107,7 @@ export default function BookingFlow() {
         setDate(h.date);
         if (h.firstName) setName((n) => n || h.firstName);
         if (h.phone) setPhone((p) => p || String(h.phone).replace(/^\+1/, ""));
+        if (h.car?.year && h.car?.make && !q.get("year")) { setYear(String(h.car.year)); setMake(h.car.make); if (h.car.model) setModel(h.car.model); }
       } else setHoldMsg(h.used ? "That time is already booked for you. Check your texts for the confirmation." : "The time we held for you has run out. Pick any open time and it's yours.");
     }).catch(() => {});
     // signed in with a text code before: their account wins (it's always up to date)
