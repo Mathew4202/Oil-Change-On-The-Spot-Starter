@@ -16,6 +16,7 @@ export default function StockScreen() {
 
   // Oil approvals (dexos, VW 508 00...) for cars we've done: the sheet never recorded them, so they're looked up once
   const [specs, setSpecs] = useState<{ total: number; left: number } | null>(null);
+  const [check, setCheck] = useState<{ free: string; paid: string } | "busy" | null>(null);
   const [ai, setAi] = useState<{ paid: { spent: number; left: number; requests: number } | null; free: boolean } | null>(null);
   const [filling, setFilling] = useState(false); const [specErr, setSpecErr] = useState("");
   useEffect(() => { fetch("/api/owner/specs", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (d.total != null) setSpecs(d); setAi({ paid: d.paid ?? null, free: !!d.free }); }).catch(() => {}); }, []);
@@ -54,6 +55,15 @@ export default function StockScreen() {
       <main className="flex-1 p-4 flex flex-col gap-4 pb-28">
         {loading && <p className="text-center text-[#4a5878] py-8">Loading…</p>}
 
+        <div className="bg-white rounded-2xl p-3 flex flex-col gap-1.5 text-[14px]">
+          <div className="flex items-center justify-between gap-2"><span className="font-bold">AI setup</span>
+            <button onClick={async () => { setCheck("busy"); const d = await fetch("/api/owner/ai-check", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ free: "Couldn't reach HQ", paid: "" })); setCheck(d); }}
+              className="h-9 px-3 rounded-lg border font-bold text-sm" style={{ borderColor: LINE }}>{check === "busy" ? "Checking…" : "Test AI"}</button></div>
+          {check && check !== "busy" && <>
+            <p><span className="font-semibold">Free (Gemini):</span> <span style={{ color: check.free === "working" ? "#1d6b3a" : "#9b1c1c" }}>{check.free}</span></p>
+            <p><span className="font-semibold">Paid backup (Claude):</span> <span style={{ color: check.paid === "working" ? "#1d6b3a" : "#8a5a00" }}>{check.paid}</span></p>
+          </>}
+        </div>
         {ai && (
           <p className="text-[13px] text-[#4a5878] px-1">AI: {ai.free ? "free Gemini first" : "free Gemini not set up"}{ai.paid ? ` · paid backup this month $${ai.paid.spent.toFixed(2)} (${ai.paid.requests} uses), $${ai.paid.left.toFixed(2)} left` : ""}</p>
         )}

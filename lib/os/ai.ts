@@ -10,6 +10,9 @@ export type AiFile = { mime: string; base64: string };
 export type AiAnswer = { text: string; sources: string[]; provider: "gemini" | "claude" };
 
 const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-flash-latest";
+let lastError: string | null = null;
+/** Why the last AI request didn't work (shown in HQ so a setup problem is easy to spot). Never contains a key. */
+export const aiLastError = () => lastError;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export async function askAI(opts: { prompt: string; file?: AiFile; search?: boolean; maxTokens?: number; big?: boolean; private?: boolean }): Promise<AiAnswer | null> {
@@ -23,7 +26,8 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
       body: JSON.stringify({
         contents: [{ role: "user", parts }],
         ...(opts.search ? { tools: [{ google_search: {} }] } : {}),
-        generationConfig: { maxOutputTokens: opts.maxTokens ?? 2000, temperature: 0.1 },
+        // newer Gemini models "think" first and that counts against the output limit, so leave plenty of room (free either way)
+        generationConfig: { maxOutputTokens: (opts.maxTokens ?? 2000) + 8192, temperature: 0.1 },
       }),
     }).catch(() => null);
     if (res?.ok) {
@@ -31,17 +35,20 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
       const c = body.candidates?.[0];
       const text = (c?.content?.parts ?? []).map((p: any) => p.text ?? "").join("\n").trim();
       const sources = (c?.groundingMetadata?.groundingChunks ?? []).map((x: any) => x?.web?.uri).filter(Boolean).slice(0, 5);
-      if (text) return { text, sources, provider: "gemini" };
+      if (text) { lastError = null; return { text, sources, provider: "gemini" }; }
+      lastError = `Gemini answered with no text (${c?.finishReason ?? "no reason given"})`;
     } else if (res) {
-      console.error("gemini", res.status, (await res.text().catch(() => "")).slice(0, 300));   // 429 = free limit for today used up
-    }
-  }
+      const t = (await res.text().catch(() => "")).slice(0, 300);
+      lastError = `Gemini ${res.status}: ${t.match(/"message":\s*"([^"]+)/)?.[1] ?? t}`;   // 429 = free limit for today used up
+      console.error(lastError);
+    } else lastError = "Couldn't reach Gemini";
+  } else if (!g && !opts.private) lastError = "GEMINI_API_KEY isn't on this deployment (add it in Vercel, then redeploy)";
   // Paid backup, under the monthly budget
   const k = process.env.ANTHROPIC_API_KEY;
   if (!k || process.env.AI_ALLOW_PAID === "false") return null;
   const month = new Date().toISOString().slice(0, 7);
   const budget = await paidBudgetLeft(month);
-  if (budget <= 0) return null;
+  if (budget <= 0) { lastError = `${lastError ? `${lastError}. ` : ""}Paid backup off (budget used, or migration 0030 not run)`; return null; }
   const content: any[] = [];
   if (opts.file) content.push(opts.file.mime === "application/pdf"
     ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: opts.file.base64 } }
@@ -55,7 +62,7 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
       ...(opts.search ? { tools: [{ type: process.env.ANTHROPIC_SEARCH_TOOL || "web_search_20250305", name: "web_search", max_uses: 2 }] } : {}),
     }),
   }).catch(() => null);
-  if (!res?.ok) { if (res) console.error("claude", res.status, (await res.text().catch(() => "")).slice(0, 300)); return null; }
+  if (!res?.ok) { const t = res ? (await res.text().catch(() => "")).slice(0, 200) : "couldn't reach it"; lastError = `${lastError ? `${lastError}. ` : ""}Claude ${res?.status ?? ""}: ${t}`; console.error(lastError); return null; }
   const body = await res.json().catch(() => ({}));
   await addSpend(month, costOf(model, body.usage)).catch(() => null);
   const text = (body.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
