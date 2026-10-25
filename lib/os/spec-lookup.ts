@@ -98,9 +98,9 @@ export async function lookupOilSpec(year: number, make: string, model: string, e
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
-      max_tokens: 2000,
-      tools: [{ type: process.env.ANTHROPIC_SEARCH_TOOL || "web_search_20250305", name: "web_search", max_uses: 5 }],
+      model: process.env.SPEC_LOOKUP_MODEL || "claude-haiku-5-5",   // small model: a few cents a car (see ai-budget.ts)
+      max_tokens: 1200,
+      tools: [{ type: process.env.ANTHROPIC_SEARCH_TOOL || "web_search_20250305", name: "web_search", max_uses: 2 }],
       messages: [{ role: "user", content: PROMPT(year, make, model, engine) }],
     }),
   });

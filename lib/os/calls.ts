@@ -9,6 +9,7 @@ import { siteUrl, when as whenText } from "@/lib/os/customer-texts";
 import { sendSms, template, fill } from "@/lib/os/sms";
 import { createHold } from "@/lib/os/holds";
 import { pickSlot, type CallEvent } from "@/lib/os/call-events";
+import { CHEAP_MODEL } from "@/lib/os/ai-budget";
 
 export type Extract = { name: string | null; year: number | null; make: string | null; model: string | null; engine: string | null;
   job: "oil_change" | "seasonal" | "tires" | "rotation" | "parts" | "diagnostic" | null; cars: number;
@@ -101,7 +102,7 @@ export async function readCall(text: string): Promise<Extract | null> {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", weekday: "long", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const res = await fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
     method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5", max_tokens: 400, messages: [{ role: "user", content: PROMPT(today, text) }] }),
+    body: JSON.stringify({ model: CHEAP_MODEL(), max_tokens: 400, messages: [{ role: "user", content: PROMPT(today, text) }] }),
   }).catch(() => null);
   if (!res?.ok) return null;
   const body = await res.json().catch(() => ({}));

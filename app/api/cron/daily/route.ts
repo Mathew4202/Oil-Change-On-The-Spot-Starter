@@ -56,8 +56,8 @@ export async function GET(req: NextRequest) {
   }
   // 3) Maintenance plans: this month's pay link on each plan's bill day, and plans that finished their year
   const plans = await runPlanBilling(today).catch(() => ({ billed: 0, ended: 0 }));
-  // 4) A few cars we've done get their oil approval filled in (the HQ Stock button does the rest in one go)
-  const specs = await backfillSpecs(4).catch(() => ({ filled: 0 }));
+  // 4) A couple of cars we've done get their oil approval filled in (under the daily lookup cap)
+  const specs = await backfillSpecs(2).catch(() => ({ filled: 0 }));
   // 5) What Quo sent us is only kept two weeks
   await sbDelete("webhook_log", `at=lt.${new Date(Date.now() - 14 * 86400000).toISOString()}`).catch(() => null);
   return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled });

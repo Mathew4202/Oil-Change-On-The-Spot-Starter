@@ -25,6 +25,7 @@ export default function StockScreen() {
       if (!d) { setSpecErr("Lost connection. Tap again to carry on."); break; }
       if (d.error) { setSpecErr(d.error); break; }
       setSpecs({ total: d.total, left: d.left });
+      if (d.note) { setSpecErr(d.note); break; }
       if (!d.left || !d.tried) break;
     }
     setFilling(false);
@@ -55,7 +56,7 @@ export default function StockScreen() {
         {specs && specs.left > 0 && (
           <section className="rounded-2xl p-4 flex flex-col gap-2 border bg-white" style={{ borderColor: LINE }}>
             <h2 className="font-extrabold text-lg">Oil approvals for cars we&apos;ve done</h2>
-            <p className="text-sm text-[#4a5878]">{specs.total - specs.left} of {specs.total} have the oil approval (dexos, VW, MB). The rest get looked up once and saved, about 20 seconds per batch of 6. Our oil, litres and filters stay as we recorded them.</p>
+            <p className="text-sm text-[#4a5878]">{specs.total - specs.left} of {specs.total} have the oil approval (dexos, VW, MB). The rest get looked up once and saved, about 5 cents a car, up to 25 cars a day. Our oil, litres and filters stay as we recorded them.</p>
             <button onClick={fillSpecs} disabled={filling} className="h-12 rounded-xl font-bold text-white disabled:opacity-60" style={{ background: NAVY }}>
               {filling ? `Looking up… ${specs.left} left` : `Fill in the ${specs.left} left`}</button>
             {specErr && <p className="text-sm font-semibold text-[#b3261e]">{specErr}</p>}

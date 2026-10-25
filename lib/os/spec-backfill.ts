@@ -5,6 +5,7 @@
 import { sbGet, sbPatch, sbInsert, enc } from "@/lib/os/db";
 import { lookupOilSpec } from "@/lib/os/spec-lookup";
 import { engineMatches } from "@/lib/os/quote-service";
+import { claimLookup, finishLookup, lookupKey } from "@/lib/os/ai-budget";
 
 type Row = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_filter_part: string | null; oil_grade: string | null };
 const TODO = "source=in.(sheet,job_history)&oil_spec=is.null&looked_up_at=is.null&oil_grade=not.is.null";
@@ -21,9 +22,16 @@ export async function specsLeft() {
 export async function learnCar(ours: Row[]) {
   if (!ours.length) return false;
   const { year_from: year, make, model } = ours[0];
-  const found = await lookupOilSpec(year, make, model).catch(() => null);
   const now = new Date().toISOString();
+  // costs money: once per car, daily cap (see ai-budget.ts)
+  const key = lookupKey(year, make, model);
+  const claim = await claimLookup(key);
+  if (claim === "cap" || claim === "busy") return false;   // try again another day
+  if (claim === "done") { await Promise.all(ours.map((r) => sbPatch("vehicle_specs", `id=eq.${r.id}`, { looked_up_at: now }).catch(() => null))); return false; }
+  const found = await lookupOilSpec(year, make, model).catch(() => null);
+  await finishLookup(key, !!found);
   if (!found) { await Promise.all(ours.map((r) => sbPatch("vehicle_specs", `id=eq.${r.id}`, { looked_up_at: now }).catch(() => null))); return false; }
+
   const used = new Set<number>();
   for (const r of ours) {
     const i = found.engines.length === 1 ? 0 : found.engines.findIndex((x) => r.engine ? engineMatches(r.engine, x.engine) : false);
@@ -63,6 +71,10 @@ export async function backfillSpecs(batch = 6) {
     const all = await sbGet<Row>(`vehicle_specs?select=id,year_from,make,model,engine,oil_filter_part,oil_grade&source=in.(sheet,job_history)&year_from=eq.${g[0].year_from}&make=eq.${enc(g[0].make)}&model=eq.${enc(g[0].model)}&oil_grade=not.is.null`).catch(() => g);
     return all.length ? all : g;
   }));
-  const results = await Promise.all(groups.map((g) => learnCar(g)));
-  return { ok: true as const, filled: results.filter(Boolean).length, tried: groups.length, ...(await specsLeft()) };
+  const results: boolean[] = [];
+  for (const g of groups) results.push(await learnCar(g));   // one at a time, so the daily cap is respected exactly
+  const left = await specsLeft();
+  const capped = !results.some(Boolean) && left.left > 0;
+  return { ok: true as const, filled: results.filter(Boolean).length, tried: capped ? 0 : groups.length, ...left,
+    ...(capped ? { note: "Today's lookup limit is reached. The rest will be filled tomorrow." } : {}) };
 }

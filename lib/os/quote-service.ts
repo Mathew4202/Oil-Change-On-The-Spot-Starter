@@ -1,6 +1,7 @@
 // Loads what the pricing engine needs, looks up unknown cars automatically, and returns a quote.
 import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
 import { sameCar } from "@/lib/os/car-match";
+import { claimLookup, finishLookup, lookupKey } from "@/lib/os/ai-budget";
 import { euroOilKey, quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUNT, type VehicleClass, type Addon, type Quote, type JobType } from "@/lib/os/pricing-engine";
 
 // Customer price for each add-on part or top-up (settings can override; part prices get replaced by the parts lookup later)
@@ -69,7 +70,11 @@ export async function findSpecs(year: number, make: string, model: string, engin
   // we did this car but nobody wrote the filter down: get just the filter number online and keep it
   const needFilter = !needLookup && ours.length > 0 && ours.every((r) => !r.oil_filter_part && !r.filter_note);   // filter_note set = already tried once
   if (needLookup || needFilter) {
-    const found = await lookupOilSpec(year, make, model, engine).catch(() => null);   // lookup down: fall back below, never break the quote
+    // costs money: once per car ever, never two at once, daily cap (see ai-budget.ts)
+    const key = lookupKey(year, make, model, needFilter ? "filter" : "");
+    const go = (await claimLookup(key)) === "go";
+    const found = go ? await lookupOilSpec(year, make, model, engine).catch(() => null) : null;   // lookup down: fall back below, never break the quote
+    if (go) await finishLookup(key, !!found);
     if (found) {
       lookedUp = true;
       for (const e of found.engines) {
