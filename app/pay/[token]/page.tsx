@@ -27,7 +27,7 @@ export default async function PayPage({ params, searchParams }: { params: { toke
 
         {t && (
           <>
-            {result === "approved" && <p className="rounded-xl p-4 font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }} role="status">Your payment went through.{t.kind === "job" ? " Your receipt is below, and we've emailed it if we have your email." : t.kind === "invoice" ? " The invoice is marked paid. Thank you!" : " See you at your appointment!"}</p>}
+            {result === "approved" && <p className="rounded-xl p-4 font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }} role="status">Your payment went through.{t.kind === "job" ? " Your receipt is below, and we've emailed it if we have your email." : t.kind === "invoice" ? " The invoice is marked paid. Thank you!" : t.kind === "plan" ? " Thanks, your plan payment is in." : " See you at your appointment!"}</p>}
             {result === "declined" && t.due > 0 && <p className="rounded-xl p-4 font-semibold" style={{ background: "#fde2e1", color: "#8a1c1c" }} role="alert">The payment didn&apos;t go through, and nothing was charged. You can try again{t.kind === "prepay" ? ", or just pay after the job" : ""}.</p>}
             {result === "error" && <p className="rounded-xl p-4 font-semibold" style={{ background: "#fff6dd", color: "#8a5a00" }} role="alert">We couldn&apos;t confirm that payment. Please don&apos;t pay again yet. Call or text us at {PHONE} and we&apos;ll check.</p>}
 

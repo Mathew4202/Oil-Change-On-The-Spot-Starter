@@ -2,6 +2,8 @@
 import crypto from "crypto";
 import { vinOk, cleanVin } from "@/lib/os/vin";
 import { holdByToken, holdIsLive, useHold } from "@/lib/os/holds";
+import { planFor } from "@/lib/os/plans";
+import { applyPlan } from "@/lib/os/plan-cover";
 import { decodeVin } from "@/lib/os/vin-photo";
 import { z } from "zod";
 import { sbGet, sbInsert, sbPatch, sbHeaders, enc } from "@/lib/os/db";
@@ -223,6 +225,18 @@ async function createOne(b: BookingInput, opts: Opts & {
     vehicle = v.data!;
   } else if (vin) await sbPatch("vehicles", `id=eq.${vehicle.id}`, { vin });
 
+  // 4b) On a maintenance plan? The oil change (and their swaps) are covered, filter and wiper labour free, small top-ups included.
+  let planId: string | null = null;
+  if (!opts.fleetAccountId && opts.priceOverride == null && (withOil || b.job === "tires")) {
+    const pl = await planFor(customer.id, vehicle.id, b.start).catch(() => null);
+    if (pl) {   // even when this month's oil change is used, labour on filters and wipers is still free
+      const c = applyPlan(quote.lines, { oilLeft: withOil && pl.oilLeft, swapLeft: pl.swapLeft && (b.job === "tires" || b.job === "seasonal" || b.addons.includes("tires")), hstRate: Number(rules.hst_rate ?? 0.14) });
+      quote.lines = c.lines; quote.subtotal = c.subtotal; quote.hst = c.hst; quote.total = c.total;
+      if (quote.cost != null) quote.profit = Math.round((c.subtotal - quote.cost + (c.oilCovered ? Number(pl.plan.per_visit) : 0)) * 100) / 100;   // the plan's monthly payments pay for the oil change
+      if (c.oilCovered || c.lines.some((l) => /^Tire change, covered/.test(l.label))) planId = pl.plan.id;   // only covered visits count toward the plan
+    }
+  }
+
   // 5) Book it. The database refuses it if the time overlaps another booking.
   const manageToken = newManageToken();
   const bk = await sbInsert<{ id: string }>("bookings", {
@@ -233,7 +247,7 @@ async function createOne(b: BookingInput, opts: Opts & {
       ...(b.photos?.length && !vin ? ["Customer sent a VIN photo we couldn't read: look at it before you go"] : []),
       ...(vin && !sameCar ? [`VIN says ${vinCar}, but they booked a ${b.car.year} ${b.car.make} ${b.car.model}: check which car it is`] : [])],
     photo_paths: b.photos?.length ? b.photos : null,
-    source: opts.source, notes: b.notes || null, manage_token: manageToken, ...(opts.groupId ? { group_id: opts.groupId } : {}), ...(opts.fleetAccountId ? { fleet_account_id: opts.fleetAccountId } : {}),
+    source: opts.source, notes: b.notes || null, manage_token: manageToken, ...(opts.groupId ? { group_id: opts.groupId } : {}), ...(opts.fleetAccountId ? { fleet_account_id: opts.fleetAccountId } : {}), ...(planId ? { plan_id: planId } : {}),
   });
   if (!bk.ok) {
     if (bk.status === 409 || JSON.stringify(bk.error).includes("23P01")) {

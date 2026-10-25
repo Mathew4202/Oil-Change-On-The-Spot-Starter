@@ -41,7 +41,7 @@ export async function customerDetail(id: string) {
     customer: { id: c.id, firstName: c.first_name, lastName: c.last_name, name: fullName(c), phone: c.phone, email: c.email, address: c.address, notes: c.notes,
       smsOff: !!c.sms_opt_out, smsOffAt: c.sms_opt_out_at, smsOffBy: c.sms_opt_out_by, since: [day(c.created_at), ...jobs.map((j) => day(j.done_at)), ...bookings.map((b) => day(b.starts_at))].sort()[0],   // first time we saw them, not the import date
       source: c.source, reviewAsked: !!c.review_asked_at },
-    stats: { visits: jobs.length, spent, average: jobs.length ? Math.round((spent / jobs.length) * 100) / 100 : 0,
+    stats: { visits: jobs.filter((j) => !["plan_payment", "cancellation_fee"].includes(String((j as { service?: string | null }).service ?? ""))).length, spent, average: jobs.length ? Math.round((spent / jobs.length) * 100) / 100 : 0,
       lastVisit: jobs[0] ? day(jobs[0].done_at) : null, nextDue, nextDueKm: jobs.find((j) => j.next_due_km)?.next_due_km ?? null,
       due: dueState(nextDue, upcoming[0] ? day(upcoming[0].starts_at) : null, today),
       cancelled: bookings.filter((b) => b.status === "cancelled").length, noShows: bookings.filter((b) => b.status === "no_show").length },

@@ -8,6 +8,7 @@ import { pushToOwners } from "@/lib/os/push";
 import { parseQuoEvent, intentOf, verifyQuo } from "@/lib/os/inbound-sms";
 import { parseCallEvent } from "@/lib/os/call-events";
 import { handleCallEvent } from "@/lib/os/calls";
+import { agreeByText } from "@/lib/os/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,10 @@ export async function POST(req: NextRequest) {
   if (c && logged.ok && (logged.data as { id?: string })?.id) await sbPatch("messages", `id=eq.${(logged.data as { id: string }).id}`, { customer_id: c.id });
   const name = c ? [c.first_name, c.last_name].filter(Boolean).join(" ") || from : from;
   const page = c ? `/owner/customers/${c.id}` : "/owner/customers";
+  // I AGREE to a maintenance plan offer: the plan starts and the first pay link goes out
+  const agreed = await agreeByText(from, m.text).catch(() => null);
+  if (agreed) return NextResponse.json({ ok: true, action: "plan_started" });
+
   const intent = intentOf(m.text);
 
   if (intent === "stop") {

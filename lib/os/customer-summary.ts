@@ -36,7 +36,7 @@ export function summarizeCustomers(cs: CustRow[], jobs: JobLite[], bookings: Boo
     return {
       id: c.id, name: fullName(c), phone: c.phone, email: c.email, address: c.address, smsOff: !!c.sms_opt_out, source: c.source,
       cars: (c.vehicles ?? []).map((v) => [v.year, v.make, v.model].filter(Boolean).join(" ")).filter(Boolean),
-      visits: js.length,
+      visits: js.filter((j) => !["plan_payment", "cancellation_fee"].includes(String((j as { service?: string | null }).service ?? ""))).length,
       spent: r2(js.reduce((t, j) => t + Number(j.revenue ?? 0), 0)),
       lastVisit: js[0] ? halifaxDay(js[0].done_at) : null,
       nextDue, nextBooking,
