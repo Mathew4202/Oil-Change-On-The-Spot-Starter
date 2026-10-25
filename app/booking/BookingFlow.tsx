@@ -77,7 +77,10 @@ export default function BookingFlow() {
   const [payNow, setPayNow] = useState(false); const [payOnline, setPayOnline] = useState(false);   // pay online when booking (only once Converge is set up)
   const [agree, setAgree] = useState(false);   // cancellation (and diagnostic) terms   // signed in with a text code (works on any phone)
   const [manualEngine, setManualEngine] = useState("");
-  const [vinPhoto, setVinPhoto] = useState<VinResult | null>(null);   // optional VIN / engine label photo
+  const [vinPhoto, setVinPhoto] = useState<VinResult | null>(null);
+  // a time we held for them on the phone (link from our text)
+  const [hold, setHold] = useState<{ token: string; start: string; when: string; label: string; date: string; until: string } | null>(null);
+  const [holdMsg, setHoldMsg] = useState("");   // optional VIN / engine label photo
 
   const years = useMemo(() => { const y = new Date().getFullYear() + 1; return Array.from({ length: y - 1989 }, (_, i) => String(y - i)); }, []);
   useEffect(() => { fetch("/api/os/pay").then((r) => r.json()).then((d) => setPayOnline(!!d.ready)).catch(() => {}); }, []);
@@ -95,6 +98,17 @@ export default function BookingFlow() {
     const add = q.get("add");
     if (add === "own") setOwn("both");
     else if (add && PARTS_ONLY.includes(add)) setAddons([add]);
+    // came from the text we sent while holding a time on the phone
+    const ht = q.get("hold");
+    if (ht) fetch(`/api/os/hold?t=${encodeURIComponent(ht)}`).then((r) => r.json()).then((h) => {
+      if (h.live) {
+        setHold({ token: ht, start: h.start, when: h.when, label: h.label, date: h.date, until: h.until });
+        if (h.job && ["oil_change", "seasonal", "tires", "rotation", "parts", "diagnostic"].includes(h.job)) setJob(h.job);
+        setDate(h.date);
+        if (h.firstName) setName((n) => n || h.firstName);
+        if (h.phone) setPhone((p) => p || String(h.phone).replace(/^\+1/, ""));
+      } else setHoldMsg(h.used ? "That time is already booked for you. Check your texts for the confirmation." : "The time we held for you has run out. Pick any open time and it's yours.");
+    }).catch(() => {});
     // signed in with a text code before: their account wins (it's always up to date)
     fetch("/api/os/account").then((r) => r.json()).then((j) => { if (j.signedIn && j.profile) signedIn(j.profile); }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -161,13 +175,14 @@ export default function BookingFlow() {
   // Open times
   useEffect(() => {
     if (step !== 2) return;
+    if (hold) { setSlot({ time: "", label: hold.label, start: hold.start }); return; }   // the held time is already theirs
     setSlots(null); setSlot(null); setDayNote("");
     const tires = job === "oil_change" && addons.includes("tires") ? "tires" : "";
     const moreQ = more.map((x) => `${x.job}:${x.job === "oil_change" && x.tires ? "tires" : ""}`).join(",");
     fetch(`/api/os/slots?date=${date}&job=${job}&addons=${tires}${moreQ ? `&more=${moreQ}` : ""}`).then((r) => r.json())
       .then((d) => { setSlots(d.slots || []); if (!d.open) setDayNote(d.reason || "No open times this day"); })
       .catch(() => setSlots([]));
-  }, [step, date, job, addons]);
+  }, [step, date, job, addons, hold]);
 
   // Days to show: next 30, and only in-season days for the seasonal package
   const days = useMemo(() => Array.from({ length: 30 }, (_, i) => addDays(today(), i)), []);
@@ -208,7 +223,7 @@ export default function BookingFlow() {
         ...(vinPhoto ? { ...(vinPhoto.photo ? { photos: [vinPhoto.photo] } : {}), ...(vinPhoto.vin ? { vin: vinPhoto.vin } : {}) } : {}),
         ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine && x.engine !== "unsure" ? { engine: x.engine } : {}) },
           job: x.job, addons: x.job === "oil_change" && x.tires ? ["tires"] : [], ...(x.job === "diagnostic" ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
-        start: slot.start, payMode: payOnline && payNow ? "online" : "after", notes: [job === "diagnostic" && problem.trim() ? `Problem: ${problem.trim()}` : "", notes.trim()].filter(Boolean).join("\n").slice(0, 1000) || undefined, agreeTerms: agree,
+        start: slot.start, ...(hold && slot.start === hold.start ? { holdToken: hold.token } : {}), payMode: payOnline && payNow ? "online" : "after", notes: [job === "diagnostic" && problem.trim() ? `Problem: ${problem.trim()}` : "", notes.trim()].filter(Boolean).join("\n").slice(0, 1000) || undefined, agreeTerms: agree,
       }),
     });
     const j = await r.json().catch(() => ({}));
@@ -395,8 +410,19 @@ export default function BookingFlow() {
           )}
 
           {/* 2. Time */}
-          {step === 2 && (
+          {step === 2 && hold && (
             <>
+              <h1 className="text-[22px] font-bold">Your time</h1>
+              <div className="rounded-2xl border-2 p-4 flex flex-col gap-1" style={{ borderColor: NAVY, background: "#fff6dd" }}>
+                <p className="font-bold text-[20px]">{hold.when}</p>
+                <p className="text-[#4a5878]">We&apos;re holding this time for you until {hold.until}. Finish booking before then and it&apos;s yours.</p>
+              </div>
+              <button type="button" onClick={() => { setHold(null); setSlot(null); }} className="self-start underline font-semibold text-[15px]">Pick a different time instead</button>
+            </>
+          )}
+          {step === 2 && !hold && (
+            <>
+              {holdMsg && <p className="rounded-xl p-3 bg-[#fff6dd] text-[15px]">{holdMsg}</p>}
               <h1 className="text-[22px] font-bold">Pick a day and time</h1>
               <div className="-mx-5 px-5 overflow-x-auto">
                 <div className="flex gap-2 w-max pb-1">

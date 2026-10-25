@@ -1,6 +1,7 @@
 // One place that creates bookings, used by the customer website and by owners booking by phone.
 import crypto from "crypto";
 import { vinOk, cleanVin } from "@/lib/os/vin";
+import { holdByToken, holdIsLive, useHold } from "@/lib/os/holds";
 import { decodeVin } from "@/lib/os/vin-photo";
 import { z } from "zod";
 import { sbGet, sbInsert, sbPatch, sbHeaders, enc } from "@/lib/os/db";
@@ -31,6 +32,7 @@ export const BookingBody = z.object({
   agreeTerms: z.boolean().optional(),          // website: cancellation (and diagnostic) terms ticked
   photos: z.array(z.string().regex(/^\d{4}-\d{2}\/[0-9a-f-]{36}\.jpg$/)).max(3).optional(),   // VIN / engine label photo (optional)
   vin: z.string().max(25).optional(),
+  holdToken: z.string().max(40).optional(),    // booked from the link we texted while holding the time on a call
   // more cars on the same visit (each gets its own booking, back to back, one travel fee)
   moreCars: z.array(z.object({
     car: z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1), model: z.string().trim().min(1), engine: z.string().trim().optional() }),
@@ -70,6 +72,18 @@ type Opts = {
 
 /** One car, or several cars on the same visit (back to back, one travel fee, one text and one link). */
 export async function createBooking(b: BookingInput, opts: Opts): Promise<BookingResult> {
+  // a time held for them on the phone: it's theirs, even though it shows as taken to everyone else
+  const hold = b.holdToken ? await holdByToken(b.holdToken) : null;
+  if (hold && holdIsLive(hold) && new Date(hold.starts_at).getTime() === new Date(b.start).getTime()) {
+    opts = { ...opts, anyTime: true };
+    b = { ...b, notes: [b.notes, `Time held on the phone by ${hold.created_by ? hold.created_by[0].toUpperCase() + hold.created_by.slice(1) : "us"}`].filter(Boolean).join(" · ") };
+  }
+  const r = await createBookingInner(b, opts);
+  if (r.ok && hold && b.holdToken) await useHold(b.holdToken, r.bookingId);
+  return r;
+}
+
+async function createBookingInner(b: BookingInput, opts: Opts): Promise<BookingResult> {
   if (!b.moreCars?.length) return createOne(b, opts);
   const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((x) => [x.key, Number(x.value)]));
   const cars: BookingInput[] = [{ ...b, moreCars: undefined, cars: 1 },

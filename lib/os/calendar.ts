@@ -5,19 +5,21 @@ import { slotsForDay, halifaxToDate, DEFAULT_SLOT_RULES, type Hours, type Busy }
 
 const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 
-export async function dayAvailability(date: string, opts: { cars?: number; filterInStock?: boolean; now?: Date; minutes?: number; ignoreBookingId?: string; ignoreBookingIds?: string[] } = {}) {
+export async function dayAvailability(date: string, opts: { cars?: number; filterInStock?: boolean; now?: Date; minutes?: number; ignoreBookingId?: string; ignoreBookingIds?: string[]; ignoreHoldToken?: string } = {}) {
   const from = halifaxToDate(date, 0).toISOString();
   const to = halifaxToDate(date, 26 * 60).toISOString();   // covers late jobs running past midnight
-  const [hours, bookings, off, closed, rules] = await Promise.all([
+  const [hours, bookings, off, closed, rules, holds] = await Promise.all([
     sbGet<{ dow: number; first_start: string; last_start: string }>("business_hours?select=dow,first_start,last_start"),
     sbGet<{ starts_at: string; ends_at: string }>(
       `bookings?select=starts_at,ends_at&status=in.(requested,confirmed,in_progress)&starts_at=lt.${to}&ends_at=gt.${from}${opts.ignoreBookingId ? `&id=neq.${opts.ignoreBookingId}` : ""}${opts.ignoreBookingIds?.length ? `&id=not.in.(${opts.ignoreBookingIds.join(",")})` : ""}`),
     sbGet<{ starts_at: string; ends_at: string }>(`time_off?select=starts_at,ends_at&starts_at=lt.${to}&ends_at=gt.${from}`),
     sbGet<{ day: string }>(`parts_closed_days?select=day&day=eq.${date}`),
     sbGet<{ key: string; value: number }>("pricing_rules?select=key,value"),
+    // times held for a caller (until the hold runs out)
+    sbGet<{ starts_at: string; ends_at: string }>(`slot_holds?select=starts_at,ends_at&status=eq.held&expires_at=gt.${new Date().toISOString()}&starts_at=lt.${to}&ends_at=gt.${from}${opts.ignoreHoldToken ? `&token=neq.${encodeURIComponent(opts.ignoreHoldToken)}` : ""}`).catch(() => []),
   ]);
   const r = Object.fromEntries(rules.map((x) => [x.key, Number(x.value)]));
-  const busy: Busy[] = [...bookings, ...off].map((b) => ({ start: new Date(b.starts_at), end: new Date(b.ends_at) }));
+  const busy: Busy[] = [...bookings, ...off, ...holds].map((b) => ({ start: new Date(b.starts_at), end: new Date(b.ends_at) }));
   const h: Hours[] = hours.map((x) => ({ dow: x.dow, firstStart: toMin(x.first_start), lastStart: toMin(x.last_start) }));
   return slotsForDay({
     date, now: opts.now ?? new Date(), hours: h.length ? h : undefined, busy,
