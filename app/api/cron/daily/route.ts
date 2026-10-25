@@ -40,11 +40,11 @@ export async function GET(req: NextRequest) {
   // 2) Oil change due soon (latest job per car, nothing already booked)
   const until = new Date(halifaxToDate(today, 0).getTime() + (rules.due_reminder_days_before ?? 3) * 86400000).toISOString().slice(0, 10);
   const due = await sbGet<{ id: string; vehicle_id: string | null; customer_id: string | null; done_at: string; customers: Who | null;
-    vehicles: { year: number | null; make: string | null; model: string | null } | null }>(
-    `jobs?select=id,vehicle_id,customer_id,done_at,customers(id,first_name,phone,sms_opt_out),vehicles(year,make,model)` +
+    vehicles: { year: number | null; make: string | null; model: string | null; fleet_account_id: string | null } | null }>(
+    `jobs?select=id,vehicle_id,customer_id,done_at,customers(id,first_name,phone,sms_opt_out),vehicles(year,make,model,fleet_account_id)` +
     `&due_reminder_sent_at=is.null&next_due_date=lte.${until}&next_due_date=gte.${addDays(today, -30)}&order=done_at.desc`);
   for (const j of due) {
-    if (!j.vehicle_id || !j.customer_id) { out.dueSkipped++; continue; }
+    if (!j.vehicle_id || !j.customer_id || j.vehicles?.fleet_account_id) { out.dueSkipped++; continue; }   // fleets: due list is on the Fleets screen
     const [newer] = await sbGet<{ id: string }>(`jobs?select=id&vehicle_id=eq.${j.vehicle_id}&done_at=gt.${j.done_at}&limit=1`);
     const [upcoming] = await sbGet<{ id: string }>(`bookings?select=id&customer_id=eq.${j.customer_id}&status=in.(confirmed,requested)&starts_at=gt.${new Date().toISOString()}&limit=1`);
     if (newer || upcoming) { out.dueSkipped++; await sbPatch("jobs", `id=eq.${j.id}`, { due_reminder_sent_at: new Date().toISOString() }); continue; }

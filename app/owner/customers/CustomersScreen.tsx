@@ -52,7 +52,10 @@ export default function CustomersScreen() {
     <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl mx-auto">
       <header className="sticky top-0 z-10 text-white px-4 pt-[max(14px,env(safe-area-inset-top))] pb-3" style={{ background: NAVY }}>
         <p className="text-sm text-[#c9d3ea] font-semibold">{all ? `${all.length} customers` : " "}</p>
-        <h1 className="text-[30px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>Customers</h1>
+        <div className="flex items-end justify-between gap-3">
+          <h1 className="text-[30px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>Customers</h1>
+          <Link href={"/owner/fleets" as Route} className="h-9 px-3 rounded-lg border border-[#3b4d7a] font-bold text-sm flex items-center no-underline text-white">Fleets ›</Link>
+        </div>
         <input value={q} onChange={(e) => setQ(e.target.value)} type="search" placeholder="Name, phone, email or car"
           aria-label="Search customers" className="mt-3 h-11 w-full rounded-xl px-3 text-[#0d1b3e] bg-white" />
       </header>

@@ -97,7 +97,8 @@ export async function finishJob(input: FinishInput, owner: string) {
   const nextDate = withOil ? due.toISOString().slice(0, 10) : null;
 
   // First-time customers get the review request (text now, and on their receipt)
-  const firstTime = !!ctx.customer && !ctx.customer.review_asked_at;
+  const fleet = ctx.booking.pay_mode === "fleet_invoice";   // fleet vehicle: billed on the fleet's invoice, no review text or receipt email
+  const firstTime = !fleet && !!ctx.customer && !ctx.customer.review_asked_at;
   const receiptNo = await sbRpc<number>("next_receipt_no");
   const token = crypto.randomBytes(18).toString("base64url");
   const now = new Date().toISOString();
@@ -156,7 +157,7 @@ export async function finishJob(input: FinishInput, owner: string) {
   if (firstTime && ctx.customer) await sbPatch("customers", `id=eq.${ctx.customer.id}`, { review_asked_at: now });
 
   // The receipt goes out once they've paid (if not paid yet, it's sent when you mark it paid)
-  let receipt: { sent: boolean; reason?: string } = { sent: false, reason: paidNow ? "not requested" : "waiting for payment" };
+  let receipt: { sent: boolean; reason?: string } = { sent: false, reason: fleet ? "fleet invoice" : paidNow ? "not requested" : "waiting for payment" };
   if (paidNow && input.sendReceipt !== false) receipt = await sendReceipt(job.data!.id, input.email ?? null);
   return { ok: true as const, jobId: job.data!.id, receiptNo, total, prepaid, refund, receipt, reviewText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
 }

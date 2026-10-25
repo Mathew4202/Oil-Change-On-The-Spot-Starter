@@ -59,6 +59,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
   const prepaid = ctx && !ctx.job ? ctx.paid : 0;                    // paid online when they booked
   const balance = Math.max(0, Math.round((total - prepaid) * 100) / 100);
   const owedAfter = ctx?.job ? Math.max(0, Math.round((Number(ctx.job.total) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100) : 0;
+  const fleetJob = ctx?.booking.pay_mode === "fleet_invoice";   // billed on the fleet's invoice
   const payChoices = prepaid > 0 ? PAY.filter(([k]) => k !== "card_online") : PAY;
 
   async function post(body: object) {
@@ -143,7 +144,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
           {ctx && finished && !fromSheet && !result && (
             <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
               <h3 className="font-extrabold text-lg">Receipt #{ctx.job!.receipt_no} · {money(Number(ctx.job!.total))}</h3>
-              {owedAfter <= 0 ? <p className="font-semibold text-[#1d6b3a]">Paid{ctx.job!.payment_method ? ` (${PAY.find(([k]) => k === ctx.job!.payment_method)?.[1] ?? ctx.job!.payment_method})` : ""}</p> : (
+              {fleetJob ? <p className="font-semibold">On the fleet&apos;s invoice{ctx.job!.payment_method === "invoice" ? " (invoiced)" : " (not invoiced yet)"}.</p> : owedAfter <= 0 ? <p className="font-semibold text-[#1d6b3a]">Paid{ctx.job!.payment_method ? ` (${PAY.find(([k]) => k === ctx.job!.payment_method)?.[1] ?? ctx.job!.payment_method})` : ""}</p> : (
                 <>
                   <p className="font-semibold text-[#8a5a00]">{owedAfter < Number(ctx.job!.total) ? `${money(owedAfter)} still owed (${money(Number(ctx.job!.total) - owedAfter)} paid online).` : "Not paid yet."} How did they pay?</p>
                   <div className="grid grid-cols-2 gap-2">{PAY.map(([k, n]) => <button key={k} onClick={() => setPay(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
@@ -153,8 +154,8 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                   )}
                 </>
               )}
-              <label className="flex flex-col gap-1 text-sm font-semibold">Customer email<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="For the receipt" className={field} style={{ borderColor: LINE }} /></label>
-              {owedAfter > 0
+              {!fleetJob && <label className="flex flex-col gap-1 text-sm font-semibold">Customer email<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="For the receipt" className={field} style={{ borderColor: LINE }} /></label>}
+              {fleetJob ? <a href="/owner/fleets" className="h-12 rounded-xl border font-bold flex items-center justify-center no-underline text-[#0d1b3e]" style={{ borderColor: LINE }}>Go to Fleets to invoice it</a> : owedAfter > 0
                 ? <button onClick={markPaid} disabled={busy} className="h-12 rounded-xl font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Saving…" : "Mark paid and send receipt"}</button>
                 : <button onClick={resend} disabled={busy} className="h-12 rounded-xl border font-bold disabled:opacity-60" style={{ borderColor: LINE }}>{busy ? "Sending…" : ctx.job!.receipt_sent_at ? "Send receipt again" : "Send receipt"}</button>}
             </section>
@@ -219,6 +220,9 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
               <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
                 <h3 className="font-extrabold text-lg">Who did it</h3>
                 <div className="grid grid-cols-3 gap-2">{([["both", "Both"], ["mathew", "Mathew"], ["harsh", "Harsh"]] as const).map(([k, n]) => <button key={k} onClick={() => setDoneBy(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(doneBy === k)}>{n}</button>)}</div>
+                {fleetJob ? (
+                  <p className="rounded-lg p-3 text-[15px] font-semibold" style={{ background: "#e6ecf8", color: "#0d1b3e" }}>Fleet vehicle: this goes on the fleet&apos;s invoice. Nothing to collect on site.</p>
+                ) : <>
                 {prepaid > 0 && (
                   <p className="rounded-lg p-3 text-[15px] font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }}>
                     Paid {money(prepaid)} online when they booked.{balance > 0 ? ` ${money(balance)} still owed for what was added.` : total < prepaid ? ` That's ${money(prepaid - total)} more than the total, refund it in Converge.` : " Nothing left to pay."}
@@ -228,6 +232,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 <div className="grid grid-cols-2 gap-2">{payChoices.map(([k, n]) => <button key={k} onClick={() => setPay(pay === k ? "" : k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
                 {pay && <TipBox tip={tip} setTip={setTip} total={prepaid > 0 ? balance : total} />}
                 {!pay && (prepaid === 0 || balance > 0) && <p className="text-sm text-[#8a5a00]">Not paid yet? Leave this empty and mark it paid later{ctx.payOnline ? ", or text them a pay link after you finish" : ""}.</p>}
+                </>}
                 <label className="flex flex-col gap-1 text-sm font-semibold">Customer email (for the receipt)<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Optional" className={field} style={{ borderColor: LINE }} /></label>
                 <label className="flex flex-col gap-1 text-sm font-semibold">Notes (optional)<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Anything for next time" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>
               </section>
@@ -240,7 +245,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
             <div className="max-w-xl mx-auto flex flex-col gap-2">
               {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
               <button onClick={finish} disabled={busy} className="py-3.5 rounded-xl font-extrabold text-base disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>
-                {busy ? "Saving…" : prepaid > 0 ? `Finish job · ${balance > 0 ? `${money(balance)} ${pay ? "paid" : "owed"}` : "paid online"}` : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
+                {busy ? "Saving…" : fleetJob ? `Finish job · ${money(total)} on the invoice` : prepaid > 0 ? `Finish job · ${balance > 0 ? `${money(balance)} ${pay ? "paid" : "owed"}` : "paid online"}` : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
               </button>
               <p className="text-xs text-center text-[#4a5878]">Signed in as {owner}</p>
             </div>

@@ -64,6 +64,8 @@ type Opts = {
   bookedBy?: string; anyTime?: boolean; priceOverride?: number | null; customerId?: string | null;
   // internal, for several cars on one visit
   groupId?: string; noTravel?: boolean; silent?: boolean;
+  // fleets: book this exact vehicle (8 identical vans are 8 vehicles), billed on the fleet's invoice
+  vehicleId?: string; fleetAccountId?: string;
 };
 
 /** One car, or several cars on the same visit (back to back, one travel fee, one text and one link). */
@@ -139,7 +141,7 @@ async function createOne(b: BookingInput, opts: Opts & {
   if (opts.priceOverride != null && opts.priceOverride >= 0) {
     const r2 = (x: number) => Math.round(x * 100) / 100;
     const sub = r2(opts.priceOverride);
-    quote.lines = [{ label: `Special price (normally $${quote.subtotal.toFixed(2)})`, amount: sub }];
+    quote.lines = [{ label: opts.fleetAccountId ? (quote.lines[0]?.label ?? "Oil change").replace(/^(Full synthetic oil change|Diesel oil change)/, "$1, fleet price") : `Special price (normally $${quote.subtotal.toFixed(2)})`, amount: sub }];
     quote.subtotal = sub;
     quote.hst = r2(sub * Number(rules.hst_rate ?? 0.14));
     quote.total = r2(sub + quote.hst);
@@ -196,7 +198,7 @@ async function createOne(b: BookingInput, opts: Opts & {
   const decoded = vin ? await decodeVin(vin).catch(() => null) : null;
   const vinCar = decoded ? [decoded.year, decoded.make, decoded.model, decoded.engineL ? `${decoded.engineL}L` : null, /diesel/i.test(decoded.fuel || "") ? "diesel" : null].filter(Boolean).join(" ") : null;
   const sameCar = !decoded || ((!decoded.year || decoded.year === b.car.year) && (!decoded.make || decoded.make.toLowerCase() === b.car.make.toLowerCase()));
-  let [vehicle] = await sbGet<{ id: string }>(
+  let [vehicle] = opts.vehicleId ? [{ id: opts.vehicleId }] : await sbGet<{ id: string }>(
     `vehicles?select=id&customer_id=eq.${customer.id}&year=eq.${b.car.year}&make=ilike.${enc(b.car.make)}&model=ilike.${enc(b.car.model)}`);
   if (!vehicle) {
     const v = await sbInsert<{ id: string }>("vehicles", {
@@ -211,13 +213,13 @@ async function createOne(b: BookingInput, opts: Opts & {
   const manageToken = newManageToken();
   const bk = await sbInsert<{ id: string }>("bookings", {
     customer_id: customer.id, vehicle_id: vehicle.id, starts_at: slotStart, ends_at: slotEnd, address: b.address,
-    distance_km: km, status: "confirmed", pay_mode: opts.bookedBy ? b.payMode : "after",   // website: becomes "online" only once Converge confirms the payment
+    distance_km: km, status: "confirmed", pay_mode: opts.fleetAccountId ? "fleet_invoice" : opts.bookedBy ? b.payMode : "after",   // website: becomes "online" only once Converge confirms the payment
     quoted_total: quote.total, quote_breakdown: quote, cars: b.cars,
     services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null, ...(vin ? { vin, vinCar } : {}), ...(b.agreeTerms ? { termsAgreedAt: new Date().toISOString() } : {}) }, needs_review: [...quote.needsReview, ...(noDistance ? ["Address not found on the map: check it, and add a travel fee if it's past 30 km"] : []),
       ...(b.photos?.length && !vin ? ["Customer sent a VIN photo we couldn't read: look at it before you go"] : []),
       ...(vin && !sameCar ? [`VIN says ${vinCar}, but they booked a ${b.car.year} ${b.car.make} ${b.car.model}: check which car it is`] : [])],
     photo_paths: b.photos?.length ? b.photos : null,
-    source: opts.source, notes: b.notes || null, manage_token: manageToken, ...(opts.groupId ? { group_id: opts.groupId } : {}),
+    source: opts.source, notes: b.notes || null, manage_token: manageToken, ...(opts.groupId ? { group_id: opts.groupId } : {}), ...(opts.fleetAccountId ? { fleet_account_id: opts.fleetAccountId } : {}),
   });
   if (!bk.ok) {
     if (bk.status === 409 || JSON.stringify(bk.error).includes("23P01")) {
