@@ -106,7 +106,7 @@ async function createBookingInner(b: BookingInput, opts: Opts): Promise<BookingR
   const made: { id: string; total: number; car: string; lines: { label: string; amount: number }[]; subtotal: number; hst: number }[] = [];
   let next = start.toISOString();
   for (let i = 0; i < cars.length; i++) {
-    const r = await createOne({ ...cars[i], start: next }, { ...opts, anyTime: true, groupId, noTravel: i > 0, silent: true });
+    const r = await createOne({ ...cars[i], start: next }, { ...opts, anyTime: true, groupId, noTravel: i > 0, silent: true, ...(i > 0 ? { priceOverride: null } : {}) });   // a special price is for car 1
     if (!r.ok) {
       for (const m of made) await sbPatch("bookings", `id=eq.${m.id}`, { status: "cancelled", cancelled_at: new Date().toISOString(), cancel_reason: "system: rest of the visit couldn't be booked" });
       return r.status === 409 ? { ...r, error: "Sorry, that time doesn't have room for all the cars. Please pick another time." } : r;

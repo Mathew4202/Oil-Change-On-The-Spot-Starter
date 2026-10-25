@@ -1,7 +1,7 @@
 "use client";
 // Customer booking: car → services → time → details → confirm. Prices and times come from OCOTS OS.
 import VinPhoto, { type VinResult, type Decoded } from "@/components/VinPhoto";
-import ExtraCar, { newExtra, extraMissing, extraName, type Extra } from "@/components/ExtraCar";
+import { ExtraCarFields, ExtraCarServices, ExtraPricer, newExtra, extraMissing, extraCarMissing, extraName, extraAddons, type Extra } from "@/components/ExtraCar";
 import { matchEngine } from "@/lib/os/vin";
 import { useEffect, useMemo, useState } from "react";
 import AddressField, { type Place } from "@/components/AddressField";
@@ -179,7 +179,7 @@ export default function BookingFlow() {
     if (hold) { setSlot({ time: "", label: hold.label, start: hold.start }); return; }   // the held time is already theirs
     setSlots(null); setSlot(null); setDayNote("");
     const tires = job === "oil_change" && addons.includes("tires") ? "tires" : "";
-    const moreQ = more.map((x) => `${x.job}:${x.job === "oil_change" && x.tires ? "tires" : ""}`).join(",");
+    const moreQ = more.map((x) => `${x.job}:${extraAddons(x).join("+")}`).join(",");
     fetch(`/api/os/slots?date=${date}&job=${job}&addons=${tires}${moreQ ? `&more=${moreQ}` : ""}`).then((r) => r.json())
       .then((d) => { setSlots(d.slots || []); if (!d.open) setDayNote(d.reason || "No open times this day"); })
       .catch(() => setSlots([]));
@@ -195,6 +195,7 @@ export default function BookingFlow() {
     setErr("");
     if (step === 0 && !carReady) return setErr("Pick your car's year, make and model.");
     if (step === 0 && quote?.engines && quote.engines.length > 0 && !engine) return setErr("Pick your engine, or choose “Not sure”.");
+    if (step === 0) for (const x of more) { const miss = extraCarMissing(x); if (miss) return setErr(miss); }
     if (step === 1 && job === "parts" && !addons.some((a) => PARTS_ONLY.includes(a))) return setErr("Pick at least one thing for us to do.");
     if (step === 1 && job === "diagnostic" && problem.trim().length < 5) return setErr("Tell us a bit about what's going on with the car.");
     if (step === 1) for (const x of more) { const miss = extraMissing(x); if (miss) return setErr(miss); }
@@ -223,7 +224,8 @@ export default function BookingFlow() {
         own: (job === "oil_change" || job === "seasonal") && own ? own : null,
         ...(vinPhoto ? { ...(vinPhoto.photo ? { photos: [vinPhoto.photo] } : {}), ...(vinPhoto.vin ? { vin: vinPhoto.vin } : {}) } : {}),
         ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine && x.engine !== "unsure" ? { engine: x.engine } : {}) },
-          job: x.job, addons: x.job === "oil_change" && x.tires ? ["tires"] : [], ...(x.job === "diagnostic" ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
+          job: x.job, addons: extraAddons(x), own: (x.job === "oil_change" || x.job === "seasonal") && x.own ? x.own : null,
+          ...(x.job === "diagnostic" ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
         start: slot.start, ...(hold && slot.start === hold.start ? { holdToken: hold.token } : {}), payMode: payOnline && payNow ? "online" : "after", notes: [job === "diagnostic" && problem.trim() ? `Problem: ${problem.trim()}` : "", notes.trim()].filter(Boolean).join("\n").slice(0, 1000) || undefined, agreeTerms: agree,
       }),
     });
@@ -264,6 +266,7 @@ export default function BookingFlow() {
         </header>
 
         <main className="flex-1 p-5 flex flex-col gap-4 pb-36">
+          {more.map((x) => <ExtraPricer key={x.key} value={x} date={date} onPatch={(p) => patchMore(x.key, p)} />)}
           {/* 0. Car */}
           {step === 0 && (
             <>
@@ -332,6 +335,19 @@ export default function BookingFlow() {
                     "We'll bring the right oil for your car."}
                 </div>
               )}
+
+              {/* More cars on the same visit */}
+              {carReady && more.map((x, i) => (
+                <ExtraCarFields key={x.key} n={i + 2} value={x} makes={makes}
+                  onPatch={(p) => patchMore(x.key, p)} onRemove={() => setMore((m) => m.filter((y) => y.key !== x.key))} />
+              ))}
+              {carReady && more.length < 3 && (
+                <button type="button" onClick={() => setMore((m) => [...m, newExtra()])}
+                  className="rounded-2xl border-2 border-dashed p-4 flex flex-col items-center gap-0.5" style={{ borderColor: NAVY }}>
+                  <span className="font-bold text-[17px]">+ Add another car to this visit</span>
+                  <span className="text-sm text-[#4a5878]">We do them back to back, and travel is only charged once.</span>
+                </button>
+              )}
             </>
           )}
 
@@ -339,6 +355,7 @@ export default function BookingFlow() {
           {step === 1 && (
             <>
               <h1 className="text-[22px] font-bold">What do you need?</h1>
+              {more.length > 0 && <h2 className="text-[20px] font-bold -mb-1">Car 1 · {year} {make} {model}</h2>}
               <div className="flex flex-col gap-2.5" role="radiogroup" aria-label="Service">
                 {jobsShown.map((j) => (
                   <button key={j.id} role="radio" aria-checked={job === j.id} onClick={() => { setJob(j.id); if (j.id !== "oil_change") setAddons((a) => a.filter((x) => x !== "tires")); }}
@@ -395,17 +412,11 @@ export default function BookingFlow() {
                 </details>
               )}
 
-              {/* More cars on the same visit */}
+              {/* The other cars on this visit: the same full choice */}
               {more.map((x, i) => (
-                <ExtraCar key={x.key} n={i + 2} value={x} makes={makes} date={date} jobs={jobsShown}
-                  onPatch={(p) => patchMore(x.key, p)} onRemove={() => setMore((m) => m.filter((y) => y.key !== x.key))} />
+                <ExtraCarServices key={x.key} n={i + 2} value={x} onPatch={(p) => patchMore(x.key, p)} jobs={jobsShown} season={!!services?.season}
+                  addonNames={Object.fromEntries([["tires", "Tire change"], ...(services?.addons ?? []).map((a) => [a.id, a.name])])} addonNotes={ADDON_NOTES} />
               ))}
-              {more.length < 3 && (
-                <button type="button" onClick={() => setMore((m) => [...m, newExtra()])}
-                  className="h-12 rounded-xl border-2 border-dashed font-bold text-[16px]" style={{ borderColor: "#9aa6c0" }}>
-                  + Add another car to this visit
-                </button>
-              )}
               {more.length > 0 && <p className="text-sm text-[#4a5878]">We do the cars back to back. Travel is only charged once.</p>}
             </>
           )}

@@ -2,6 +2,8 @@
 // Book someone by phone: find them (or add them), pick the car, pick a time, see the price, save.
 import { TIRE_CHANGE, ROTATION } from "@/lib/os/pricing-engine";
 import CarPicker from "@/components/CarPicker";
+import HqExtraCar from "@/components/HqExtraCar";
+import { newExtra, extraAddons, extraName, type Extra } from "@/components/ExtraCar";
 import AddressField, { type Place } from "@/components/AddressField";
 import { useEffect, useMemo, useState } from "react";
 
@@ -37,6 +39,8 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
   const [place, setPlace] = useState<Place | null>(null);
   // Car
   const [vehicleId, setVehicleId] = useState<string>("new");
+  const [more, setMore] = useState<Extra[]>([]);   // other cars on the same visit
+  const patchMore = (key: string, p: Partial<Extra>) => setMore((m) => m.map((x) => (x.key === key ? { ...x, ...p } : x)));
   const [year, setYear] = useState(""); const [make, setMake] = useState(""); const [model, setModel] = useState(""); const [engine, setEngine] = useState("");
   const [cars, setCars] = useState(1);
   // Job
@@ -86,8 +90,8 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
   useEffect(() => {
     setSlots(null); setTime("");
     fetch(`/api/os/services?date=${date}`).then((r) => r.json()).then((d) => setSeason(d.season)).catch(() => setSeason(null));
-    fetch(`/api/os/slots?date=${date}&cars=${cars}&job=${job}&addons=${job === "oil_change" && addons.includes("tires") ? "tires" : ""}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
-  }, [date, cars, job, addons]);
+    fetch(`/api/os/slots?date=${date}&cars=${cars}&job=${job}&addons=${job === "oil_change" && addons.includes("tires") ? "tires" : ""}${more.length ? `&more=${more.map((x) => `${x.job}:${extraAddons(x).join("+")}`).join(",")}` : ""}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
+  }, [date, cars, job, addons, more.map((x) => `${x.job}:${x.addons.join("+")}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live price
   const carReady = /^\d{4}$/.test(year) && make.trim() && model.trim();
@@ -119,6 +123,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
     if (!address.trim()) return setErr("Add the address for the job.");
     if (!carReady) return setErr("Add the car: year, make and model.");
     if (job === "parts" && !addons.filter((a) => a !== "tires").length) return setErr("Pick what they need for the parts visit.");
+    for (const x of more) if (!x.year || !x.make || !x.model) return setErr("Finish or remove the extra car.");
     if (!startIso) return setErr("Pick a time.");
     setBusy(true);
     const r = await fetch("/api/owner/book", {
@@ -128,6 +133,8 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
         car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() ? { engine: engine.trim() } : {}) },
         job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [], own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
         priceOverride: special.trim() ? Number(special) : null,
+        ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine ? { engine: x.engine } : {}) }, job: x.job, addons: extraAddons(x),
+          own: null, ...(x.job === "diagnostic" && x.problem.trim() ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
         customerId: customer?.id ?? null,
       }),
     });
@@ -210,7 +217,17 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
             ) : (
               <label className={lbl}>Engine (optional)<input value={engine} onChange={(e) => setEngine(e.target.value)} placeholder="2.0L" className={field} /></label>
             )}
+            {more.length > 0 && <p className="text-sm text-[#4a5878]">Car 1 above. The job below is for car 1.</p>}
           </section>
+
+          {/* More cars on the same visit */}
+          {carReady && (
+            <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
+              {more.map((x, i) => <HqExtraCar key={x.key} n={i + 2} value={x} date={date} onPatch={(p) => patchMore(x.key, p)} onRemove={() => setMore((m) => m.filter((y) => y.key !== x.key))} />)}
+              {more.length < 3 && <button type="button" onClick={() => setMore((m) => [...m, newExtra()])} className="h-12 rounded-xl border-2 border-dashed font-bold" style={{ borderColor: NAVY }}>+ Add a different car to this visit</button>}
+              {more.length > 0 && <p className="text-sm text-[#4a5878]">Done back to back, one travel fee. Same car more than once (a fleet of the same van)? Use &ldquo;How many&rdquo; above.</p>}
+            </section>
+          )}
 
           {/* 3. Job */}
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
@@ -273,7 +290,8 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
               <div className="flex flex-col gap-1 text-[15px]">
                 {quote.spec && <p className="text-[#4a5878]">{quote.spec.grade} · {quote.spec.capacityL} L{quote.spec.filter ? ` · filter ${quote.spec.filter}` : ""}</p>}
                 {quote.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>${l.amount.toFixed(2)}</span></div>)}
-                <div className="flex justify-between font-bold"><span>Total with HST</span><span>${quote.total.toFixed(2)}</span></div>
+                {more.filter((x) => x.quote).map((x) => <div key={x.key} className="flex justify-between gap-3"><span className="text-[#4a5878]">{extraName(x)}</span><span>${x.quote!.subtotal.toFixed(2)}</span></div>)}
+                <div className="flex justify-between font-bold"><span>Total with HST{more.length ? ` (${more.length + 1} cars)` : ""}</span><span>${(quote.total + more.reduce((t, x) => t + (x.quote?.total ?? 0), 0)).toFixed(2)}</span></div>
               </div>
             )}
             <label className={lbl}>Special price before HST (optional)
