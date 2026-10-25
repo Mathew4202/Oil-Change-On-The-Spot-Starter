@@ -1,6 +1,7 @@
 "use client";
 // Customer booking: car → services → time → details → confirm. Prices and times come from OCOTS OS.
-import VinPhoto, { type VinResult } from "@/components/VinPhoto";
+import VinPhoto, { type VinResult, type Decoded } from "@/components/VinPhoto";
+import ExtraCar, { newExtra, extraMissing, extraName, type Extra } from "@/components/ExtraCar";
 import { matchEngine } from "@/lib/os/vin";
 import { useEffect, useMemo, useState } from "react";
 import AddressField, { type Place } from "@/components/AddressField";
@@ -9,7 +10,7 @@ import { trackLead } from "@/lib/site/track";
 import { PHONE, PHONE_TEL } from "@/lib/os/business";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
-type JobId = "oil_change" | "seasonal" | "tires" | "parts" | "diagnostic";
+type JobId = "oil_change" | "seasonal" | "tires" | "rotation" | "parts" | "diagnostic";
 type Line = { label: string; amount: number };
 type Quote = { lines: Line[]; subtotal: number; hst: number; total: number; engines?: string[];
   spec: { engine?: string | null; grade: string; capacityL: number } | null; vehicle?: { class: string }; error?: string };
@@ -59,7 +60,9 @@ export default function BookingFlow() {
   // details
   const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [email, setEmail] = useState("");
   const [address, setAddress] = useState(""); const [notes, setNotes] = useState("");
-  const [problem, setProblem] = useState("");   // diagnostic: what's going on with the car
+  const [problem, setProblem] = useState("");
+  const [more, setMore] = useState<Extra[]>([]);   // other cars on the same visit
+  const patchMore = (key: string, p: Partial<Extra>) => setMore((m) => m.map((x) => (x.key === key ? { ...x, ...p } : x)));   // diagnostic: what's going on with the car
   const [place, setPlace] = useState<Place | null>(null);   // distance + travel fee for the address
   // price + submit
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -88,13 +91,33 @@ export default function BookingFlow() {
     if (q.get("year") && q.get("make")) { setYear(q.get("year")!); setMake(q.get("make")!); if (q.get("model")) setModel(q.get("model")!); }
     // came from a Book button on the services page: that service is already picked
     const j = q.get("job") as JobId | null;
-    if (j && ["oil_change", "seasonal", "tires", "parts", "diagnostic"].includes(j)) setJob(j);
+    if (j && ["oil_change", "seasonal", "tires", "rotation", "parts", "diagnostic"].includes(j)) setJob(j);
     const add = q.get("add");
     if (add === "own") setOwn("both");
     else if (add && PARTS_ONLY.includes(add)) setAddons([add]);
     // signed in with a text code before: their account wins (it's always up to date)
     fetch("/api/os/account").then((r) => r.json()).then((j) => { if (j.signedIn && j.profile) signedIn(j.profile); }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // fill the car from a VIN: year and make straight away, the model once that list has loaded
+  const [vinModel, setVinModel] = useState("");
+  function fillFromVin(d: Decoded) {
+    const mk = makes.find((m) => m.toLowerCase() === (d.make || "").toLowerCase()) ?? d.make ?? "";
+    if (d.year) setYear(String(d.year));
+    setMake(mk); setModel(""); setEngine(""); setManualEngine(""); setVinModel(d.model || "");
+  }
+  useEffect(() => {
+    if (!vinModel || !models.length) return;
+    const v = vinModel.toLowerCase();
+    const hit = models.find((m) => m.toLowerCase() === v) ?? models.find((m) => m.toLowerCase().startsWith(v) || v.startsWith(m.toLowerCase()));
+    if (hit) setModel(hit);
+    setVinModel("");
+  }, [models, vinModel]);
+  // the VIN's engine size picks the engine once we know this car's engines
+  useEffect(() => {
+    if (!vinPhoto?.engineL || engine || !quote?.engines) return;
+    const hit = matchEngine(vinPhoto.engineL, quote.engines);
+    if (hit) setEngine(hit); else if (!quote.engines.length) { setManualEngine(`${vinPhoto.engineL}L`); setEngine(`${vinPhoto.engineL}L`); }
+  }, [quote?.engines, vinPhoto?.engineL]); // eslint-disable-line react-hooks/exhaustive-deps
   function signedIn(p: Profile) {
     setAccount(p);
     fillInfo({ name: p.name, phone: p.phone, email: p.email, address: p.address, cars: p.cars });
@@ -140,7 +163,8 @@ export default function BookingFlow() {
     if (step !== 2) return;
     setSlots(null); setSlot(null); setDayNote("");
     const tires = job === "oil_change" && addons.includes("tires") ? "tires" : "";
-    fetch(`/api/os/slots?date=${date}&job=${job}&addons=${tires}`).then((r) => r.json())
+    const moreQ = more.map((x) => `${x.job}:${x.job === "oil_change" && x.tires ? "tires" : ""}`).join(",");
+    fetch(`/api/os/slots?date=${date}&job=${job}&addons=${tires}${moreQ ? `&more=${moreQ}` : ""}`).then((r) => r.json())
       .then((d) => { setSlots(d.slots || []); if (!d.open) setDayNote(d.reason || "No open times this day"); })
       .catch(() => setSlots([]));
   }, [step, date, job, addons]);
@@ -157,6 +181,7 @@ export default function BookingFlow() {
     if (step === 0 && quote?.engines && quote.engines.length > 0 && !engine) return setErr("Pick your engine, or choose “Not sure”.");
     if (step === 1 && job === "parts" && !addons.some((a) => PARTS_ONLY.includes(a))) return setErr("Pick at least one thing for us to do.");
     if (step === 1 && job === "diagnostic" && problem.trim().length < 5) return setErr("Tell us a bit about what's going on with the car.");
+    if (step === 1) for (const x of more) { const miss = extraMissing(x); if (miss) return setErr(miss); }
     if (step === 2 && !slot) return setErr("Pick a time.");
     if (step === 3) {
       if (!name.trim()) return setErr("Add your name.");
@@ -180,7 +205,9 @@ export default function BookingFlow() {
         car: { year: Number(year), make, model, ...(engine && engine !== "unsure" ? { engine } : {}) },
         job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [],
         own: (job === "oil_change" || job === "seasonal") && own ? own : null,
-        ...(vinPhoto ? { photos: [vinPhoto.photo], ...(vinPhoto.vin ? { vin: vinPhoto.vin } : {}) } : {}),
+        ...(vinPhoto ? { ...(vinPhoto.photo ? { photos: [vinPhoto.photo] } : {}), ...(vinPhoto.vin ? { vin: vinPhoto.vin } : {}) } : {}),
+        ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine && x.engine !== "unsure" ? { engine: x.engine } : {}) },
+          job: x.job, addons: x.job === "oil_change" && x.tires ? ["tires"] : [], ...(x.job === "diagnostic" ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
         start: slot.start, payMode: payOnline && payNow ? "online" : "after", notes: [job === "diagnostic" && problem.trim() ? `Problem: ${problem.trim()}` : "", notes.trim()].filter(Boolean).join("\n").slice(0, 1000) || undefined, agreeTerms: agree,
       }),
     });
@@ -277,13 +304,11 @@ export default function BookingFlow() {
                   )}
                 </label>
               )}
-              {carReady && (
-                <VinPhoto done={vinPhoto} onClear={() => setVinPhoto(null)} onResult={(r) => {
-                  setVinPhoto(r);
-                  const hit = matchEngine(r.engineL, quote?.engines ?? []);
-                  if (hit) setEngine(hit); else if (r.engineL && !(quote?.engines ?? []).length) { setManualEngine(`${r.engineL}L`); setEngine(`${r.engineL}L`); }
-                }} />
-              )}
+              <VinPhoto done={vinPhoto} onClear={() => setVinPhoto(null)} onResult={(r) => {
+                setVinPhoto(r);
+                const d = r.decoded;
+                if (d?.year && d.make && !carReady) fillFromVin(d);   // nothing picked yet: the VIN picks the car
+              }} picked={{ year, make, model }} onUseCar={fillFromVin} />
               {carReady && (
                 <div className="rounded-xl bg-[#eef1f6] p-4 text-[15px] leading-relaxed text-[#4a5878]" aria-live="polite">
                   {pricing && !quote ? "Looking up your car… (first time for a car can take up to 20 seconds)" :
@@ -353,6 +378,19 @@ export default function BookingFlow() {
                   </div>
                 </details>
               )}
+
+              {/* More cars on the same visit */}
+              {more.map((x, i) => (
+                <ExtraCar key={x.key} n={i + 2} value={x} makes={makes} date={date} jobs={jobsShown}
+                  onPatch={(p) => patchMore(x.key, p)} onRemove={() => setMore((m) => m.filter((y) => y.key !== x.key))} />
+              ))}
+              {more.length < 3 && (
+                <button type="button" onClick={() => setMore((m) => [...m, newExtra()])}
+                  className="h-12 rounded-xl border-2 border-dashed font-bold text-[16px]" style={{ borderColor: "#9aa6c0" }}>
+                  + Add another car to this visit
+                </button>
+              )}
+              {more.length > 0 && <p className="text-sm text-[#4a5878]">We do the cars back to back. Travel is only charged once.</p>}
             </>
           )}
 
@@ -373,7 +411,7 @@ export default function BookingFlow() {
               </div>
               <p className="mt-1 text-[15px] font-bold text-[#4a5878]">Open times on {dayParts(date).long}</p>
               {slots === null ? <p className="text-[#4a5878]">Checking…</p> : slots.length === 0 ? (
-                <p className="rounded-xl bg-[#eef1f6] p-4 text-[#4a5878]">{dayNote || "No open times this day."} Try another day.</p>
+                <p className="rounded-xl bg-[#eef1f6] p-4 text-[#4a5878]">{(dayNote || "No open times this day").replace(/\.?$/, ".")} Try another day.</p>
               ) : (
                 <div className="grid grid-cols-3 gap-2">
                   {slots.map((s) => (
@@ -413,9 +451,17 @@ export default function BookingFlow() {
                 {vinPhoto && <p className="text-[#4a5878]">VIN photo added{vinPhoto.vin ? ` (${vinPhoto.vin})` : ""}</p>}
               </div>
               <div className="rounded-xl bg-[#eef1f6] p-4 flex flex-col gap-2 text-[15px]">
+                {more.length > 0 && <p className="font-bold">{year} {make} {model}{engine && engine !== "unsure" ? ` · ${engine}` : ""}</p>}
                 {quote.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span>{l.label}</span><span>{money(l.amount)}</span></div>)}
                 <div className="flex justify-between text-[#4a5878]"><span>HST 14%</span><span>{money(quote.hst)}</span></div>
-                <div className="flex justify-between font-extrabold text-lg border-t border-[#c8d0e0] pt-2"><span>Total</span><span>{money(quote.total)}</span></div>
+                {more.map((x) => (
+                  <div key={x.key} className="flex flex-col gap-2 border-t border-[#c8d0e0] pt-2">
+                    <p className="font-bold">{extraName(x)}{x.engine && x.engine !== "unsure" ? ` · ${x.engine}` : ""}</p>
+                    {x.quote?.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span>{l.label}</span><span>{money(l.amount)}</span></div>)}
+                    <div className="flex justify-between text-[#4a5878]"><span>HST 14%</span><span>{money(Math.round(((x.quote?.total ?? 0) - (x.quote?.subtotal ?? 0)) * 100) / 100)}</span></div>
+                  </div>
+                ))}
+                <div className="flex justify-between font-extrabold text-lg border-t border-[#c8d0e0] pt-2"><span>Total{more.length ? ` for ${more.length + 1} cars` : ""}</span><span>{money(Math.round((quote.total + more.reduce((t, x) => t + (x.quote?.total ?? 0), 0)) * 100) / 100)}</span></div>
               </div>
               {payOnline ? (
                 <div className="flex flex-col gap-2" role="radiogroup" aria-label="When to pay">
@@ -459,7 +505,7 @@ export default function BookingFlow() {
                 </div>
               )}
               {saveState === "saved" && <p className="rounded-xl bg-[#eef1f6] p-4 text-[15px]">Saved. Next time it&apos;s all filled in for you.</p>}
-              <button onClick={() => { setStep(0); setYear(""); setMake(""); setModel(""); setEngine(""); setManualEngine(""); setVinPhoto(null); setProblem(""); setAddons([]); setJob("oil_change"); setSlot(null); setDone(null); setQuote(null); setSaveState("ask"); }}
+              <button onClick={() => { setStep(0); setYear(""); setMake(""); setModel(""); setEngine(""); setManualEngine(""); setVinPhoto(null); setProblem(""); setMore([]); setAddons([]); setJob("oil_change"); setSlot(null); setDone(null); setQuote(null); setSaveState("ask"); }}
                 className="self-start font-bold underline text-base">Book another car</button>
             </div>
           )}
@@ -473,7 +519,7 @@ export default function BookingFlow() {
               <div className="flex flex-col">
                 <span className="text-[13px] text-[#4a5878] font-semibold">Your price</span>
                 <span className="text-[28px] font-extrabold leading-none" style={{ fontFamily: "var(--font-condensed)" }} aria-live="polite">
-                  {quote && carReady && !quote.error ? short(quote.subtotal) : "–"} <span className="text-sm font-semibold text-[#4a5878]" style={{ fontFamily: "var(--font-barlow)" }}>+ HST</span>
+                  {quote && carReady && !quote.error ? short(Math.round((quote.subtotal + more.reduce((t, x) => t + (x.quote?.subtotal ?? 0), 0)) * 100) / 100) : "–"} <span className="text-sm font-semibold text-[#4a5878]" style={{ fontFamily: "var(--font-barlow)" }}>+ HST</span>
                 </span>
               </div>
               <button onClick={next} disabled={busy || (step === 0 && carReady && pricing && !quote)}

@@ -76,6 +76,46 @@ export async function cancelBooking(b: ManagedBooking, by: "customer" | string, 
   return { ok: true, fee: fee ? fee.total : null };
 }
 
+/** Other cars booked on the same visit (empty for a single car). */
+export async function groupMembers(b: ManagedBooking): Promise<ManagedBooking[]> {
+  try {
+    const [me] = await sbGet<{ group_id: string | null }>(`bookings?select=group_id&id=eq.${b.id}`);
+    if (!me?.group_id) return [];
+    return await sbGet<ManagedBooking>(`bookings?select=${SELECT}&group_id=eq.${me.group_id}&status=in.(confirmed,requested,in_progress)&order=starts_at`);
+  } catch { return []; }
+}
+
+/** Customer cancels a visit with several cars: every car on it is cancelled. */
+export async function cancelGroup(members: ManagedBooking[], reason?: string) {
+  for (const m of members) { const r = await cancelBooking(m, "customer", reason); if (!r.ok) return r; }
+  return { ok: true };
+}
+
+/** Move a visit with several cars: they stay back to back in the same order. */
+export async function moveGroup(members: ManagedBooking[], startIso: string, by: "customer" | string) {
+  if (members.some((m) => !["confirmed", "requested"].includes(m.status))) return { ok: false, error: "This booking can't be changed anymore." };
+  const start = new Date(startIso);
+  if (isNaN(start.getTime()) || start.getTime() < Date.now()) return { ok: false, error: "Pick a time in the future." };
+  const first = new Date(members[0].starts_at).getTime();
+  const total = (new Date(members[members.length - 1].ends_at).getTime() - first) / 60000;
+  if (by === "customer") {
+    const day = await dayAvailability(halifaxDate(start), { cars: 1, minutes: total, filterInStock: false, ignoreBookingIds: members.map((m) => m.id) });
+    if (!day.slots.some((s) => s.start === start.toISOString())) return { ok: false, error: "That time doesn't have room for all the cars. Please pick another." };
+  }
+  const shift = start.getTime() - first;
+  // move in an order that never makes a car overlap its own sibling's old time
+  const order = shift > 0 ? [...members].reverse() : members;
+  for (const m of order) {
+    const ok = await sbPatch("bookings", `id=eq.${m.id}`, { starts_at: new Date(new Date(m.starts_at).getTime() + shift).toISOString(),
+      ends_at: new Date(new Date(m.ends_at).getTime() + shift).toISOString(), reminder_sent_at: null });
+    if (!ok) return { ok: false, error: "That time overlaps another job. Pick a different time." };
+  }
+  const cars = members.map(carOf).join(" and ");
+  await tellOwners(members[0], "moved", `Moved: ${cars} to ${when(start.toISOString())}`, `${nameOf(members[0])} moved ${members.length} cars from ${when(members[0].starts_at)}${by === "customer" ? " (online)" : ` (by ${by})`}`);
+  await textCustomer("booking_moved", members[0].customers, { when: when(start.toISOString()), car: cars }, members[0].id).catch(() => null);
+  return { ok: true, start: start.toISOString() };
+}
+
 /** Move to a new start time. Customers must pick an open slot; owners can pick any free time. */
 export async function moveBooking(b: ManagedBooking, startIso: string, by: "customer" | string) {
   if (!["confirmed", "requested"].includes(b.status)) return { ok: false, error: "This booking can't be changed anymore." };

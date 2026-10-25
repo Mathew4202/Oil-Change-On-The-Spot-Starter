@@ -1,5 +1,7 @@
 // One place that creates bookings, used by the customer website and by owners booking by phone.
+import crypto from "crypto";
 import { vinOk, cleanVin } from "@/lib/os/vin";
+import { decodeVin } from "@/lib/os/vin-photo";
 import { z } from "zod";
 import { sbGet, sbInsert, sbPatch, sbHeaders, enc } from "@/lib/os/db";
 import { buildQuote, filterInStock } from "@/lib/os/quote-service";
@@ -17,7 +19,7 @@ export const BookingBody = z.object({
   email: z.string().trim().email().optional().or(z.literal("")),
   address: z.string().trim().min(4).max(200),
   car: z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1), model: z.string().trim().min(1), engine: z.string().trim().optional() }),
-  job: z.enum(["oil_change", "seasonal", "parts", "diagnostic", "tires"]).optional().default("oil_change"),
+  job: z.enum(["oil_change", "seasonal", "parts", "diagnostic", "tires", "rotation"]).optional().default("oil_change"),
   addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires", "coolant", "washer_fluid"])).optional().default([]),
   own: z.enum(["both", "oil", "filter"]).nullable().optional(),
   start: z.string().datetime(),
@@ -29,6 +31,14 @@ export const BookingBody = z.object({
   agreeTerms: z.boolean().optional(),          // website: cancellation (and diagnostic) terms ticked
   photos: z.array(z.string().regex(/^\d{4}-\d{2}\/[0-9a-f-]{36}\.jpg$/)).max(3).optional(),   // VIN / engine label photo (optional)
   vin: z.string().max(25).optional(),
+  // more cars on the same visit (each gets its own booking, back to back, one travel fee)
+  moreCars: z.array(z.object({
+    car: z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1), model: z.string().trim().min(1), engine: z.string().trim().optional() }),
+    job: z.enum(["oil_change", "seasonal", "parts", "diagnostic", "tires", "rotation"]).default("oil_change"),
+    addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires", "coolant", "washer_fluid"])).default([]),
+    own: z.enum(["both", "oil", "filter"]).nullable().optional(),
+    notes: z.string().max(600).optional(),
+  })).max(3).optional(),
 });
 export type BookingInput = z.infer<typeof BookingBody>;
 export const needsSomething = (b: Pick<BookingInput, "job" | "addons">) => b.job !== "parts" || b.addons.length > 0;
@@ -46,10 +56,66 @@ const halifaxMinutes = (d: Date) => {
 };
 
 export type BookingResult =
-  | { ok: true; bookingId: string; date: string; when: string; total: number; subtotal: number; hst: number; lines: { label: string; amount: number }[]; message: string }
+  | { ok: true; bookingId: string; date: string; when: string; total: number; subtotal: number; hst: number; lines: { label: string; amount: number }[]; message: string; end?: string; car?: string; payUrl?: string }
   | { ok: false; status: number; error: string; slots?: unknown };
 
-export async function createBooking(b: BookingInput, opts: {
+type Opts = {
+  source: "website" | "phone";
+  bookedBy?: string; anyTime?: boolean; priceOverride?: number | null; customerId?: string | null;
+  // internal, for several cars on one visit
+  groupId?: string; noTravel?: boolean; silent?: boolean;
+};
+
+/** One car, or several cars on the same visit (back to back, one travel fee, one text and one link). */
+export async function createBooking(b: BookingInput, opts: Opts): Promise<BookingResult> {
+  if (!b.moreCars?.length) return createOne(b, opts);
+  const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((x) => [x.key, Number(x.value)]));
+  const cars: BookingInput[] = [{ ...b, moreCars: undefined, cars: 1 },
+    ...b.moreCars.map((m) => ({ ...b, car: m.car, job: m.job, addons: m.addons, own: m.own ?? null, notes: m.notes, photos: undefined, vin: undefined, moreCars: undefined, cars: 1 }))];
+  const clean = (x: BookingInput) => (x.job === "oil_change" ? x.addons : x.job === "seasonal" || x.job === "parts" ? x.addons.filter((a) => a !== "tires") : []);
+  const total = cars.reduce((t, x) => t + minutesFor(x.job, rules, clean(x)), 0);
+  const start = new Date(b.start);
+  const date = halifaxDate(start);
+  let when = label(halifaxMinutes(start));
+  if (!opts.anyTime) {
+    // the whole visit has to fit; a parts run is needed if any oil change's filter isn't on the shelf
+    const day = await dayAvailability(date, { cars: 1, minutes: total, filterInStock: false });
+    const slot = day.slots.find((s) => s.start === start.toISOString());
+    if (!slot) return { ok: false, status: 409, error: "Sorry, that time doesn't have room for all the cars. Please pick another time.", slots: day.slots };
+    when = slot.label;
+  }
+  const groupId = crypto.randomUUID();
+  const made: { id: string; total: number; car: string; lines: { label: string; amount: number }[]; subtotal: number; hst: number }[] = [];
+  let next = start.toISOString();
+  for (let i = 0; i < cars.length; i++) {
+    const r = await createOne({ ...cars[i], start: next }, { ...opts, anyTime: true, groupId, noTravel: i > 0, silent: true });
+    if (!r.ok) {
+      for (const m of made) await sbPatch("bookings", `id=eq.${m.id}`, { status: "cancelled", cancelled_at: new Date().toISOString(), cancel_reason: "system: rest of the visit couldn't be booked" });
+      return r.status === 409 ? { ...r, error: "Sorry, that time doesn't have room for all the cars. Please pick another time." } : r;
+    }
+    made.push({ id: r.bookingId, total: r.total, car: r.car ?? "", lines: r.lines, subtotal: r.subtotal, hst: r.hst });
+    next = r.end!;
+  }
+  const r2 = (x: number) => Math.round(x * 100) / 100;
+  const sum = r2(made.reduce((t, m) => t + m.total, 0));
+  const carList = made.map((m) => m.car).join(" and ");
+
+  // one alert for the owners, one text for the customer
+  const who = opts.bookedBy ? `${opts.bookedBy[0].toUpperCase()}${opts.bookedBy.slice(1)} booked` : "New booking";
+  const dayWord = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric" }).format(start);
+  const title = `${who}: ${when}, ${made.length} cars (${carList})`;
+  const body = `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${sum.toFixed(2)} for ${made.length} cars, back to back`;
+  try { await sbInsert("notifications", { kind: "new_booking", booking_id: made[0].id, title, body }); } catch { /* best effort */ }
+  await Promise.race([pushToOwners({ title: title.replace(`: ${when},`, `: ${dayWord} ${when},`), body, url: `/owner?date=${date}`, tag: made[0].id }), new Promise((res) => setTimeout(res, 4000))]);
+  await Promise.race([sendBookingConfirmation(made[0].id, { payingNow: b.payMode === "online" && !opts.bookedBy, car: carList, total: sum }).catch(() => null), new Promise((res) => setTimeout(res, 4000))]);
+
+  const [first] = await sbGet<{ manage_token: string }>(`bookings?select=manage_token&id=eq.${made[0].id}`);
+  return { ok: true, bookingId: made[0].id, date, when, total: sum, subtotal: r2(made.reduce((t, m) => t + m.subtotal, 0)), hst: r2(made.reduce((t, m) => t + m.hst, 0)),
+    lines: made.flatMap((m) => m.lines.map((l) => ({ label: `${m.car}: ${l.label}`, amount: l.amount }))),
+    message: `You're booked for ${when}. See you then!`, ...(b.payMode === "online" && !opts.bookedBy && first ? { payUrl: `/pay/${first.manage_token}` } : {}) };
+}
+
+async function createOne(b: BookingInput, opts: Opts & {
   source: "website" | "phone";
   bookedBy?: string;             // owner name when booked by phone
   anyTime?: boolean;             // owners can book outside the usual hours (still no double booking)
@@ -62,14 +128,14 @@ export async function createBooking(b: BookingInput, opts: {
   if (b.job === "seasonal" && !opts.anyTime && !inSeason) {
     return { ok: false, status: 400, error: "The seasonal package is only offered at the start of winter and summer. Book an oil change or a tire change instead." };
   }
-  if (b.job === "diagnostic" || b.job === "tires") b = { ...b, addons: [] };
+  if (b.job === "diagnostic" || b.job === "tires" || b.job === "rotation") b = { ...b, addons: [] };
   if (!needsSomething(b)) return { ok: false, status: 400, error: "Pick at least one part for a parts visit." };
   const withOil = b.job === "oil_change" || b.job === "seasonal";
   // Travel: worked out here from the address, never trusted from the browser. Without a maps key it falls back to what was sent.
   const dist = mapsReady() ? await drivingDistance(b.placeId ? { placeId: b.placeId } : { address: b.address }).catch(() => null) : null;
-  const km = mapsReady() ? dist?.km ?? null : b.km ?? null;
+  const km = opts.noTravel ? null : mapsReady() ? dist?.km ?? null : b.km ?? null;   // travel is charged once per visit
   const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, km, cars: b.cars, inSeason });
-  const noDistance = mapsReady() && !dist;
+  const noDistance = mapsReady() && !dist && !opts.noTravel;
   if (opts.priceOverride != null && opts.priceOverride >= 0) {
     const r2 = (x: number) => Math.round(x * 100) / 100;
     const sub = r2(opts.priceOverride);
@@ -90,7 +156,7 @@ export async function createBooking(b: BookingInput, opts: {
   let when = label(halifaxMinutes(start));
   if (!opts.anyTime) {
     const day = await dayAvailability(date, { cars: b.cars, minutes: perCar,
-      filterInStock: b.job === "diagnostic" || b.job === "tires" ? true : b.job === "parts" ? false : await filterInStock(spec?.oil_filter_part) });
+      filterInStock: b.job === "diagnostic" || b.job === "tires" || b.job === "rotation" ? true : b.job === "parts" ? false : await filterInStock(spec?.oil_filter_part) });
     const slot = day.slots.find((s) => s.start === start.toISOString());
     if (!slot) return { ok: false, status: 409, error: "Sorry, that time was just taken. Please pick another time.", slots: day.slots };
     slotStart = slot.start; slotEnd = slot.end; when = slot.label;
@@ -127,6 +193,9 @@ export async function createBooking(b: BookingInput, opts: {
 
   // 4) Find or create the car (a VIN read from their photo is saved on it)
   const vin = vinOk(b.vin) ? cleanVin(b.vin) : null;
+  const decoded = vin ? await decodeVin(vin).catch(() => null) : null;
+  const vinCar = decoded ? [decoded.year, decoded.make, decoded.model, decoded.engineL ? `${decoded.engineL}L` : null, /diesel/i.test(decoded.fuel || "") ? "diesel" : null].filter(Boolean).join(" ") : null;
+  const sameCar = !decoded || ((!decoded.year || decoded.year === b.car.year) && (!decoded.make || decoded.make.toLowerCase() === b.car.make.toLowerCase()));
   let [vehicle] = await sbGet<{ id: string }>(
     `vehicles?select=id&customer_id=eq.${customer.id}&year=eq.${b.car.year}&make=ilike.${enc(b.car.make)}&model=ilike.${enc(b.car.model)}`);
   if (!vehicle) {
@@ -144,10 +213,11 @@ export async function createBooking(b: BookingInput, opts: {
     customer_id: customer.id, vehicle_id: vehicle.id, starts_at: slotStart, ends_at: slotEnd, address: b.address,
     distance_km: km, status: "confirmed", pay_mode: opts.bookedBy ? b.payMode : "after",   // website: becomes "online" only once Converge confirms the payment
     quoted_total: quote.total, quote_breakdown: quote, cars: b.cars,
-    services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null, ...(b.agreeTerms ? { termsAgreedAt: new Date().toISOString() } : {}) }, needs_review: [...quote.needsReview, ...(noDistance ? ["Address not found on the map: check it, and add a travel fee if it's past 30 km"] : []),
-      ...(b.photos?.length ? [`Customer sent a photo of the ${vin ? `VIN (${vin})` : "VIN or engine label"}: check the engine before you go`] : [])],
+    services: { job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, bookedBy: opts.bookedBy ?? null, ...(vin ? { vin, vinCar } : {}), ...(b.agreeTerms ? { termsAgreedAt: new Date().toISOString() } : {}) }, needs_review: [...quote.needsReview, ...(noDistance ? ["Address not found on the map: check it, and add a travel fee if it's past 30 km"] : []),
+      ...(b.photos?.length && !vin ? ["Customer sent a VIN photo we couldn't read: look at it before you go"] : []),
+      ...(vin && !sameCar ? [`VIN says ${vinCar}, but they booked a ${b.car.year} ${b.car.make} ${b.car.model}: check which car it is`] : [])],
     photo_paths: b.photos?.length ? b.photos : null,
-    source: opts.source, notes: b.notes || null, manage_token: manageToken,
+    source: opts.source, notes: b.notes || null, manage_token: manageToken, ...(opts.groupId ? { group_id: opts.groupId } : {}),
   });
   if (!bk.ok) {
     if (bk.status === 409 || JSON.stringify(bk.error).includes("23P01")) {
@@ -156,9 +226,12 @@ export async function createBooking(b: BookingInput, opts: {
     throw new Error(`booking: ${JSON.stringify(bk.error)}`);
   }
 
+  const carName = `${b.car.year} ${b.car.make} ${b.car.model}`;
+  if (opts.silent) return { ok: true, bookingId: bk.data!.id, date, when, total: quote.total, subtotal: quote.subtotal, hst: quote.hst, lines: quote.lines, message: "", end: slotEnd, car: carName };
+
   // 6) Alert in the calendar app + buzz both phones
   const who = opts.bookedBy ? `${opts.bookedBy[0].toUpperCase()}${opts.bookedBy.slice(1)} booked` : "New booking";
-  const title = `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : b.job === "tires" ? " (tire change)" : b.job === "seasonal" ? " (seasonal package)" : b.addons.includes("tires") ? " + tires" : ""}`;
+  const title = `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : b.job === "tires" ? " (tire change)" : b.job === "rotation" ? " (tire rotation)" : b.job === "seasonal" ? " (seasonal package)" : b.addons.includes("tires") ? " + tires" : ""}`;
   const body = `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? (opts.bookedBy ? "already paid" : "paying online now") : "pay after"}`;
   try { await sbInsert("notifications", { kind: "new_booking", booking_id: bk.data!.id, title, body }); }
   catch (e) { console.error("alert failed", e); }

@@ -1,5 +1,6 @@
 "use client";
 // Book someone by phone: find them (or add them), pick the car, pick a time, see the price, save.
+import { TIRE_CHANGE, ROTATION } from "@/lib/os/pricing-engine";
 import AddressField, { type Place } from "@/components/AddressField";
 import { useEffect, useMemo, useState } from "react";
 
@@ -12,7 +13,7 @@ type Quote = { lines: { label: string; amount: number }[]; subtotal: number; tot
 const field = "h-12 rounded-xl border border-[#c8d0e0] px-3 text-base w-full bg-white";
 const lbl = "flex flex-col gap-1 text-sm font-semibold";
 const ADDONS: [string, string][] = [["tires", "Tire change"], ["wipers", "Wipers"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid top-up"]];
-type JobKind = "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires";
+type JobKind = "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires" | "rotation";
 
 function halifaxIso(date: string, hhmm: string) {
   // Turn a Halifax wall-clock time into an exact moment (handles daylight saving)
@@ -218,7 +219,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
             <h3 className="font-extrabold text-lg">3. Job</h3>
             <div className="grid grid-cols-2 gap-2">
-              {([["oil_change", "Oil change"], ["seasonal", "Seasonal package"], ["tires", "Tire change"], ["parts", "Parts only"], ["diagnostic", "Diagnostic"]] as const).map(([k, n]) => (
+              {([["oil_change", "Oil change"], ["seasonal", "Seasonal package"], ["tires", "Tire change"], ["rotation", "Tire rotation"], ["parts", "Parts only"], ["diagnostic", "Diagnostic"]] as const).map(([k, n]) => (
                 <button key={k} onClick={() => setJob(k)} className="h-11 rounded-lg border text-sm font-bold" style={chip(job === k)}>{n}</button>
               ))}
             </div>
@@ -226,7 +227,8 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
               <p className="text-sm text-[#4a5878]">Oil change + tire change on rims, $15 off.{!season && <span className="text-[#8a5a00] font-semibold"> Out of season on this day: customers can&apos;t book it online, but you can.</span>}</p>
             )}
             {job === "diagnostic" && <p className="text-sm text-[#4a5878]">$100 to find the problem. Any repair is quoted after.</p>}
-            {job === "tires" && <p className="text-sm text-[#4a5878]">Tires already on rims: sedan $80, SUV $90, large SUV $100, truck $110, sports car $100.</p>}
+            {job === "tires" && <p className="text-sm text-[#4a5878]">Tires already on rims: sedan ${TIRE_CHANGE.Sedan}, SUV ${TIRE_CHANGE["SUV/Crossover"]}, large SUV ${TIRE_CHANGE["Large SUV"]}, truck ${TIRE_CHANGE.Truck}, sports car ${TIRE_CHANGE["Sports Car"]}.</p>}
+            {job === "rotation" && <p className="text-sm text-[#4a5878]">Tire rotation: ${ROTATION.Sedan}.</p>}
             {(job === "oil_change" || job === "seasonal" || job === "parts") && (
               <>
                 <p className="text-sm font-semibold">{job === "parts" ? "What do they need? ($50 visit + parts)" : "Add-ons"}</p>

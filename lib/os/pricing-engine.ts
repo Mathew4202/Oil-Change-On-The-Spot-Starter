@@ -63,6 +63,11 @@ export const TIRE_CHANGE: Record<VehicleClass, number> = {
   Sedan: 80, "SUV/Crossover": 90, "Large SUV": 100, Truck: 100, "Sports Car": 100,   // business plan: large SUV / light truck $100 (seasonal truck package $215); sports: low and riskier to lift
 };
 
+// Tire rotation (wheels moved around on the car): listed "starting at $90" in the business plan
+export const ROTATION: Record<VehicleClass, number> = {
+  Sedan: 90, "SUV/Crossover": 90, "Large SUV": 90, Truck: 90, "Sports Car": 90,
+};
+
 // Prices agreed Oct 24
 export const SERVICE_PRICES = {
   diagnostic: 100,
@@ -261,8 +266,8 @@ export function quoteStandalone(opts: {
     needsReview: opts.partRetail == null && !["diagnostic", "labour"].includes(opts.kind) ? ["Part price not on file"] : [] };
 }
 
-export type JobType = "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires";
-export const JOB_NAMES: Record<JobType, string> = { oil_change: "Oil change", seasonal: "Seasonal package", parts: "Parts visit (no oil change)", diagnostic: "Diagnostic", tires: "Tire change" };
+export type JobType = "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires" | "rotation";
+export const JOB_NAMES: Record<JobType, string> = { oil_change: "Oil change", seasonal: "Seasonal package", parts: "Parts visit (no oil change)", diagnostic: "Diagnostic", tires: "Tire change", rotation: "Tire rotation" };
 const PART_NAMES = { battery: "Battery", wipers: "Wiper blades", cabin_filter: "Cabin air filter", engine_filter: "Engine air filter", tires: "Tire change (on rims)", coolant: "Coolant top-up", washer_fluid: "Washer fluid top-up" } as const;
 
 /** A visit with no oil change: one $50 call-out for any number of parts, or a $100 diagnostic. */
@@ -274,6 +279,8 @@ export function quoteVisit(opts: { job: Exclude<JobType, "oil_change" | "seasona
     lines.push({ label: "Diagnostic", amount: SERVICE_PRICES.diagnostic });
   } else if (opts.job === "tires") {
     lines.push({ label: "Tire change (on rims)", amount: TIRE_CHANGE[opts.vehicleClass ?? "Sedan"] });
+  } else if (opts.job === "rotation") {
+    lines.push({ label: "Tire rotation", amount: ROTATION[opts.vehicleClass ?? "Sedan"] });
   } else {
     lines.push({ label: "Mobile service call", amount: SERVICE_PRICES.standaloneCallout });
     for (const a of opts.items ?? []) {
@@ -287,7 +294,8 @@ export function quoteVisit(opts: { job: Exclude<JobType, "oil_change" | "seasona
   const subtotal = r2(lines.reduce((t, l) => t + l.amount, 0));
   const hst = r2(subtotal * rules.hstRate);
   // Profit (on the safe side): the visit fee itself; any margin on parts is extra
-  const fee = opts.job === "diagnostic" ? SERVICE_PRICES.diagnostic : opts.job === "tires" ? TIRE_CHANGE[opts.vehicleClass ?? "Sedan"] : SERVICE_PRICES.standaloneCallout;
-  const partsTotal = r2(lines.filter((l) => !/^Travel|^Mobile service call|^Diagnostic|^Tire change/.test(l.label)).reduce((t, l) => t + l.amount, 0));
+  const fee = opts.job === "diagnostic" ? SERVICE_PRICES.diagnostic : opts.job === "tires" ? TIRE_CHANGE[opts.vehicleClass ?? "Sedan"]
+    : opts.job === "rotation" ? ROTATION[opts.vehicleClass ?? "Sedan"] : SERVICE_PRICES.standaloneCallout;
+  const partsTotal = r2(lines.filter((l) => !/^Travel|^Mobile service call|^Diagnostic|^Tire change|^Tire rotation/.test(l.label)).reduce((t, l) => t + l.amount, 0));
   return { lines, subtotal, hst, total: r2(subtotal + hst), cost: partsTotal, profit: fee, raised: false, needsReview };
 }

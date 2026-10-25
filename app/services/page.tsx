@@ -1,7 +1,7 @@
 // Every service we offer right now, with the price, and a Book button that opens booking with it picked.
 // Prices come from the pricing engine so this page can't drift from what the booking page charges.
 import Link from "next/link";
-import { OIL_BASE, TIRE_CHANGE, SERVICE_PRICES } from "@/lib/os/pricing-engine";
+import { OIL_BASE, TIRE_CHANGE, ROTATION, SERVICE_PRICES } from "@/lib/os/pricing-engine";
 import { NAVY, GOLD, MUTED, LIGHT, PHONE, PHONE_TEL } from "@/components/site/brand";
 
 export const metadata = {
@@ -57,7 +57,7 @@ export default function Services() {
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 flex flex-col gap-5" style={{ background: "transparent" }}>
         <nav aria-label="Jump to a service" className="flex flex-wrap gap-2">
-          {[["oil", "Oil change"], ["seasonal", "Seasonal package"], ["tires", "Tire swap"], ["addons", "Filters, wipers, battery"], ["diagnostic", "Diagnostics"], ["own", "Bring your own oil"], ["plans", "Plans and fleets"]].map(([id, t]) => (
+          {[["oil", "Oil change"], ["seasonal", "Seasonal package"], ["tires", "Tire swap"], ["rotation", "Tire rotation"], ["addons", "Filters, wipers, battery"], ["diagnostic", "Diagnostics"], ["own", "Bring your own oil"], ["plans", "Plans and fleets"]].map(([id, t]) => (
             <a key={id} href={`#${id}`} className="rounded-full border px-4 py-2 font-semibold text-[15px] no-underline" style={{ borderColor: "#c8d0e0" }}>{t}</a>
           ))}
         </nav>
@@ -78,6 +78,9 @@ export default function Services() {
           <PriceRow prices={[TIRE_CHANGE.Sedan, TIRE_CHANGE["SUV/Crossover"], TIRE_CHANGE["Large SUV"], TIRE_CHANGE.Truck]} />
           <p className="text-[15px]" style={{ color: MUTED }}>Oversized or heavy-duty wheels: <a href={PHONE_TEL} className="font-bold underline">call or text</a> for a price. We don&apos;t mount tires onto rims.</p>
         </Card>
+
+        <Card id="rotation" title="Tire rotation" cta={<Book job="rotation">Book a rotation</Book>}
+          intro={`From $${ROTATION.Sedan}. We move your wheels front to back so the tires wear evenly and last longer, set the pressures and torque the wheel nuts.`} />
 
         <Card id="addons" title="Filters, wipers and batteries" cta={<div className="flex flex-wrap gap-2"><Book job="oil_change">Add to an oil change</Book><Book job="parts">Book on their own</Book></div>}
           intro="Parts are charged at the regular store price. Labour is cheaper when we're already there for an oil change.">

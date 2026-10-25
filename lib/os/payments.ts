@@ -52,12 +52,33 @@ export async function payTarget(token: string): Promise<PayTarget | null> {
     return j2?.receipt_token && j2.receipt_token !== token ? payTarget(j2.receipt_token) : null;
   }
   if (b.quoted_total == null) return null;
+  // several cars on one visit: the first car's link pays for all of them
+  const group = await groupOf(b.id);
+  if (group.length > 1) {
+    const total = r2(group.reduce((t, g) => t + Number(g.quoted_total ?? 0), 0));
+    let paid = 0; for (const g of group) paid += await paidSoFar(g.id);
+    const lines = group.flatMap((g) => (g.quote_breakdown?.lines ?? []).map((l) => ({ label: `${carText(g.vehicles)}: ${l.label}`, amount: l.amount })));
+    const subtotal = r2(lines.reduce((t, l) => t + l.amount, 0));
+    return { kind: "prepay", bookingId: b.id, jobId: null, token, title: "Your booking", car: group.map((g) => carText(g.vehicles)).join(" and "), when: b.starts_at,
+      lines, subtotal, hst: r2(total - subtotal), total, paid: r2(paid), due: amountDue(total, paid),
+      firstName: b.customers?.first_name ?? null, lastName: b.customers?.last_name ?? null, email: b.customers?.email ?? null, receiptUrl: null };
+  }
   const total = Number(b.quoted_total), paid = await paidSoFar(b.id);
   const lines = b.quote_breakdown?.lines ?? [];
   const subtotal = r2(b.quote_breakdown?.subtotal ?? lines.reduce((t, l) => t + l.amount, 0));
   return { kind: "prepay", bookingId: b.id, jobId: null, token, title: "Your booking", car: carText(b.vehicles), when: b.starts_at,
     lines, subtotal, hst: r2(b.quote_breakdown?.hst ?? total - subtotal), total, paid, due: amountDue(total, paid),
     firstName: b.customers?.first_name ?? null, lastName: b.customers?.last_name ?? null, email: b.customers?.email ?? null, receiptUrl: null };
+}
+
+type GroupRow = { id: string; quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[] } | null; vehicles: Veh };
+/** The bookings booked together with this one (just itself if it's a single car). */
+async function groupOf(bookingId: string): Promise<GroupRow[]> {
+  try {
+    const [me] = await sbGet<{ group_id: string | null }>(`bookings?select=group_id&id=eq.${enc(bookingId)}`);
+    if (!me?.group_id) return [];
+    return await sbGet<GroupRow>(`bookings?select=id,quoted_total,quote_breakdown,vehicles(year,make,model)&group_id=eq.${me.group_id}&status=in.(confirmed,requested)&order=starts_at`);
+  } catch { return []; }   // migration 0020 not run yet
 }
 
 const form = (f: Record<string, string>) => new URLSearchParams(f).toString();
@@ -107,7 +128,11 @@ export async function finishOnlinePayment(paymentId: string, txnId: string | nul
   }
   // claim it: only the request that flips started → approved records the money (the txn id is unique too)
   const claimed = await sbPatchRows("online_payments", `id=eq.${p.id}&status=eq.started`, { status: "approved", txn_id: txnId, card_last4: v.last4, message: null, finished_at: new Date().toISOString() });
-  if (!claimed.length) return { token, status: "approved" };
+  if (!claimed.length) {
+    // someone else already recorded it (a double tap), or the save failed: only say approved if it really is
+    const [now] = await sbGet<{ status: string }>(`online_payments?select=status&id=eq.${p.id}`);
+    return { token, status: now?.status === "approved" ? "approved" : "error" };
+  }
   await recordOnline(p, txnId, v.last4);
   return { token, status: "approved" };
 }
@@ -127,8 +152,15 @@ async function recordOnline(p: OnlineRow, txnId: string, last4: string | null) {
     if (pay) await sbPatch("payments", `id=eq.${pay.id}`, { processor_ref: `${ref}${tip ? `, includes $${tip.toFixed(2)} tip` : ""}` });
     if (p.job_id) await sendReceipt(p.job_id, null).catch(() => null);
   } else {
-    await sbInsert("payments", { booking_id: p.booking_id, amount, method: "card_online", processor_ref: ref });
-    await sbPatch("bookings", `id=eq.${p.booking_id}`, { pay_mode: "online", paid_at: new Date().toISOString() });
+    // paid for every car on the visit: one payment row per car, so each job sees its own share
+    const group = await groupOf(p.booking_id);
+    const parts = group.length > 1 ? group.map((g) => ({ id: g.id, amount: Number(g.quoted_total ?? 0) })) : [{ id: p.booking_id, amount }];
+    const diff = r2(amount - parts.reduce((t, x) => t + x.amount, 0));
+    if (diff) parts[0].amount = r2(parts[0].amount + diff);   // anything paid before is already netted out
+    for (const x of parts) {
+      if (x.amount > 0) await sbInsert("payments", { booking_id: x.id, amount: x.amount, method: "card_online", processor_ref: ref });
+      await sbPatch("bookings", `id=eq.${x.id}`, { pay_mode: "online", paid_at: new Date().toISOString() });
+    }
   }
   try { await sbInsert("notifications", { kind: "paid_online", booking_id: p.booking_id, title: `Paid online: $${amount.toFixed(2)}`, body: p.kind === "prepay" ? "Paid when booking" : tip ? `Includes a $${tip.toFixed(2)} tip` : "Paid after the job" }); } catch { /* best effort */ }
   await Promise.race([pushToOwners({ title: `Paid online: $${amount.toFixed(2)}`, body: p.kind === "prepay" ? "Paid when booking" : "Paid after the job", url: "/owner/money", tag: `paid-${p.id}` }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);

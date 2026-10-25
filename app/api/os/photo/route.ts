@@ -1,6 +1,7 @@
 // POST {image: "data:image/jpeg;base64,..."} → keeps the photo for the booking and tries to read the VIN from it.
 import { NextRequest, NextResponse } from "next/server";
 import { storeBookingPhoto, readVin, decodeVin } from "@/lib/os/vin-photo";
+import { cleanVin, vinOk } from "@/lib/os/vin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -24,4 +25,14 @@ export async function POST(req: NextRequest) {
   if (!path) return NextResponse.json({ error: "Couldn't save the photo. You can skip it." }, { status: 500 });
   const decoded = read.vin ? await decodeVin(read.vin) : null;
   return NextResponse.json({ photo: path, vin: read.vin, engineL: decoded?.engineL ?? read.engineL, decoded });
+}
+
+// GET ?vin=XXXXXXXXXXXXXXXXX → what car that VIN is (typed instead of a photo)
+export async function GET(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "?";
+  if (tooMany(ip)) return NextResponse.json({ error: "Too many tries. Please try again later." }, { status: 429 });
+  const vin = cleanVin(req.nextUrl.searchParams.get("vin"));
+  if (!vinOk(vin)) return NextResponse.json({ error: "That VIN doesn't look right. It's 17 letters and numbers (no I, O or Q)." }, { status: 400 });
+  const decoded = await decodeVin(vin);
+  return NextResponse.json({ vin, engineL: decoded?.engineL ?? null, decoded });
 }

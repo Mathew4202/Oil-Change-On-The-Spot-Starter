@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PHONE, PHONE_TEL } from "@/lib/os/business";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
-type B = { id: string; start: string; status: string; address: string | null; total: number | null; job: string; addons: string[]; cars: number; firstName: string; car: string };
+type B = { id: string; start: string; status: string; address: string | null; total: number | null; job: string; addons: string[]; cars: number; firstName: string; car: string; visitMinutes?: number };
 type Slot = { label: string; start: string };
 const TZ = "America/Halifax";
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -28,7 +28,7 @@ export default function Manage({ token }: { token: string }) {
   useEffect(() => {
     if (mode !== "move" || !b) return; setSlots(null); setSlot(null);
     const tires = b.job === "oil_change" && b.addons.includes("tires") ? "tires" : "";
-    fetch(`/api/os/slots?date=${date}&job=${b.job}&cars=${b.cars}&addons=${tires}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
+    fetch(`/api/os/slots?date=${date}&job=${b.job}&cars=${b.cars}&addons=${tires}${b.visitMinutes ? `&visit=${b.visitMinutes}` : ""}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
   }, [mode, date, b]);
   const days = useMemo(() => Array.from({ length: 30 }, (_, i) => addDays(today(), i)), []);
 

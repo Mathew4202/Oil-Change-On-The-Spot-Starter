@@ -5,13 +5,13 @@ import { slotsForDay, halifaxToDate, DEFAULT_SLOT_RULES, type Hours, type Busy }
 
 const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 
-export async function dayAvailability(date: string, opts: { cars?: number; filterInStock?: boolean; now?: Date; minutes?: number; ignoreBookingId?: string } = {}) {
+export async function dayAvailability(date: string, opts: { cars?: number; filterInStock?: boolean; now?: Date; minutes?: number; ignoreBookingId?: string; ignoreBookingIds?: string[] } = {}) {
   const from = halifaxToDate(date, 0).toISOString();
   const to = halifaxToDate(date, 26 * 60).toISOString();   // covers late jobs running past midnight
   const [hours, bookings, off, closed, rules] = await Promise.all([
     sbGet<{ dow: number; first_start: string; last_start: string }>("business_hours?select=dow,first_start,last_start"),
     sbGet<{ starts_at: string; ends_at: string }>(
-      `bookings?select=starts_at,ends_at&status=in.(requested,confirmed,in_progress)&starts_at=lt.${to}&ends_at=gt.${from}${opts.ignoreBookingId ? `&id=neq.${opts.ignoreBookingId}` : ""}`),
+      `bookings?select=starts_at,ends_at&status=in.(requested,confirmed,in_progress)&starts_at=lt.${to}&ends_at=gt.${from}${opts.ignoreBookingId ? `&id=neq.${opts.ignoreBookingId}` : ""}${opts.ignoreBookingIds?.length ? `&id=not.in.(${opts.ignoreBookingIds.join(",")})` : ""}`),
     sbGet<{ starts_at: string; ends_at: string }>(`time_off?select=starts_at,ends_at&starts_at=lt.${to}&ends_at=gt.${from}`),
     sbGet<{ day: string }>(`parts_closed_days?select=day&day=eq.${date}`),
     sbGet<{ key: string; value: number }>("pricing_rules?select=key,value"),
@@ -36,6 +36,7 @@ export function jobMinutes(job: string | undefined, r: Record<string, number>, a
   if (job === "parts") return r.job_minutes_parts ?? 45;
   if (job === "diagnostic") return r.job_minutes_diagnostic ?? 60;
   if (job === "tires") return r.job_minutes_tires ?? 60;
+  if (job === "rotation") return r.job_minutes_rotation ?? 60;
   if (job === "seasonal") return (r.job_minutes ?? 75) + (r.job_minutes_tires_addon ?? 45);
   // oil change, plus extra time when tires are swapped on the same visit
   return (r.job_minutes ?? 75) + (addons.includes("tires") ? r.job_minutes_tires_addon ?? 45 : 0);

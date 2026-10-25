@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
       own: (q.get("own") as any) || null, km: q.get("km") ? Number(q.get("km")) : null,
       cars: q.get("cars") ? Number(q.get("cars")) : 1,
       inSeason: !!seasonFor(/^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date")! : halifaxDate(new Date()), await seasonWindows()),
-      job: (["seasonal", "parts", "diagnostic", "tires"].includes(q.get("job") || "") ? q.get("job") : "oil_change") as "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires",
+      job: (["seasonal", "parts", "diagnostic", "tires", "rotation"].includes(q.get("job") || "") ? q.get("job") : "oil_change") as "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires" | "rotation",
     });
     const owner = q.get("key") && q.get("key") === process.env.ADMIN_SECRET;
     const { cost, profit, raised, needsReview, ...publicQuote } = quote;

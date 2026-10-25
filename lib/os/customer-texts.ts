@@ -24,14 +24,14 @@ export async function textCustomer(key: string, who: Who | null | undefined, var
 }
 
 /** Booking confirmation (sent right after any booking, website or phone). */
-export async function sendBookingConfirmation(bookingId: string, opts: { payingNow?: boolean } = {}) {
+export async function sendBookingConfirmation(bookingId: string, opts: { payingNow?: boolean; car?: string; total?: number } = {}) {
   const [b] = await sbGet<{ id: string; starts_at: string; address: string | null; quoted_total: number | null; manage_token: string | null; pay_mode: string;
     customers: Who | null; vehicles: { year: number | null; make: string | null; model: string | null } | null }>(
     `bookings?select=id,starts_at,address,quoted_total,manage_token,pay_mode,customers(id,first_name,phone,sms_opt_out),vehicles(year,make,model)&id=eq.${bookingId}`);
   if (!b) return { sent: false, status: "not_found" };
-  const car = [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model].filter(Boolean).join(" ") || "your car";
+  const car = opts.car || [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model].filter(Boolean).join(" ") || "your car";
   return textCustomer("booking_confirmation", b.customers, {
-    when: when(b.starts_at), car, address: b.address || "your address", total: money(Number(b.quoted_total ?? 0)),
+    when: when(b.starts_at), car, address: b.address || "your address", total: money(opts.total ?? Number(b.quoted_total ?? 0)),
     manage_link: b.manage_token ? manageLink(b.manage_token) : `call or text ${PHONE}`,
     pay_note: b.pay_mode === "online" ? ", paid online" : opts.payingNow ? ", pay online now or after the job" : ", paid after the job",
   }, b.id);

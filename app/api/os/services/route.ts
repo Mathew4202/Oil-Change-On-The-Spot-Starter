@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
       { id: "oil_change", name: "Oil change", note: "Full synthetic, new filter, quick check-up" },
       ...(season ? [{ id: "seasonal", name: "Seasonal package", note: "Oil change + tire change on rims, save $15" }] : []),
       { id: "tires", name: "Tire change", note: "Tires already on rims" },
+      { id: "rotation", name: "Tire rotation", note: "Wheels moved around to even out wear" },
       { id: "parts", name: "Parts only", note: "Wipers, filters or battery: $50 visit + parts" },
       { id: "diagnostic", name: "Diagnostic", note: "$100 to find the problem" },
     ],
