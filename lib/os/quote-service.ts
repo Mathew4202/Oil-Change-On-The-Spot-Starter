@@ -7,7 +7,7 @@ import { euroOilKey, quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUN
 // Customer price for each add-on part or top-up (settings can override; part prices get replaced by the parts lookup later)
 const ADDON_DEFAULTS: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200, coolant: 25, washer_fluid: 10, tires: 0 };
 const addonPrice = (k: string, r: Record<string, number>) => r[`addon_part_${k}`] ?? r[`addon_price_${k}`] ?? ADDON_DEFAULTS[k] ?? 0;
-import { lookupOilSpec } from "@/lib/os/spec-lookup";
+import { lookupOilSpec } from "@/lib/os/spec-lookup-run";
 import { detectClassFromModel } from "@/data/vehicleClass";
 
 export type Spec = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_grade: string;

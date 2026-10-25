@@ -9,7 +9,7 @@ create table if not exists spec_lookups (
 create index if not exists spec_lookups_tried on spec_lookups (tried_at desc);
 alter table spec_lookups enable row level security;
 
-insert into pricing_rules (key, value, note) values ('ai_lookups_per_day', 25, 'online car lookups allowed per day (each about 5 cents)')
+insert into pricing_rules (key, value, note) values ('ai_lookups_per_day', 25, 'online car lookups allowed per day (free Gemini tier has a daily limit)')
 on conflict (key) do nothing;
 commit;
 select key, value from pricing_rules where key = 'ai_lookups_per_day';

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findSpecs } from "@/lib/os/quote-service";
 import { learnCar } from "@/lib/os/spec-backfill";
 import { sbGet } from "@/lib/os/db";
+import { aiReady } from "@/lib/os/ai";
 import { sameCar } from "@/lib/os/car-match";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
     let { rows } = await findSpecs(year, make, model);
     // a car we've done but never looked up: we only know the engine(s) we saw. Learn the rest once, so the list is complete.
     const ours = rows.filter((r) => (r.source === "sheet" || r.source === "job_history"));
-    if (ours.length && process.env.ANTHROPIC_API_KEY) {
+    if (ours.length && aiReady()) {
       const fresh = await sbGet<{ id: string; looked_up_at: string | null }>(`vehicle_specs?select=id,looked_up_at&id=in.(${ours.map((r) => r.id).join(",")})`).catch(() => []);
       if (fresh.length && fresh.every((r) => !r.looked_up_at)) {
         await learnCar(ours.map((r) => ({ id: r.id, year_from: r.year_from, make: r.make, model: r.model, engine: r.engine, oil_filter_part: r.oil_filter_part, oil_grade: r.oil_grade })));

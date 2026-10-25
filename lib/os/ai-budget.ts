@@ -1,12 +1,10 @@
-// Keeps the AI bill small. Looking a car up online is the only costly AI call, so:
+// Keeps AI use small (it's on Gemini's free tier, which has a daily limit). Looking a car up online is the biggest AI job, so:
 //  - each car is looked up once, ever (a failure isn't retried for 30 days)
 //  - two requests for the same car at the same moment (price + engine list) share one lookup
 //  - a daily cap (pricing rule ai_lookups_per_day, default 25); past it, the price uses the car class and HQ checks it
 import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
 import { makeKey, modelKey } from "@/lib/os/car-match";
 
-export const LOOKUP_MODEL = () => process.env.SPEC_LOOKUP_MODEL || "claude-haiku-5-5";   // small model: a few cents a car
-export const CHEAP_MODEL = () => process.env.CHEAP_AI_MODEL || "claude-haiku-5-5";         // reading calls and texts
 
 export const lookupKey = (year: number, make: string, model: string, extra = "") => `${year}|${makeKey(make)}|${modelKey(make, model)}${extra ? `|${extra}` : ""}`;
 

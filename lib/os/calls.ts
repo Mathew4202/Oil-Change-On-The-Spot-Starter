@@ -9,7 +9,7 @@ import { siteUrl, when as whenText } from "@/lib/os/customer-texts";
 import { sendSms, template, fill } from "@/lib/os/sms";
 import { createHold } from "@/lib/os/holds";
 import { pickSlot, type CallEvent } from "@/lib/os/call-events";
-import { CHEAP_MODEL } from "@/lib/os/ai-budget";
+import { askAI } from "@/lib/os/ai";
 
 export type Extract = { name: string | null; year: number | null; make: string | null; model: string | null; engine: string | null;
   job: "oil_change" | "seasonal" | "tires" | "rotation" | "parts" | "diagnostic" | null; cars: number;
@@ -97,16 +97,13 @@ Rules: "tires" = swapping tires already on rims. Work out real dates from words 
 
 /** Ask Claude to read the call (same key as the receipt reader). */
 export async function readCall(text: string): Promise<Extract | null> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key || !text.trim()) return null;
+  if (!text.trim()) return null;
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", weekday: "long", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  const res = await fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
-    method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: CHEAP_MODEL(), max_tokens: 400, messages: [{ role: "user", content: PROMPT(today, text) }] }),
-  }).catch(() => null);
-  if (!res?.ok) return null;
-  const body = await res.json().catch(() => ({}));
-  const out = (body.content ?? []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("");
+  // phone numbers never leave the app (free AI tiers may keep what they're sent)
+  const clean = text.replace(/\+?1?[\s.(-]*\d{3}[\s.)-]*\d{3}[\s.-]*\d{4}/g, "[number]");
+  const a = await askAI({ prompt: PROMPT(today, clean), maxTokens: 400 });
+  if (!a) return null;
+  const out = a.text;
   try { return cleanExtract(JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1))); } catch { return null; }
 }
 

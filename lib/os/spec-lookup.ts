@@ -91,21 +91,5 @@ export function parseLookup(text: string, make: string): LookupResult | null {
   return { engines, confidence: sources.length ? confidence : "low", sources, notes: raw.notes ? String(raw.notes).slice(0, 300) : null };
 }
 
-export async function lookupOilSpec(year: number, make: string, model: string, engine?: string | null): Promise<LookupResult | null> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return null;
-  const res = await fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
-    method: "POST",
-    headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({
-      model: process.env.SPEC_LOOKUP_MODEL || "claude-haiku-5-5",   // small model: a few cents a car (see ai-budget.ts)
-      max_tokens: 1200,
-      tools: [{ type: process.env.ANTHROPIC_SEARCH_TOOL || "web_search_20250305", name: "web_search", max_uses: 2 }],
-      messages: [{ role: "user", content: PROMPT(year, make, model, engine) }],
-    }),
-  });
-  if (!res.ok) { console.error("spec lookup failed", res.status, await res.text()); return null; }
-  const body = await res.json();
-  const text = (body.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-  return parseLookup(text, make);
-}
+// The lookup itself (it calls the AI) is in spec-lookup-run.ts, so this file stays testable on its own.
+export { PROMPT as SPEC_PROMPT };

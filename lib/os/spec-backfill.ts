@@ -3,8 +3,9 @@
 // (we did a 1.5L Accord, but 2.0L Accords exist too: the engine dropdown should offer both).
 // Our own grade, litres and filter stay as they are. Each car is only looked up once.
 import { sbGet, sbPatch, sbInsert, enc } from "@/lib/os/db";
-import { lookupOilSpec } from "@/lib/os/spec-lookup";
+import { lookupOilSpec } from "@/lib/os/spec-lookup-run";
 import { engineMatches } from "@/lib/os/quote-service";
+import { aiReady } from "@/lib/os/ai";
 import { claimLookup, finishLookup, lookupKey } from "@/lib/os/ai-budget";
 
 type Row = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_filter_part: string | null; oil_grade: string | null };
@@ -61,7 +62,7 @@ export async function learnCar(ours: Row[]) {
 }
 
 export async function backfillSpecs(batch = 6) {
-  if (!process.env.ANTHROPIC_API_KEY) return { ok: false as const, error: "Add ANTHROPIC_API_KEY in Vercel first.", filled: 0, tried: 0, ...(await specsLeft()) };
+  if (!aiReady()) return { ok: false as const, error: "Add the free GEMINI_API_KEY in Vercel first.", filled: 0, tried: 0, ...(await specsLeft()) };
   const rows = await sbGet<Row>(`vehicle_specs?select=id,year_from,make,model,engine,oil_filter_part,oil_grade&${TODO}&order=times_done.desc.nullslast&limit=${batch * 3}`);
   // one lookup per car (a car with two engines on file is still one car)
   const cars = new Map<string, Row[]>();

@@ -73,21 +73,10 @@ Read it carefully. Reply with ONLY this JSON (no other text):
 Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". If something is unreadable use null.`;
 
 export async function scanReceipt(imageBase64: string, mediaType: string): Promise<{ scan: Scan | null; error?: string }> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { scan: null, error: "Receipt reading isn't set up (ANTHROPIC_API_KEY missing)" };
-  const res = await fetch(`${process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com"}/v1/messages`, {
-    method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5", max_tokens: 2500,
-      messages: [{ role: "user", content: [
-        { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
-        { type: "text", text: SCAN_PROMPT },
-      ] }],
-    }),
-  });
-  if (!res.ok) return { scan: null, error: `Couldn't read the receipt (${res.status})` };
-  const body = await res.json();
-  const text = (body.content ?? []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n");
+  const { askAI } = await import("@/lib/os/ai");   // loaded here so this file stays testable on its own
+  const r = await askAI({ prompt: SCAN_PROMPT, file: { mime: mediaType, base64: imageBase64 }, maxTokens: 2500, big: true });
+  if (!r) return { scan: null, error: "Receipt reading isn't available right now (add GEMINI_API_KEY in Vercel, or the free daily limit is used up). Type it in for now." };
+  const text = r.text;
   const a = text.indexOf("{"), z = text.lastIndexOf("}");
   try { return { scan: cleanScan(JSON.parse(text.slice(a, z + 1))) }; } catch { return { scan: null, error: "Couldn't read the receipt. Try a clearer photo." }; }
 }
