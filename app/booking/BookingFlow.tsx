@@ -77,6 +77,15 @@ export default function BookingFlow() {
   const [payNow, setPayNow] = useState(false); const [payOnline, setPayOnline] = useState(false);   // pay online when booking (only once Converge is set up)
   const [agree, setAgree] = useState(false);   // cancellation (and diagnostic) terms   // signed in with a text code (works on any phone)
   const [manualEngine, setManualEngine] = useState("");
+  // every engine this car came with (ours plus the ones found online), looked up as soon as the car is picked
+  const [engList, setEngList] = useState<string[] | null>(null);
+  useEffect(() => {
+    setEngList(null);
+    if (!/^\d{4}$/.test(year) || !make || !model) return;
+    let live = true;
+    fetch(`/api/os/engines?${new URLSearchParams({ year, make, model })}`).then((r) => r.json()).then((d) => live && setEngList(d.engines || [])).catch(() => live && setEngList([]));
+    return () => { live = false; };
+  }, [year, make, model]);
   const [vinPhoto, setVinPhoto] = useState<VinResult | null>(null);
   // a time we held for them on the phone (link from our text)
   const [hold, setHold] = useState<{ token: string; start: string; when: string; label: string; date: string; until: string } | null>(null);
@@ -129,10 +138,10 @@ export default function BookingFlow() {
   }, [models, vinModel]);
   // the VIN's engine size picks the engine once we know this car's engines
   useEffect(() => {
-    if (!vinPhoto?.engineL || engine || !quote?.engines) return;
-    const hit = matchEngine(vinPhoto.engineL, quote.engines);
-    if (hit) setEngine(hit); else if (!quote.engines.length) { setManualEngine(`${vinPhoto.engineL}L`); setEngine(`${vinPhoto.engineL}L`); }
-  }, [quote?.engines, vinPhoto?.engineL]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!vinPhoto?.engineL || engine || !engList) return;
+    const hit = matchEngine(vinPhoto.engineL, engList);
+    if (hit) setEngine(hit); else if (!engList.length) { setManualEngine(`${vinPhoto.engineL}L`); setEngine(`${vinPhoto.engineL}L`); }
+  }, [engList, vinPhoto?.engineL]); // eslint-disable-line react-hooks/exhaustive-deps
   function signedIn(p: Profile) {
     setAccount(p);
     fillInfo({ name: p.name, phone: p.phone, email: p.email, address: p.address, cars: p.cars });
@@ -194,7 +203,7 @@ export default function BookingFlow() {
   function next() {
     setErr("");
     if (step === 0 && !carReady) return setErr("Pick your car's year, make and model.");
-    if (step === 0 && quote?.engines && quote.engines.length > 0 && !engine) return setErr("Pick your engine, or choose “Not sure”.");
+    if (step === 0 && engList && engList.length > 0 && !engine) return setErr("Pick your engine, or choose “Not sure”.");
     if (step === 0) for (const x of more) { const miss = extraCarMissing(x); if (miss) return setErr(miss); }
     if (step === 1 && job === "parts" && !addons.some((a) => PARTS_ONLY.includes(a))) return setErr("Pick at least one thing for us to do.");
     if (step === 1 && job === "diagnostic" && problem.trim().length < 5) return setErr("Tell us a bit about what's going on with the car.");
@@ -308,12 +317,12 @@ export default function BookingFlow() {
               </label>
               {carReady && (
                 <label className={labelCls}>Engine
-                  {quote?.engines && quote.engines.length > 0 ? (
+                  {engList && engList.length > 0 ? (
                     <select value={engine} onChange={(e) => setEngine(e.target.value)} className={input} style={{ borderColor: LINE }}>
-                      <option value="">Choose engine</option>{quote.engines.map((e) => <option key={e}>{e}</option>)}
+                      <option value="">Choose engine</option>{engList.map((e) => <option key={e}>{e}</option>)}
                       <option value="unsure">Not sure</option>
                     </select>
-                  ) : pricing && !quote ? (
+                  ) : engList == null ? (
                     <select disabled className={`${input} bg-[#f5f7fb]`} style={{ borderColor: LINE }}><option>Looking up engines…</option></select>
                   ) : (
                     <div className="flex gap-2">

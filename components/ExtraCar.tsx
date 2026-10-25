@@ -47,7 +47,7 @@ export function ExtraPricer({ value: e, onPatch, date }: { value: Extra; onPatch
       if ((e.job === "oil_change" || e.job === "seasonal") && e.own) p.set("own", e.own);
       const j = await fetch(`/api/os/quote?${p}`).then((r) => r.json()).catch(() => null);
       if (!live) return;
-      onPatch({ pricing: false, quote: j && !j.error ? { subtotal: j.subtotal, total: j.total, lines: j.lines, spec: j.spec ?? null } : null, engines: j?.engines ?? [] });
+      onPatch({ pricing: false, quote: j && !j.error ? { subtotal: j.subtotal, total: j.total, lines: j.lines, spec: j.spec ?? null } : null });
     }, 350);
     return () => { live = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,6 +60,16 @@ export function ExtraCarFields({ n, value: e, onPatch, onRemove, makes }: { n: n
   const set = onPatch;
   const [models, setModels] = useState<string[]>([]);
   const years = useMemo(() => { const y = new Date().getFullYear() + 1; return Array.from({ length: y - 1989 }, (_, i) => String(y - i)); }, []);
+  // every engine this car came with, looked up as soon as the model is picked
+  const [lookingUp, setLookingUp] = useState(false);
+  useEffect(() => {
+    if (!e.year || !e.make || !e.model) return;
+    let live = true; setLookingUp(true);
+    fetch(`/api/os/engines?${new URLSearchParams({ year: e.year, make: e.make, model: e.model })}`).then((r) => r.json()).catch(() => ({ engines: [] }))
+      .then((d) => { if (!live) return; setLookingUp(false); set({ engines: d.engines || [] }); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e.year, e.make, e.model]);
   useEffect(() => {
     setModels([]); if (!e.year || !e.make) return;
     fetch(`/api/models?make=${encodeURIComponent(e.make)}&year=${e.year}`).then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {});
@@ -87,7 +97,10 @@ export function ExtraCarFields({ n, value: e, onPatch, onRemove, makes }: { n: n
           <option value="">{e.year && e.make && !models.length ? "Loading…" : "Model"}</option>{models.map((m) => <option key={m}>{m}</option>)}
         </select>
       </label>
-      {e.engines.length > 0 && (
+      {lookingUp && e.model && (
+        <label className={labelCls}>Engine<select disabled className={`${input} bg-[#f5f7fb]`} style={{ borderColor: LINE }}><option>Looking up engines…</option></select></label>
+      )}
+      {!lookingUp && e.engines.length > 0 && (
         <label className={labelCls}>Engine
           <select value={e.engine} onChange={(x) => set({ engine: x.target.value })} className={input} style={{ borderColor: LINE }}>
             <option value="">Choose engine</option>{e.engines.map((x) => <option key={x}>{x}</option>)}<option value="unsure">Not sure</option>

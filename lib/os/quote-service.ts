@@ -33,7 +33,11 @@ export type QuoteRequest = {
 const norm = (s: string | null | undefined) => (s || "").toLowerCase().replace(/[^a-z0-9.]/g, "");
 export const engineMatches = (want: string, have: string | null) => {
   const size = (s: string) => s.match(/\d\.\d/)?.[0];
-  return !!have && (norm(have).includes(norm(want)) || norm(want).includes(norm(have)) || (!!size(want) && size(want) === size(have)));
+  if (!have) return false;
+  // a 2.5L and a 2.5L Hybrid (or diesel) are different engines: different oil, filter or capacity
+  const kind = (s: string) => `${/plug-?in|phev/i.test(s) ? "p" : ""}${/hybrid|phev/i.test(s) ? "h" : ""}${/diesel|tdi|cummins|duramax|power\s*stroke|ecodiesel/i.test(s) ? "d" : ""}`;
+  if (kind(want) !== kind(have)) return false;
+  return norm(have).includes(norm(want)) || norm(want).includes(norm(have)) || (!!size(want) && size(want) === size(have));
 };
 
 async function specRows(q: string) {

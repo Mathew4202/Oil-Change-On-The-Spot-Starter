@@ -1,5 +1,6 @@
 "use client";
 import SpecCard from "@/components/SpecCard";
+import EnginePicker from "@/components/EnginePicker";
 // HQ phone booking: another car on the same visit (its own car, service and add-ons, priced on its own).
 import CarPicker from "@/components/CarPicker";
 import { ExtraPricer, extraName, type Extra, type ExtraJob } from "@/components/ExtraCar";
@@ -16,9 +17,7 @@ export default function HqExtraCar({ n, value: e, onPatch, onRemove, date }: { n
       <ExtraPricer value={e} date={date} onPatch={onPatch} />
       <div className="flex justify-between items-center"><p className="font-extrabold">Car {n}{extraName(e) ? ` · ${extraName(e)}` : ""}</p><button type="button" onClick={onRemove} className="text-sm underline font-semibold">Remove</button></div>
       <CarPicker year={e.year} make={e.make} model={e.model} onChange={(c) => onPatch({ ...c, engine: "", quote: null, engines: [] })} />
-      {e.engines.length > 1 && (
-        <div className="flex flex-wrap gap-2">{e.engines.map((x) => <button key={x} type="button" onClick={() => onPatch({ engine: x })} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(e.engine === x)}>{x}</button>)}</div>
-      )}
+      <EnginePicker year={e.year} make={e.make} model={e.model} value={e.engine} onChange={(x) => onPatch({ engine: x })} />
       <div className="grid grid-cols-3 gap-2">{JOBS.map(([k, nm]) => <button key={k} type="button" onClick={() => onPatch({ job: k, addons: k === "oil_change" ? e.addons : e.addons.filter((a) => a !== "tires") })} className="h-10 rounded-lg border text-[13px] font-bold" style={chip(e.job === k)}>{nm}</button>)}</div>
       {addons.length > 0 && (
         <div className="flex flex-wrap gap-2">{addons.map(([k, nm]) => { const on = e.addons.includes(k); return <button key={k} type="button" onClick={() => onPatch({ addons: on ? e.addons.filter((a) => a !== k) : [...e.addons, k] })} className="h-9 px-3 rounded-full border text-sm font-bold" style={chip(on)}>{nm}</button>; })}</div>

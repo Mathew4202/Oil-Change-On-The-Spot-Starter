@@ -1,5 +1,6 @@
 "use client";
 import SpecCard, { type HqSpec } from "@/components/SpecCard";
+import EnginePicker from "@/components/EnginePicker";
 // Book someone by phone: find them (or add them), pick the car, pick a time, see the price, save.
 import { TIRE_CHANGE, ROTATION } from "@/lib/os/pricing-engine";
 import CarPicker from "@/components/CarPicker";
@@ -101,7 +102,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
     const t = setTimeout(async () => {
       setPricing(true);
       const p = new URLSearchParams({ year, make: make.trim(), model: model.trim(), cars: String(cars) });
-      if (engine.trim()) p.set("engine", engine.trim());
+      if (engine.trim() && engine !== "unsure") p.set("engine", engine.trim());
       p.set("job", job); p.set("date", date);
       const sent = job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [];
       if (sent.length) p.set("addons", sent.join(","));
@@ -131,10 +132,10 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(), ...(place?.placeId ? { placeId: place.placeId } : {}),
-        car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() ? { engine: engine.trim() } : {}) },
+        car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() && engine !== "unsure" ? { engine: engine.trim() } : {}) },
         job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [], own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
         priceOverride: special.trim() ? Number(special) : null,
-        ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine ? { engine: x.engine } : {}) }, job: x.job, addons: extraAddons(x),
+        ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine && x.engine !== "unsure" ? { engine: x.engine } : {}) }, job: x.job, addons: extraAddons(x),
           own: null, ...(x.job === "diagnostic" && x.problem.trim() ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
         customerId: customer?.id ?? null,
       }),
@@ -208,16 +209,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
             <div className="grid grid-cols-3 gap-3">
               <label className={lbl}>How many<input value={cars} onChange={(e) => setCars(Math.max(1, Math.min(5, Number(e.target.value.replace(/\D/g, "")) || 1)))} inputMode="numeric" className={field} /></label>
             </div>
-            {quote?.engines && quote.engines.length > 1 ? (
-              <div className="flex flex-col gap-1">
-                <p className="text-sm font-semibold">Which engine?</p>
-                <div className="flex flex-wrap gap-2">
-                  {quote.engines.map((e) => <button key={e} onClick={() => setEngine(e)} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(engine === e)}>{e}</button>)}
-                </div>
-              </div>
-            ) : (
-              <label className={lbl}>Engine (optional)<input value={engine} onChange={(e) => setEngine(e.target.value)} placeholder="2.0L" className={field} /></label>
-            )}
+            <EnginePicker year={year} make={make} model={model} value={engine} onChange={setEngine} />
             {more.length > 0 && <p className="text-sm text-[#4a5878]">Car 1 above. The job below is for car 1.</p>}
           </section>
 
@@ -289,7 +281,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
               <p className="text-sm text-[#4a5878]">Working out the price…{job === "oil_change" || job === "seasonal" ? " (a car we've never done takes up to 20 seconds the first time)" : ""}</p>
             ) : quote.error ? <p className="text-sm text-red-700">{quote.error}</p> : (
               <div className="flex flex-col gap-1 text-[15px]">
-                {quote.spec && <SpecCard spec={quote.spec} engine={engine.trim() || null} />}
+                {quote.spec && <SpecCard spec={quote.spec} engine={engine.trim() && engine !== "unsure" ? engine.trim() : null} />}
                 {quote.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>${l.amount.toFixed(2)}</span></div>)}
                 {more.filter((x) => x.quote).map((x) => <div key={x.key} className="flex justify-between gap-3"><span className="text-[#4a5878]">{extraName(x)}</span><span>${x.quote!.subtotal.toFixed(2)}</span></div>)}
                 <div className="flex justify-between font-bold"><span>Total with HST{more.length ? ` (${more.length + 1} cars)` : ""}</span><span>${(quote.total + more.reduce((t, x) => t + (x.quote?.total ?? 0), 0)).toFixed(2)}</span></div>
