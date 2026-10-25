@@ -13,7 +13,7 @@ const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type JobId = "oil_change" | "seasonal" | "tires" | "rotation" | "parts" | "diagnostic";
 type Line = { label: string; amount: number };
 type Quote = { lines: Line[]; subtotal: number; hst: number; total: number; engines?: string[];
-  spec: { engine?: string | null; grade: string; capacityL: number } | null; vehicle?: { class: string }; error?: string };
+  spec: { engine?: string | null; grade: string; capacityL: number; oilSpec?: string | null; filter?: string | null } | null; vehicle?: { class: string }; error?: string };
 type Slot = { time: string; label: string; start: string };
 type Services = { season: string | null; jobs: { id: JobId; name: string; note: string }[]; addons: { id: string; name: string }[] };
 
@@ -327,7 +327,7 @@ export default function BookingFlow() {
               {carReady && (
                 <div className="rounded-xl bg-[#eef1f6] p-4 text-[15px] leading-relaxed text-[#4a5878]" aria-live="polite">
                   {pricing && !quote ? "Looking up your car… (first time for a car can take up to 20 seconds)" :
-                    quote?.spec ? <>Your car takes <strong className="text-[#0d1b3e]">{quote.spec.grade.replace(/^Euro /, "")} {/diesel|cummins|duramax|power\s*stroke|ecodiesel|tdi/i.test(quote.spec.engine || "") ? "diesel oil" : "full synthetic"}, {quote.spec.capacityL} L</strong>. We bring the right oil and filter.</> :
+                    quote?.spec ? <>Your car takes <strong className="text-[#0d1b3e]">{quote.spec.grade.replace(/^Euro /, "")} {/diesel|cummins|duramax|power\s*stroke|ecodiesel|tdi/i.test(quote.spec.engine || "") ? "diesel oil" : "full synthetic"}, {quote.spec.capacityL} L</strong>{quote.spec.oilSpec && !/^API/i.test(quote.spec.oilSpec) ? <> that meets <strong className="text-[#0d1b3e]">{quote.spec.oilSpec}</strong></> : ""}. We bring the right oil and filter.</> :
                     "We'll bring the right oil for your car."}
                 </div>
               )}

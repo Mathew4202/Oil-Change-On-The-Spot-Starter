@@ -24,3 +24,10 @@ test("price group from the model: whole words only, real models from our custome
   const wrong = cases.filter(([mk, m, want]) => cls(m, mk) !== want).map(([mk, m, want]) => `${mk} ${m}: got ${cls(m, mk) || "(none)"}, want ${want || "(none)"}`);
   assert.deepEqual(wrong, []);
 });
+
+test("Mitsubishi Outlander is a 3-row SUV; Outlander Sport and RVR are not", () => {
+  assert.equal(cls("Outlander", "Mitsubishi"), "Large SUV");
+  assert.equal(cls("Outlander PHEV", "Mitsubishi"), "Large SUV");
+  assert.equal(cls("Outlander Sport", "Mitsubishi"), "SUV/Crossover");
+  assert.equal(cls("RVR", "Mitsubishi"), "SUV/Crossover");
+});

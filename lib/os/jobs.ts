@@ -17,7 +17,7 @@ export type JobContext = {
     customer_id: string | null; vehicle_id: string | null };
   customer: { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; review_asked_at: string | null } | null;
   vehicle: { id: string; year: number | null; make: string | null; model: string | null; engine: string | null; last_km: number | null; vin: string | null;
-    vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null } | null } | null;
+    vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null } | null } | null;
   job: Record<string, unknown> | null;
   paid: number;   // all payments on this booking so far (a booking paid online when booked, tips included)
 };
@@ -28,7 +28,7 @@ export async function jobContext(bookingId: string): Promise<JobContext | null> 
   if (!b) return null;
   const [[customer], [vehicle], [job], pays] = await Promise.all([
     b.customer_id ? sbGet<NonNullable<JobContext["customer"]>>(`customers?select=id,first_name,last_name,phone,email,review_asked_at&id=eq.${b.customer_id}`) : Promise.resolve([null]),
-    b.vehicle_id ? sbGet<NonNullable<JobContext["vehicle"]>>(`vehicles?select=id,year,make,model,engine,last_km,vin,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec)&id=eq.${b.vehicle_id}`) : Promise.resolve([null]),
+    b.vehicle_id ? sbGet<NonNullable<JobContext["vehicle"]>>(`vehicles?select=id,year,make,model,engine,last_km,vin,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter)&id=eq.${b.vehicle_id}`) : Promise.resolve([null]),
     sbGet<Record<string, unknown>>(`jobs?select=*&booking_id=eq.${id}&order=done_at.desc&limit=1`),
     sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${id}`),
   ]);

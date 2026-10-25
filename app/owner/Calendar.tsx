@@ -11,7 +11,8 @@ type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
   paid?: boolean; receiptNo?: number | null; finalTotal?: number | null;
   name: string; phone: string | null; address: string | null; car: string; engine: string | null;
-  oil: { grade: string; litres: number; filter: string | null; spec: string | null } | null;
+  oil: { grade: string; litres: number; filter: string | null; spec: string | null; engine?: string | null; diesel?: boolean; wix?: string | null;
+    checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterCost?: number | null } | null;
   lines: { label: string; amount: number }[]; total: number | null; profit: number | null;
   notes: string | null; checks: string[]; imported: boolean; photos?: string[]; vin?: string | null; vinCar?: string | null; job?: string; addons?: string[];
 };
@@ -203,7 +204,15 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 {(!j.job || j.job === "oil_change" || j.job === "seasonal") && (j.addons ?? []).length > 0 && (
                   <p className="text-[15px] font-semibold text-[#c98a00]">+ {(j.addons ?? []).map((a) => ({ wipers: "wipers", cabin_filter: "cabin filter", engine_filter: "engine air filter", battery: "battery", coolant: "coolant", washer_fluid: "washer fluid", tires: "tires" } as Record<string, string>)[a] ?? a).join(", ")}</p>
                 )}
-                {j.oil && <p className="text-[15px] text-[#4a5878]">{j.oil.grade} · {j.oil.litres} L{j.oil.filter ? ` · filter ${j.oil.filter}` : ""}{j.oil.spec && !/^API/.test(j.oil.spec) ? ` · ${j.oil.spec}` : ""}</p>}
+                {j.oil && (
+                  <div className="rounded-lg bg-[#f4f6fa] px-3 py-2 text-[14px] leading-snug grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                    <span className="text-[#4a5878]">Engine</span><span className="font-semibold">{j.engine || j.oil.engine || "not on file"}{j.oil.diesel ? " (diesel)" : ""}</span>
+                    <span className="text-[#4a5878]">Oil</span><span className="font-semibold">{j.oil.grade.replace(/^Euro /, "")}{j.oil.diesel ? " diesel oil" : " full synthetic"}, {j.oil.litres} L</span>
+                    <span className="text-[#4a5878]">Must meet</span><span className="font-semibold">{j.oil.spec || "not on file"}</span>
+                    <span className="text-[#4a5878]">Oil filter</span><span className="font-semibold">{j.oil.filter ? `NAPA ${j.oil.filter}` : "find on site"}{j.oil.wix ? ` · WIX ${j.oil.wix}` : ""}{j.oil.filter ? (j.oil.filterInStock ? " · in stock" : " · buy") : ""}{j.oil.filterCost != null ? ` · $${j.oil.filterCost.toFixed(2)}` : ""}</span>
+                    {j.oil.lowConfidence && <span className="col-span-2 text-[12px] text-[#8a5a00]">Found online but not sure: check the oil cap or the manual.</span>}
+                  </div>
+                )}
                 {j.address && <p className="text-[15px] text-[#4a5878]">{j.address}</p>}
                 {j.checks.length > 0 && <p className="text-[13px] font-semibold text-[#8a5a00] bg-[#fff6dd] rounded-lg px-2 py-1">{j.checks.join(" · ")}</p>}
                 {j.vin && <p className="text-[14px]"><span className="font-semibold">VIN</span> <span className="font-mono select-all">{j.vin}</span>{j.vinCar ? <span className="text-[#4a5878]"> · {j.vinCar}</span> : null}</p>}

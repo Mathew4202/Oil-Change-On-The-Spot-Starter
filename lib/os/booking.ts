@@ -248,7 +248,10 @@ async function createOne(b: BookingInput, opts: Opts & {
   // 6) Alert in the calendar app + buzz both phones
   const who = opts.bookedBy ? `${opts.bookedBy[0].toUpperCase()}${opts.bookedBy.slice(1)} booked` : "New booking";
   const title = `${who}: ${when}, ${b.car.year} ${b.car.make} ${b.car.model}${b.job === "parts" ? " (parts only)" : b.job === "diagnostic" ? " (diagnostic)" : b.job === "tires" ? " (tire change)" : b.job === "rotation" ? " (tire rotation)" : b.job === "seasonal" ? " (seasonal package)" : b.addons.includes("tires") ? " + tires" : ""}`;
-  const body = `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? (opts.bookedBy ? "already paid" : "paying online now") : "pay after"}`;
+  // what to bring, right in the alert: oil, how much, and the filter number (in stock or buy)
+  const bring = withOil && spec && b.own !== "both" ? ` · ${spec.oil_grade.replace(/^Euro /, "")}${spec.oil_spec && !/^API/i.test(spec.oil_spec) ? ` (${spec.oil_spec})` : ""} ${Number(spec.capacity_l)} L`
+    + (spec.oil_filter_part && b.own !== "filter" ? ` · filter NAPA ${spec.oil_filter_part} (${(await filterInStock(spec.oil_filter_part).catch(() => false)) ? "in stock" : "buy"})` : spec.oil_filter_part ? "" : " · filter: find on site") : "";
+  const body = `${b.firstName} ${b.lastName}`.trim() + ` · ${b.address} · $${quote.total.toFixed(2)} ${b.payMode === "online" ? (opts.bookedBy ? "already paid" : "paying online now") : "pay after"}${bring}`;
   try { await sbInsert("notifications", { kind: "new_booking", booking_id: bk.data!.id, title, body }); }
   catch (e) { console.error("alert failed", e); }
   const dayWord = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric" }).format(new Date(slotStart));

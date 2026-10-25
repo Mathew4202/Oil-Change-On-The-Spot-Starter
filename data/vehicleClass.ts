@@ -21,11 +21,11 @@ const LARGE_SUV = ["suburban", "expedition", "yukon", "yukon xl", "escalade", "p
   "sequoia", "pilot", "ascent", "traverse", "enclave", "armada", "pathfinder", "commander", "acadia", "sienna", "xl", "max", "4runner",
   "tahoe", "explorer", "durango", "grand caravan", "caravan", "pacifica", "odyssey", "carnival", "sedona", "cx-9", "cx9", "cx-90", "cx90",
   "mdx", "qx60", "qx80", "q7", "x5", "x7", "gle", "gls", "land cruiser", "gx", "navigator", "aviator", "grand wagoneer", "wagoneer",
-  "range rover", "defender", "discovery", "cayenne", "xc90", "santa fe xl", "ev9"];
+  "range rover", "defender", "discovery", "cayenne", "xc90", "santa fe xl", "ev9", "outlander"];   // Outlander: 3 rows
 const SUV = ["suv", "crossover", "sportage", "tucson", "rav4", "cr-v", "crv", "rogue", "escape", "edge", "equinox", "cx-5", "cx5", "cx-50", "cx50",
   "cx-30", "cx30", "cx-3", "seltos", "kona", "santa fe", "sante fe", "sorento", "forester", "outback", "crosstrek", "cherokee", "compass",
   "grand cherokee", "renegade", "wrangler", "encore", "terrain", "murano", "kicks", "qashqai", "hr-v", "hrv", "venza", "trailblazer",
-  "blazer", "trax", "envision", "bronco", "bronco sport", "ecosport", "outlander", "rvr", "eclipse cross", "tiguan", "taos", "atlas cross sport",
+  "blazer", "trax", "envision", "bronco", "bronco sport", "ecosport", "rvr", "eclipse cross", "tiguan", "taos", "atlas cross sport",
   "niro", "soul", "venue", "c-hr", "corolla cross", "bz4x", "rdx", "qx50", "nx", "rx", "ux", "q3", "q5", "x1", "x2", "x3", "x4", "gla", "glb",
   "glc", "macan", "xc40", "xc60", "evoque", "velar", "f-pace", "e-pace", "countryman", "gv60", "gv70", "gv80", "xt4", "xt5", "xt6", "corsair", "nautilus"];
 const SEDAN = ["sedan", "civic", "corolla", "elantra", "sonata", "camry", "accord", "malibu", "impala", "jetta", "passat", "altima", "maxima",
@@ -43,6 +43,7 @@ export function detectClassFromModel(rawModel: string | null | undefined, rawMak
   if (has(model, "santa fe")) return "SUV/Crossover";
   if (has(model, "atlas cross sport")) return "SUV/Crossover";
   if (has(model, "corolla cross")) return "SUV/Crossover";
+  if (has(model, "outlander sport")) return "SUV/Crossover";   // the small one (RVR), 2 rows
   if (has(model, "mustang mach-e") || has(model, "mach-e")) return "SUV/Crossover";
 
   if (any(model, SPORTS)) return "Sports Car";

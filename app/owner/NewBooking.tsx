@@ -1,6 +1,7 @@
 "use client";
 // Book someone by phone: find them (or add them), pick the car, pick a time, see the price, save.
 import { TIRE_CHANGE, ROTATION } from "@/lib/os/pricing-engine";
+import CarPicker from "@/components/CarPicker";
 import AddressField, { type Place } from "@/components/AddressField";
 import { useEffect, useMemo, useState } from "react";
 
@@ -195,12 +196,8 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
                 <button onClick={() => chooseVehicle(null)} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(vehicleId === "new")}>+ Another car</button>
               </div>
             ) : null}
+            <CarPicker year={year} make={make} model={model} onChange={(v) => { setYear(v.year); setMake(v.make); setModel(v.model); if (v.model !== model || v.make !== make || v.year !== year) setEngine(""); }} />
             <div className="grid grid-cols-3 gap-3">
-              <label className={lbl}>Year<input value={year} onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" placeholder="2019" className={field} /></label>
-              <label className={`${lbl} col-span-2`}>Make<input value={make} onChange={(e) => setMake(e.target.value)} placeholder="Honda" className={field} /></label>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <label className={`${lbl} col-span-2`}>Model<input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Civic" className={field} /></label>
               <label className={lbl}>How many<input value={cars} onChange={(e) => setCars(Math.max(1, Math.min(5, Number(e.target.value.replace(/\D/g, "")) || 1)))} inputMode="numeric" className={field} /></label>
             </div>
             {quote?.engines && quote.engines.length > 1 ? (

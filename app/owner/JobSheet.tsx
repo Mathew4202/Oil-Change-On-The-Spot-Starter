@@ -8,8 +8,8 @@ type Ctx = {
   booking: { id: string; status: string; starts_at: string; address: string | null; pay_mode: string; quote_breakdown: { lines?: Line[] } | null;
     services: { job?: string; own?: string | null } | null; cars: number; paid_at: string | null };
   customer: { first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
-  vehicle: { year: number | null; make: string | null; model: string | null; last_km: number | null; vin: string | null;
-    vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null } | null } | null;
+  vehicle: { year: number | null; make: string | null; model: string | null; engine?: string | null; last_km: number | null; vin: string | null;
+    vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null } | null } | null;
   job: { receipt_no: number; total: number; tip?: number | null; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null } | null;
   paid: number; payOnline: boolean;
 };
@@ -172,6 +172,10 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                   <input value={vin} onChange={(e) => setVin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17))} autoCapitalize="characters"
                     placeholder="17 characters, bottom of windshield" className={`${field} font-mono tracking-wide`} style={{ borderColor: LINE }} />
                 </label>
+                {withOil && ctx.vehicle?.vehicle_specs && (() => { const sp = ctx.vehicle!.vehicle_specs!; return (
+                  <p className="rounded-lg bg-[#f4f6fa] px-3 py-2 text-[14px] leading-snug">
+                    <strong>Spec:</strong> {ctx.vehicle!.engine || sp.engine || "engine not on file"}{sp.fuel === "diesel" ? " diesel" : ""} · {sp.oil_grade.replace(/^Euro /, "")} {sp.fuel === "diesel" ? "diesel oil" : "full synthetic"}{sp.oil_spec ? `, must meet ${sp.oil_spec}` : ""} · {Number(sp.capacity_l)} L · filter {sp.oil_filter_part ? `NAPA ${sp.oil_filter_part}` : "not on file"}{sp.wix_filter ? ` (WIX ${sp.wix_filter})` : ""}
+                  </p>); })()}
                 {withOil && ctx.booking.services?.own !== "both" && (
                   <div className="grid grid-cols-3 gap-2">
                     <label className="flex flex-col gap-1 text-sm font-semibold">Oil<input value={grade} onChange={(e) => setGrade(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>

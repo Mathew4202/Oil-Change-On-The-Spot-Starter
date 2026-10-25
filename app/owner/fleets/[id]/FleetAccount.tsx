@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import OwnerNav from "../../OwnerNav";
+import CarPicker from "@/components/CarPicker";
 import AccountForm, { type AccountIn } from "../AccountForm";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878";
@@ -130,14 +131,10 @@ export default function FleetAccount({ id }: { id: string }) {
                   <label className={lbl}>Unit #<input value={vForm.unit_number} onChange={(e) => setVForm({ ...vForm, unit_number: e.target.value })} className={field} style={{ borderColor: LINE }} /></label>
                   <label className={lbl}>Plate<input value={vForm.plate} onChange={(e) => setVForm({ ...vForm, plate: e.target.value.toUpperCase() })} className={field} style={{ borderColor: LINE }} /></label>
                 </div>
-                <label className={lbl}>VIN <span className="font-normal" style={{ color: MUTED }}>(fills in the rest if you leave it empty)</span>
+                <label className={lbl}>VIN <span className="font-normal" style={{ color: MUTED }}>(leave the car empty and the VIN fills it in)</span>
                   <input value={vForm.vin} onChange={(e) => setVForm({ ...vForm, vin: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17) })} className={`${field} font-mono`} style={{ borderColor: LINE }} />
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <label className={lbl}>Year<input value={vForm.year} onChange={(e) => setVForm({ ...vForm, year: e.target.value.replace(/\D/g, "").slice(0, 4) })} inputMode="numeric" className={field} style={{ borderColor: LINE }} /></label>
-                  <label className={lbl}>Make<input value={vForm.make} onChange={(e) => setVForm({ ...vForm, make: e.target.value })} className={field} style={{ borderColor: LINE }} /></label>
-                  <label className={lbl}>Model<input value={vForm.model} onChange={(e) => setVForm({ ...vForm, model: e.target.value })} className={field} style={{ borderColor: LINE }} /></label>
-                </div>
+                <CarPicker year={vForm.year} make={vForm.make} model={vForm.model} onChange={(c) => setVForm({ ...vForm, ...c })} />
                 <div className="grid grid-cols-2 gap-2">
                   <label className={lbl}>Engine<input value={vForm.engine} onChange={(e) => setVForm({ ...vForm, engine: e.target.value })} placeholder="e.g. 6.6L" className={field} style={{ borderColor: LINE }} /></label>
                   <label className={lbl}>Fleet price before HST<input value={vForm.fleet_price} onChange={(e) => setVForm({ ...vForm, fleet_price: e.target.value.replace(/[^\d.]/g, "") })} inputMode="decimal" placeholder="Normal price" className={field} style={{ borderColor: LINE }} /></label>
