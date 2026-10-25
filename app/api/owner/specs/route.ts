@@ -3,14 +3,15 @@ import { NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
 import { backfillSpecs, specsLeft } from "@/lib/os/spec-backfill";
 import { paidSpend } from "@/lib/os/ai";
+import { enginesLoaded } from "@/lib/os/epa-import";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET() {
   if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
-  const [s, paid] = await Promise.all([specsLeft().catch(() => ({ total: 0, left: 0 })), paidSpend().catch(() => null)]);
-  return NextResponse.json({ ...s, paid, free: !!process.env.GEMINI_API_KEY });
+  const [s, paid, engines] = await Promise.all([specsLeft().catch(() => ({ total: 0, left: 0 })), paidSpend().catch(() => null), enginesLoaded().catch(() => 0)]);
+  return NextResponse.json({ ...s, paid, free: !!process.env.GEMINI_API_KEY, engines });
 }
 
 export async function POST() {

@@ -16,9 +16,16 @@ export default function StockScreen() {
 
   // Oil approvals (dexos, VW 508 00...) for cars we've done: the sheet never recorded them, so they're looked up once
   const [specs, setSpecs] = useState<{ total: number; left: number } | null>(null);
+  const [engines, setEngines] = useState<number | null>(null); const [loadingEngines, setLoadingEngines] = useState(false); const [engMsg, setEngMsg] = useState("");
+  async function loadEngines() {
+    setLoadingEngines(true); setEngMsg("");
+    const d = await fetch("/api/owner/engines-import", { method: "POST" }).then((r) => r.json()).catch(() => ({ ok: false, error: "No answer. Try again." }));
+    setLoadingEngines(false);
+    if (d.ok) { setEngines(d.rows); setEngMsg(`Loaded ${Number(d.rows).toLocaleString()} engines.`); } else setEngMsg(d.error || "That didn't work.");
+  }
   const [ai, setAi] = useState<{ paid: { spent: number; left: number; requests: number } | null; free: boolean } | null>(null);
   const [filling, setFilling] = useState(false); const [specErr, setSpecErr] = useState("");
-  useEffect(() => { fetch("/api/owner/specs", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (d.total != null) setSpecs(d); setAi({ paid: d.paid ?? null, free: !!d.free }); }).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/owner/specs", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (d.total != null) setSpecs(d); setEngines(d.engines ?? 0); setAi({ paid: d.paid ?? null, free: !!d.free }); }).catch(() => {}); }, []);
   async function fillSpecs() {
     setFilling(true); setSpecErr("");
     for (let i = 0; i < 40; i++) {
@@ -54,6 +61,14 @@ export default function StockScreen() {
       <main className="flex-1 p-4 flex flex-col gap-4 pb-28">
         {loading && <p className="text-center text-[#4a5878] py-8">Loading…</p>}
 
+        {engines != null && (engines < 1000 || engMsg) && (
+          <section className="rounded-2xl p-4 flex flex-col gap-2 border bg-white" style={{ borderColor: LINE }}>
+            <h2 className="font-extrabold text-lg">Engine list for every car</h2>
+            <p className="text-sm text-[#4a5878]">Loads the engine sizes of every car since 1995 from the free US EPA list, so the engine dropdown fills in instantly on the website and in HQ. Takes about 30 seconds. Free.</p>
+            {engines < 1000 && <button onClick={loadEngines} disabled={loadingEngines} className="h-12 rounded-xl font-bold text-white disabled:opacity-60" style={{ background: NAVY }}>{loadingEngines ? "Loading… about 30 seconds" : "Load the engine list"}</button>}
+            {engMsg && <p className="text-sm font-semibold" style={{ color: engMsg.startsWith("Loaded") ? "#1d6b3a" : "#9b1c1c" }}>{engMsg}</p>}
+          </section>
+        )}
         {ai && (
           <p className="text-[13px] text-[#4a5878] px-1">AI: {ai.free ? "free Gemini first" : "free Gemini not set up"}{ai.paid ? ` · paid backup this month $${ai.paid.spent.toFixed(2)} (${ai.paid.requests} uses), $${ai.paid.left.toFixed(2)} left` : ""}</p>
         )}
