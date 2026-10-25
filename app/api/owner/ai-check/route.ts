@@ -13,12 +13,13 @@ export async function GET() {
 }
 
 async function check() {
-  const free = process.env.GEMINI_API_KEY ? await askAI({ prompt: "Reply with the single word: ready", maxTokens: 20 }) : null;
+  const free = process.env.GEMINI_API_KEY ? await askAI({ prompt: "Reply with the single word: ready", maxTokens: 20, freeOnly: true }) : null;
   const freeMsg = free?.provider === "gemini" ? "working" : aiLastError() ?? "not working";
   const paid = process.env.ANTHROPIC_API_KEY ? await askAI({ prompt: "Reply with the single word: ready", maxTokens: 20, private: true }) : null;
+  const paidMsg = aiLastError();
   return NextResponse.json({
     free: process.env.GEMINI_API_KEY ? freeMsg : "GEMINI_API_KEY isn't on this deployment (add it in Vercel, then redeploy)",
-    paid: paid ? "working" : process.env.ANTHROPIC_API_KEY ? aiLastError() ?? "not working" : "no ANTHROPIC_API_KEY (backup off)",
+    paid: paid ? "working" : process.env.ANTHROPIC_API_KEY ? paidMsg ?? "not working" : "no ANTHROPIC_API_KEY (backup off)",
     budget: await paidSpend().catch(() => null),
   });
 }
