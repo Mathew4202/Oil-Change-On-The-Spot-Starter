@@ -14,6 +14,22 @@ export default function StockScreen() {
   const load = () => fetch("/api/owner/stock", { cache: "no-store" }).then((r) => r.json()).then((d) => { setParts(d.parts || []); setToBuy(d.toBuy || []); setCount(d.bookingsCounted || 0); setLoading(false); });
   useEffect(() => { load(); }, []);
 
+  // Oil approvals (dexos, VW 508 00...) for cars we've done: the sheet never recorded them, so they're looked up once
+  const [specs, setSpecs] = useState<{ total: number; left: number } | null>(null);
+  const [filling, setFilling] = useState(false); const [specErr, setSpecErr] = useState("");
+  useEffect(() => { fetch("/api/owner/specs", { cache: "no-store" }).then((r) => r.json()).then((d) => d.total != null && setSpecs(d)).catch(() => {}); }, []);
+  async function fillSpecs() {
+    setFilling(true); setSpecErr("");
+    for (let i = 0; i < 40; i++) {
+      const d = await fetch("/api/owner/specs", { method: "POST" }).then((r) => r.json()).catch(() => null);
+      if (!d) { setSpecErr("Lost connection. Tap again to carry on."); break; }
+      if (d.error) { setSpecErr(d.error); break; }
+      setSpecs({ total: d.total, left: d.left });
+      if (!d.left || !d.tried) break;
+    }
+    setFilling(false);
+  }
+
   async function adjust(p: Part, delta: number) {
     setParts((ps) => ps.map((x) => x.id === p.id ? { ...x, on_hand: Math.max(0, Number(x.on_hand) + delta) } : x));
     await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partId: p.id, delta }) });
@@ -35,6 +51,16 @@ export default function StockScreen() {
       </header>
       <main className="flex-1 p-4 flex flex-col gap-4 pb-28">
         {loading && <p className="text-center text-[#4a5878] py-8">Loading…</p>}
+
+        {specs && specs.left > 0 && (
+          <section className="rounded-2xl p-4 flex flex-col gap-2 border bg-white" style={{ borderColor: LINE }}>
+            <h2 className="font-extrabold text-lg">Oil approvals for cars we&apos;ve done</h2>
+            <p className="text-sm text-[#4a5878]">{specs.total - specs.left} of {specs.total} have the oil approval (dexos, VW, MB). The rest get looked up once and saved, about 20 seconds per batch of 6. Our oil, litres and filters stay as we recorded them.</p>
+            <button onClick={fillSpecs} disabled={filling} className="h-12 rounded-xl font-bold text-white disabled:opacity-60" style={{ background: NAVY }}>
+              {filling ? `Looking up… ${specs.left} left` : `Fill in the ${specs.left} left`}</button>
+            {specErr && <p className="text-sm font-semibold text-[#b3261e]">{specErr}</p>}
+          </section>
+        )}
 
         {!loading && (
           <section className="rounded-2xl p-4 flex flex-col gap-2 border" style={{ background: buying.length ? "#fff6dd" : "#dff3e6", borderColor: buying.length ? GOLD : "#9fd3b2" }}>

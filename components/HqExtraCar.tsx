@@ -1,4 +1,5 @@
 "use client";
+import SpecCard from "@/components/SpecCard";
 // HQ phone booking: another car on the same visit (its own car, service and add-ons, priced on its own).
 import CarPicker from "@/components/CarPicker";
 import { ExtraPricer, extraName, type Extra, type ExtraJob } from "@/components/ExtraCar";
@@ -23,6 +24,7 @@ export default function HqExtraCar({ n, value: e, onPatch, onRemove, date }: { n
         <div className="flex flex-wrap gap-2">{addons.map(([k, nm]) => { const on = e.addons.includes(k); return <button key={k} type="button" onClick={() => onPatch({ addons: on ? e.addons.filter((a) => a !== k) : [...e.addons, k] })} className="h-9 px-3 rounded-full border text-sm font-bold" style={chip(on)}>{nm}</button>; })}</div>
       )}
       {e.job === "diagnostic" && <input value={e.problem} onChange={(x) => onPatch({ problem: x.target.value })} placeholder="What's wrong with it?" className="h-11 rounded-xl border px-3" style={{ borderColor: LINE }} />}
+      {e.quote?.spec && (e.job === "oil_change" || e.job === "seasonal") && <SpecCard spec={e.quote.spec} engine={e.engine && e.engine !== "unsure" ? e.engine : null} />}
       <p className="text-sm font-bold">{e.pricing ? "Working out the price…" : e.quote ? `$${e.quote.subtotal.toFixed(2)} + HST for this car` : ""}</p>
     </div>
   );

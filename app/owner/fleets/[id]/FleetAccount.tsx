@@ -48,6 +48,7 @@ export default function FleetAccount({ id }: { id: string }) {
   const [date, setDate] = useState(todayHfx()); const [time, setTime] = useState("09:00"); const [note, setNote] = useState("");
   const [billPick, setBillPick] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [portal, setPortal] = useState<string | null>(null);
 
   const load = () => fetch(`/api/owner/fleet?id=${id}`, { cache: "no-store" }).then((r) => r.json()).then((x) => (x.error ? setErr(x.error) : setD(x))).catch(() => setErr("Couldn't load. Check your connection."));
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -111,6 +112,22 @@ export default function FleetAccount({ id }: { id: string }) {
             <button onClick={() => setEdit(true)} className="self-start mt-1 text-sm font-bold underline">Edit account</button>
           </section>
         ))}
+
+        {a && (
+          <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
+            <h2 className="font-extrabold text-lg">Their own page</h2>
+            <p className="text-sm" style={{ color: MUTED }}>A private link for {a.contact_name || "the fleet manager"}: their vehicles, what&apos;s due, booking a yard visit, service history and invoices. No password, so only send it to them.</p>
+            {portal && <p className="font-mono text-[13px] break-all select-all bg-[#f4f6fa] rounded-lg p-2">{portal}</p>}
+            <div className="flex flex-wrap gap-2">
+              <button disabled={busy} onClick={async () => { const j = await post({ action: "portal", send: true }); if (j) { setPortal(j.link); setMsg(j.sms?.sent === false ? "Link made, but the text didn't go out. Copy it and send it yourself." : `Texted the link to ${a.contact_name || "them"}.`); } }}
+                className="h-11 px-4 rounded-xl font-bold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Text them the link</button>
+              <button disabled={busy} onClick={async () => { const j = await post({ action: "portal" }); if (j) { setPortal(j.link); try { await navigator.clipboard.writeText(j.link); setMsg("Link copied."); } catch { /* shown above */ } } }}
+                className="h-11 px-4 rounded-xl border font-bold bg-white disabled:opacity-60" style={{ borderColor: LINE }}>Copy link</button>
+              <button disabled={busy} onClick={async () => { if (!confirm("Make a new link? The old one stops working.")) return; const j = await post({ action: "portal", reset: true }); if (j) { setPortal(j.link); setMsg("New link made. The old one no longer works."); } }}
+                className="h-11 px-4 rounded-xl border font-bold bg-white text-sm disabled:opacity-60" style={{ borderColor: LINE }}>New link</button>
+            </div>
+          </section>
+        )}
 
         {d && (
           <section className="flex flex-col gap-2">

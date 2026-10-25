@@ -1,6 +1,7 @@
 // Runs once a day (Vercel Cron, ~5-6 pm Halifax): day-before reminders + "oil change due" texts.
 // Can also be run by hand: /api/cron/daily?key=ADMIN_SECRET
 import { runPlanBilling } from "@/lib/os/plans";
+import { backfillSpecs } from "@/lib/os/spec-backfill";
 import { NextRequest, NextResponse } from "next/server";
 import { sbGet, sbPatch } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
@@ -55,7 +56,9 @@ export async function GET(req: NextRequest) {
   }
   // 3) Maintenance plans: this month's pay link on each plan's bill day, and plans that finished their year
   const plans = await runPlanBilling(today).catch(() => ({ billed: 0, ended: 0 }));
-  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended });
+  // 4) A few cars we've done get their oil approval filled in (the HQ Stock button does the rest in one go)
+  const specs = await backfillSpecs(4).catch(() => ({ filled: 0 }));
+  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled });
 }
 
 function addDays(d: string, n: number) { const [y, m, dd] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); }

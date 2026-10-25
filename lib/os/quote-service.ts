@@ -13,7 +13,7 @@ export type Spec = { id: string; year_from: number; make: string; model: string;
   capacity_l: number; oil_filter_part: string | null; verified: boolean; source: string; confidence: string | null; oil_spec: string | null; fuel?: string | null;
   cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null; filter_note?: string | null };
 
-const SPEC_COLS = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec,fuel,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger,filter_note";
+const SPEC_COLS = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec,fuel,wix_filter,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger,filter_note";
 const SPEC_COLS_OLD = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec,fuel";   // before migration 0026
 const PART_FIELDS = ["cabin_filter_part", "air_filter_part", "wiper_driver", "wiper_passenger"] as const;
 const hasOil = (r: Spec) => !!r.oil_grade && Number(r.capacity_l) > 0;
@@ -31,7 +31,7 @@ export type QuoteRequest = {
 };
 
 const norm = (s: string | null | undefined) => (s || "").toLowerCase().replace(/[^a-z0-9.]/g, "");
-const engineMatches = (want: string, have: string | null) => {
+export const engineMatches = (want: string, have: string | null) => {
   const size = (s: string) => s.match(/\d\.\d/)?.[0];
   return !!have && (norm(have).includes(norm(want)) || norm(want).includes(norm(have)) || (!!size(want) && size(want) === size(have)));
 };

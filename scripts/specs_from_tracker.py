@@ -53,7 +53,7 @@ def split_cars(t):
 def parse_car(s):
     low = s.lower()
     d = {'year': year_of(s), 'make': None, 'model': None, 'engine': None, 'grade': None, 'cap': None,
-         'oil_filter': None, 'cabin': None, 'air': None, 'wiper_d': None, 'wiper_p': None}
+         'oil_filter': None, 'cabin': None, 'air': None, 'wiper_d': None, 'wiper_p': None, 'spec': None}
     words = re.findall(r"[a-z0-9\-]+", low)
     make_at = next((i for i, w in enumerate(words) if w in MAKES), None)
     if make_at is None:
@@ -87,6 +87,11 @@ def parse_car(s):
     d['air'] = num(r'engine(?: air)? filter\s*[-–:]*\s*(\d{4,8})')
     d['wiper_d'] = num(r'driver(?:s)? wiper\s*[-–:]*\s*(\d{4,8})')
     d['wiper_p'] = num(r'pass(?:enger)? wiper\s*[-–:]*\s*(\d{4,8})')
+    # the approval the oil has to meet, when the note says it (VW 502 00, MB 229.5, dexos1)
+    specs = [f"VW {m.group(1)} {m.group(2) or '00'}" for m in re.finditer(r'vw\s*(5\d\d)\s*(\d\d)?', low)]
+    specs += [f"MB {m.group(1)}" for m in re.finditer(r'mb\s*(229\.\d+)', low)]
+    specs += [m.group(0).replace('dexos', 'dexos') for m in re.finditer(r'dexos\s*\d(?:\s*gen\s*\d)?', low)]
+    d['spec'] = ' / '.join(dict.fromkeys(specs)) or None
     key = (d['make'], d['model'], d['year'])
     if not d['engine']:
         d['engine'] = ENGINE_FIX.get(key + (d['cap'],)) or ENGINE_FIX.get(key)
@@ -118,7 +123,7 @@ def main(src, out):
     rows = sorted(cars.values(), key=lambda c: (c['make'], c['model'], c['year'], c['engine'] or ''))
     vals = ',\n'.join(
         f"({c['year']},{q(c['make'])},{q(c['model'])},{q(c['engine'])},{q(c['grade'])},{q(c['cap'])},{q(c['oil_filter'])},{q(c['cabin'])},"
-        f"{q(c['air'])},{q(c['wiper_d'])},{q(c['wiper_p'])},{c['times']},'{c['last']}')" for c in rows)
+        f"{q(c['air'])},{q(c['wiper_d'])},{q(c['wiper_p'])},{q(c['spec'])},{c['times']},'{c['last']}')" for c in rows)
     parts = sorted({(c[f], b, desc, cat) for c in rows for f, b, desc, cat in (
         ('oil_filter', 'NAPA ProFormer', 'Oil filter', 'oil_filter'), ('cabin', 'NAPA', 'Cabin air filter', 'cabin_filter'),
         ('air', 'NAPA', 'Engine air filter', 'engine_filter'), ('wiper_d', 'NAPA', 'Wiper blade (driver)', 'wiper'),
@@ -138,7 +143,7 @@ alter table vehicle_specs alter column oil_grade drop not null;
 alter table vehicle_specs alter column capacity_l drop not null;
 
 create temp table sheet_specs (year int, make text, model text, engine text, oil_grade text, capacity_l numeric, oil_filter text,
-  cabin text, air text, wiper_d text, wiper_p text, times int, last_done date) on commit drop;
+  cabin text, air text, wiper_d text, wiper_p text, oil_spec text, times int, last_done date) on commit drop;
 insert into sheet_specs values
 {vals};
 
@@ -146,9 +151,9 @@ insert into sheet_specs values
 update vehicles set spec_id = null where spec_id in (select id from vehicle_specs where source in ('job_history','sheet'));
 delete from vehicle_specs where source in ('job_history','sheet');
 insert into vehicle_specs (year_from, year_to, make, model, engine, fuel, oil_grade, capacity_l, oil_filter_part, cabin_filter_part, air_filter_part,
-  wiper_driver, wiper_passenger, source, verified, times_done, last_done)
+  wiper_driver, wiper_passenger, oil_spec, source, verified, times_done, last_done)
 select year, year, make, model, engine, case when engine ilike '%hybrid%' then 'hybrid' else 'gas' end, oil_grade, capacity_l, oil_filter, cabin, air,
-  wiper_d, wiper_p, 'sheet', true, times, last_done
+  wiper_d, wiper_p, oil_spec, 'sheet', true, times, last_done
 from sheet_specs;
 
 -- online lookups for a car we have now done ourselves: ours wins
@@ -198,7 +203,7 @@ select (select count(*) from vehicle_specs where source = 'sheet') as cars,
 """
     open(out, 'w').write(sql)
     for c in rows:
-        print(c['year'], c['make'], c['model'], c['engine'], c['grade'], c['cap'], c['oil_filter'], c['cabin'], c['air'], c['wiper_d'], c['wiper_p'], c['times'], file=sys.stderr)
+        print(c['year'], c['make'], c['model'], c['engine'], c['grade'], c['cap'], c['oil_filter'], c['cabin'], c['air'], c['wiper_d'], c['wiper_p'], c['spec'], c['times'], file=sys.stderr)
     print(len(rows), 'cars,', len(parts), 'parts', file=sys.stderr)
 
 if __name__ == '__main__':

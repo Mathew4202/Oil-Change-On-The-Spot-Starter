@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
 import { sbPatch, enc } from "@/lib/os/db";
+import { ensurePortal, textPortal } from "@/lib/os/fleet-portal";
 import { listAccounts, accountDetail, saveAccount, saveVehicle, normalPrice, bookFleetVisit, makeInvoices, sendInvoice, markInvoicePaid, voidInvoice } from "@/lib/os/fleet";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,11 @@ export async function POST(req: NextRequest) {
       case "send": { if (!okId(String(b.invoiceId))) break; return NextResponse.json(await sendInvoice(String(b.invoiceId), b.to || null)); }
       case "paid": { if (!okId(String(b.invoiceId))) break; const r = await markInvoicePaid(String(b.invoiceId), String(b.method || ""), owner); return NextResponse.json(r, { status: r.ok ? 200 : 400 }); }
       case "void": { if (!okId(String(b.invoiceId))) break; const r = await voidInvoice(String(b.invoiceId)); return NextResponse.json(r, { status: r.ok ? 200 : 400 }); }
+      case "portal": {   // the fleet's own page: get the link, text it to them, or make a new one (old link stops working)
+        if (!okId(acct)) break;
+        if (b.send) { const r = await textPortal(acct); return NextResponse.json(r, { status: r.ok ? 200 : 400 }); }
+        return NextResponse.json({ ok: true, link: await ensurePortal(acct, !!b.reset) });
+      }
       case "request": {
         if (!okId(String(b.requestId)) || !["new", "contacted", "quoted", "won", "lost"].includes(b.status)) break;
         await sbPatch("fleet_requests", `id=eq.${enc(String(b.requestId))}`, { status: b.status });

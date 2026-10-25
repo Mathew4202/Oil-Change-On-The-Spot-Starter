@@ -10,7 +10,7 @@ const labelCls = "flex flex-col gap-1.5 text-sm font-semibold text-[#4a5878]";
 export type ExtraJob = "oil_change" | "seasonal" | "tires" | "rotation" | "parts" | "diagnostic";
 export type Extra = {
   key: string; year: string; make: string; model: string; engine: string; job: ExtraJob; addons: string[]; own: "" | "both" | "oil" | "filter"; problem: string;
-  quote: { subtotal: number; total: number; lines: { label: string; amount: number }[] } | null; engines: string[]; pricing: boolean;
+  quote: { subtotal: number; total: number; lines: { label: string; amount: number }[]; spec?: import("@/components/SpecCard").HqSpec | null } | null; engines: string[]; pricing: boolean;
 };
 export const newExtra = (): Extra => ({ key: Math.random().toString(36).slice(2), year: "", make: "", model: "", engine: "", job: "oil_change", addons: [], own: "", problem: "",
   quote: null, engines: [], pricing: false });
@@ -47,7 +47,7 @@ export function ExtraPricer({ value: e, onPatch, date }: { value: Extra; onPatch
       if ((e.job === "oil_change" || e.job === "seasonal") && e.own) p.set("own", e.own);
       const j = await fetch(`/api/os/quote?${p}`).then((r) => r.json()).catch(() => null);
       if (!live) return;
-      onPatch({ pricing: false, quote: j && !j.error ? { subtotal: j.subtotal, total: j.total, lines: j.lines } : null, engines: j?.engines ?? [] });
+      onPatch({ pricing: false, quote: j && !j.error ? { subtotal: j.subtotal, total: j.total, lines: j.lines, spec: j.spec ?? null } : null, engines: j?.engines ?? [] });
     }, 350);
     return () => { live = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,4 +1,5 @@
 "use client";
+import SpecCard, { type HqSpec } from "@/components/SpecCard";
 // Book someone by phone: find them (or add them), pick the car, pick a time, see the price, save.
 import { TIRE_CHANGE, ROTATION } from "@/lib/os/pricing-engine";
 import CarPicker from "@/components/CarPicker";
@@ -11,7 +12,7 @@ const NAVY = "#0d1b3e", GOLD = "#f2b01e";
 export type Vehicle = { id: string; year: number | null; make: string | null; model: string | null; engine: string | null };
 export type Customer = { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; address: string | null; vehicles: Vehicle[] };
 type Slot = { time: string; label: string; start: string };
-type Quote = { lines: { label: string; amount: number }[]; subtotal: number; total: number; spec: { grade: string; capacityL: number; filter: string | null; engine?: string | null } | null; engines?: string[]; error?: string };
+type Quote = { lines: { label: string; amount: number }[]; subtotal: number; total: number; spec: HqSpec | null; engines?: string[]; error?: string };
 
 const field = "h-12 rounded-xl border border-[#c8d0e0] px-3 text-base w-full bg-white";
 const lbl = "flex flex-col gap-1 text-sm font-semibold";
@@ -288,7 +289,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
               <p className="text-sm text-[#4a5878]">Working out the price…{job === "oil_change" || job === "seasonal" ? " (a car we've never done takes up to 20 seconds the first time)" : ""}</p>
             ) : quote.error ? <p className="text-sm text-red-700">{quote.error}</p> : (
               <div className="flex flex-col gap-1 text-[15px]">
-                {quote.spec && <p className="text-[#4a5878]">{quote.spec.grade} · {quote.spec.capacityL} L{quote.spec.filter ? ` · filter ${quote.spec.filter}` : ""}</p>}
+                {quote.spec && <SpecCard spec={quote.spec} engine={engine.trim() || null} />}
                 {quote.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>${l.amount.toFixed(2)}</span></div>)}
                 {more.filter((x) => x.quote).map((x) => <div key={x.key} className="flex justify-between gap-3"><span className="text-[#4a5878]">{extraName(x)}</span><span>${x.quote!.subtotal.toFixed(2)}</span></div>)}
                 <div className="flex justify-between font-bold"><span>Total with HST{more.length ? ` (${more.length + 1} cars)` : ""}</span><span>${(quote.total + more.reduce((t, x) => t + (x.quote?.total ?? 0), 0)).toFixed(2)}</span></div>

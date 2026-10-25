@@ -144,7 +144,7 @@ export async function bookFleetVisit(accountId: string, vehicleIds: string[], st
       firstName: first || a.business_name, lastName: rest.join(" "), phone: a.phone, email: a.email || "", address: a.address,
       car: { year: v.year!, make: v.make!, model: v.model!, ...(v.engine ? { engine: v.engine } : {}) }, job: "oil_change", addons: [], own: null,
       start: next, cars: 1, payMode: "after", notes: [v.unit_number ? `Unit ${v.unit_number}` : "", note || ""].filter(Boolean).join(" · ") || undefined,
-    }, { source: "phone", bookedBy: owner, anyTime: true, customerId: cust.id, priceOverride: v.fleet_price ?? null, groupId, noTravel: true, silent: true,
+    }, { source: owner === "fleet" ? "website" : "phone", bookedBy: owner === "fleet" ? undefined : owner, anyTime: true, customerId: cust.id, priceOverride: v.fleet_price ?? null, groupId, noTravel: true, silent: true,
       vehicleId: v.id, fleetAccountId: a.id });
     if (!r.ok) {
       for (const id of made) await sbPatch("bookings", `id=eq.${id}`, { status: "cancelled", cancelled_at: new Date().toISOString(), cancel_reason: "system: rest of the fleet visit couldn't be booked" });
@@ -153,7 +153,8 @@ export async function bookFleetVisit(accountId: string, vehicleIds: string[], st
     made.push(r.bookingId);
     next = r.end!;
   }
-  const title = `${owner[0].toUpperCase()}${owner.slice(1)} booked ${a.business_name}: ${picked.length} vehicle${picked.length > 1 ? "s" : ""}`;
+  const title = owner === "fleet" ? `${a.business_name} booked online: ${picked.length} vehicle${picked.length > 1 ? "s" : ""}`
+    : `${owner[0].toUpperCase()}${owner.slice(1)} booked ${a.business_name}: ${picked.length} vehicle${picked.length > 1 ? "s" : ""}`;
   const body = `${new Date(startIso).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} at ${a.address}`;
   try { await sbInsert("notifications", { kind: "new_booking", booking_id: made[0], title, body }); } catch { /* best effort */ }
   await Promise.race([pushToOwners({ title, body, url: `/owner?date=${halifaxDate(new Date(startIso))}`, tag: made[0] }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);

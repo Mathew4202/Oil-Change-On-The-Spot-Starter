@@ -1,7 +1,8 @@
 // Price check for the new booking page.
 // GET /api/os/quote?year=2019&make=Honda&model=Civic&engine=2.0L&addons=wipers,cabin_filter&own=both&km=12
 import { NextRequest, NextResponse } from "next/server";
-import { buildQuote } from "@/lib/os/quote-service";
+import { buildQuote, filterInStock } from "@/lib/os/quote-service";
+import { currentOwner } from "@/lib/os/auth";
 import { seasonWindows } from "@/lib/os/calendar";
 import { seasonFor } from "@/lib/os/seasons";
 import { halifaxDate } from "@/lib/os/slots";
@@ -26,11 +27,15 @@ export async function GET(req: NextRequest) {
       inSeason: !!seasonFor(/^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date")! : halifaxDate(new Date()), await seasonWindows()),
       job: (["seasonal", "parts", "diagnostic", "tires", "rotation"].includes(q.get("job") || "") ? q.get("job") : "oil_change") as "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires" | "rotation",
     });
-    const owner = q.get("key") && q.get("key") === process.env.ADMIN_SECRET;
+    const owner = (q.get("key") && q.get("key") === process.env.ADMIN_SECRET) || !!currentOwner();
     const { cost, profit, raised, needsReview, ...publicQuote } = quote;
     return NextResponse.json({
       vehicle: { year, make, model, class: vehicleClass },
-      spec: spec ? { engine: spec.engine, grade: spec.oil_grade, oilSpec: spec.oil_spec, capacityL: Number(spec.capacity_l), filter: spec.oil_filter_part } : null,
+      spec: spec ? { engine: spec.engine, grade: spec.oil_grade, oilSpec: spec.oil_spec, capacityL: Number(spec.capacity_l), filter: spec.oil_filter_part, fuel: spec.fuel ?? null,
+        // the rest is for HQ: everything we know about this car's parts
+        ...(owner ? { wix: (spec as { wix_filter?: string | null }).wix_filter ?? null, cabin: spec.cabin_filter_part ?? null, air: spec.air_filter_part ?? null,
+          wiperDriver: spec.wiper_driver ?? null, wiperPassenger: spec.wiper_passenger ?? null, filterNote: spec.filter_note ?? null,
+          source: spec.source, confidence: spec.confidence, filterInStock: spec.oil_filter_part ? await filterInStock(spec.oil_filter_part).catch(() => null) : null } : {}) } : null,
       engines,          // more than one engine: the booking page asks which one
       lookedUp,         // true the first time we see this car
       ...publicQuote,
