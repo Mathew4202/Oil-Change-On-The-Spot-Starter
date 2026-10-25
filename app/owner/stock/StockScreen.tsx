@@ -16,8 +16,9 @@ export default function StockScreen() {
 
   // Oil approvals (dexos, VW 508 00...) for cars we've done: the sheet never recorded them, so they're looked up once
   const [specs, setSpecs] = useState<{ total: number; left: number } | null>(null);
+  const [ai, setAi] = useState<{ paid: { spent: number; left: number; requests: number } | null; free: boolean } | null>(null);
   const [filling, setFilling] = useState(false); const [specErr, setSpecErr] = useState("");
-  useEffect(() => { fetch("/api/owner/specs", { cache: "no-store" }).then((r) => r.json()).then((d) => d.total != null && setSpecs(d)).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/owner/specs", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (d.total != null) setSpecs(d); setAi({ paid: d.paid ?? null, free: !!d.free }); }).catch(() => {}); }, []);
   async function fillSpecs() {
     setFilling(true); setSpecErr("");
     for (let i = 0; i < 40; i++) {
@@ -53,6 +54,9 @@ export default function StockScreen() {
       <main className="flex-1 p-4 flex flex-col gap-4 pb-28">
         {loading && <p className="text-center text-[#4a5878] py-8">Loading…</p>}
 
+        {ai && (
+          <p className="text-[13px] text-[#4a5878] px-1">AI: {ai.free ? "free Gemini first" : "free Gemini not set up"}{ai.paid ? ` · paid backup this month $${ai.paid.spent.toFixed(2)} (${ai.paid.requests} uses), $${ai.paid.left.toFixed(2)} left` : ""}</p>
+        )}
         {specs && specs.left > 0 && (
           <section className="rounded-2xl p-4 flex flex-col gap-2 border bg-white" style={{ borderColor: LINE }}>
             <h2 className="font-extrabold text-lg">Oil approvals for cars we&apos;ve done</h2>
