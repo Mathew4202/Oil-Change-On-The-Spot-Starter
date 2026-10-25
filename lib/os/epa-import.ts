@@ -47,9 +47,11 @@ export async function importEpaEngines(): Promise<{ ok: boolean; rows?: number; 
 export async function epaEngines(year: number, make: string, model: string): Promise<string[]> {
   const { makeKey, modelKey, modelMatch } = await import("@/lib/os/car-match");
   const { epaModelKey } = await import("@/lib/os/epa-engines");
-  const rows = await sbGet<{ make: string; model: string; model_key: string; engine: string }>(
-    `car_engines?select=make,model,model_key,engine&year=eq.${year}`).catch(() => []);
   const mk = makeKey(make);
+  // one make at a time: a whole year is more rows than the database hands back in one go (1000)
+  const starts = [...new Set([mk.slice(0, 3), ...(mk === "ram" ? ["dod"] : [])])];
+  const rows = (await Promise.all(starts.map((st) => sbGet<{ make: string; model: string; model_key: string; engine: string }>(
+    `car_engines?select=make,model,model_key,engine&year=eq.${year}&make=ilike.${encodeURIComponent(st)}*&limit=1000`).catch(() => [])))).flat();
   const want = modelKey(make, epaModelKey(model)) || modelKey(make, model);
   const mine = rows.filter((r) => makeKey(r.make) === mk || (mk === "ram" && makeKey(r.make) === "dodge"));
   const key = (r: { make: string; model_key: string }) => modelKey(r.make, r.model_key);
