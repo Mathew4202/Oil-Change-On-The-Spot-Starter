@@ -27,7 +27,7 @@ export default async function PayPage({ params, searchParams }: { params: { toke
 
         {t && (
           <>
-            {result === "approved" && <p className="rounded-xl p-4 font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }} role="status">Your payment went through.{t.kind === "job" ? " Your receipt is below, and we've emailed it if we have your email." : " See you at your appointment!"}</p>}
+            {result === "approved" && <p className="rounded-xl p-4 font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }} role="status">Your payment went through.{t.kind === "job" ? " Your receipt is below, and we've emailed it if we have your email." : t.kind === "invoice" ? " The invoice is marked paid. Thank you!" : " See you at your appointment!"}</p>}
             {result === "declined" && t.due > 0 && <p className="rounded-xl p-4 font-semibold" style={{ background: "#fde2e1", color: "#8a1c1c" }} role="alert">The payment didn&apos;t go through, and nothing was charged. You can try again{t.kind === "prepay" ? ", or just pay after the job" : ""}.</p>}
             {result === "error" && <p className="rounded-xl p-4 font-semibold" style={{ background: "#fff6dd", color: "#8a5a00" }} role="alert">We couldn&apos;t confirm that payment. Please don&apos;t pay again yet. Call or text us at {PHONE} and we&apos;ll check.</p>}
 
@@ -45,7 +45,7 @@ export default async function PayPage({ params, searchParams }: { params: { toke
               {t.due > 0 && (payReady()
                 ? <PayBox token={t.token} due={t.due} allowTip={t.kind === "job"} />
                 : <p className="rounded-xl p-4 bg-[#fff6dd] text-[15px]">Online payment isn&apos;t switched on yet. {t.kind === "prepay" ? "No problem: pay after the job by card, tap, cash or e-transfer." : <>Pay by card, cash or e-transfer: call or text <a href={PHONE_TEL} className="font-bold underline">{PHONE}</a>.</>}</p>)}
-              {t.receiptUrl && <a href={t.receiptUrl} className="font-bold underline text-center" style={{ color: NAVY }}>See the receipt</a>}
+              {t.receiptUrl && <a href={t.receiptUrl} className="font-bold underline text-center" style={{ color: NAVY }}>{t.kind === "invoice" ? "See the invoice" : "See the receipt"}</a>}
             </section>
             {t.kind === "prepay" && <p className="text-sm text-[#4a5878] text-center">If we add anything on the day (only with your OK), you pay the difference after the job.</p>}
           </>

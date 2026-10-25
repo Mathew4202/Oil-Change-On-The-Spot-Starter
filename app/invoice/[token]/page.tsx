@@ -2,6 +2,8 @@
 import { invoiceByToken } from "@/lib/os/fleet";
 import { PHONE, EMAIL } from "@/components/site/brand";
 import PrintButton from "./PrintButton";
+import { BUSINESS } from "@/lib/os/receipt";
+import { payReady } from "@/lib/os/payments";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Invoice", robots: { index: false, follow: false } };
@@ -13,7 +15,7 @@ export default async function InvoicePage({ params }: { params: { token: string 
   const r = await invoiceByToken(params.token).catch(() => null);
   if (!r || r.invoice.status === "void") return <div className="max-w-2xl mx-auto px-4 py-16 text-[#0d1b3e]"><h1 className="text-2xl font-bold">This invoice isn&apos;t available.</h1><p className="mt-2">Call or text {PHONE}.</p></div>;
   const { invoice: i, account: a } = r;
-  const gst = process.env.NEXT_PUBLIC_HST_NUMBER || process.env.HST_NUMBER || "";
+  const gst = BUSINESS.hst;
   return (
     <div className="bg-[#eef1f6] print:bg-white min-h-screen py-6 print:py-0">
       <div className="max-w-3xl mx-auto bg-white p-6 sm:p-10 text-[#0d1b3e] text-[14px] shadow print:shadow-none">
@@ -58,10 +60,13 @@ export default async function InvoicePage({ params }: { params: { token: string 
           <div className="flex justify-between text-[18px] font-extrabold border-t-2 border-[#0d1b3e] pt-1"><span>Total</span><span>{money(i.total)}</span></div>
         </div>
         <div className="mt-8 text-[13px] text-[#4a5878] flex flex-col gap-1">
-          <p>Pay by e-transfer to {process.env.ETRANSFER_EMAIL || EMAIL}, or by cheque to Oil Change On The Spot Limited. Please put invoice #{i.invoice_no} in the message.</p>
+          {i.status !== "paid" && <p>Pay by e-transfer to {process.env.ETRANSFER_EMAIL || EMAIL}, or by cheque to Oil Change On The Spot Limited. Please put invoice #{i.invoice_no} in the message.{payReady() ? " You can also pay by card online with the button below." : ""}</p>}
           <p>Thank you for your business.</p>
         </div>
-        <div className="mt-6 print:hidden"><PrintButton /></div>
+        <div className="mt-6 print:hidden flex flex-wrap gap-3">
+          {i.status === "open" && payReady() && <a href={`/pay/${i.token}`} className="h-12 px-5 rounded-xl font-extrabold flex items-center no-underline text-white" style={{ background: "#0d1b3e" }}>Pay {money(i.total)} by card</a>}
+          <PrintButton />
+        </div>
       </div>
     </div>
   );
