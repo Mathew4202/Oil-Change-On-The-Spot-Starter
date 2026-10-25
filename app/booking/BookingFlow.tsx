@@ -254,9 +254,9 @@ export default function BookingFlow() {
   const jobLine = quote?.lines?.[0];
 
   return (
-    <div className="min-h-dvh bg-[#eef1f6] flex justify-center lg:items-start lg:py-8 lg:px-6">
+    <div className="min-h-dvh bg-[#eef1f6] flex justify-center md:items-start md:py-6 md:px-4 lg:py-8">
       {/* phone: one column like an app · computer: the form on the left, your visit and price on the right */}
-      <div className="w-full max-w-md lg:max-w-5xl min-h-dvh lg:min-h-0 bg-white flex flex-col text-[#0d1b3e] shadow-sm lg:rounded-3xl lg:overflow-clip">
+      <div className="w-full max-w-md md:max-w-5xl min-h-dvh md:min-h-0 bg-white flex flex-col text-[#0d1b3e] shadow-sm md:rounded-3xl md:overflow-clip">
         {/* Header */}
         <header className="sticky top-0 z-10 text-white px-5 pt-[max(16px,env(safe-area-inset-top))] pb-4 flex flex-col gap-3" style={{ background: NAVY }}>
           <div className="flex items-center gap-3">
@@ -275,8 +275,8 @@ export default function BookingFlow() {
           <div className="h-1.5 bg-[#22356a] rounded-full overflow-hidden"><div className="h-1.5 rounded-full transition-all" style={{ width: `${Math.round(((step + 1) / 6) * 100)}%`, background: GOLD }} /></div>
         </header>
 
-        <div className="flex-1 lg:flex lg:items-start">
-        <main className="flex-1 min-w-0 p-5 lg:p-8 flex flex-col gap-4 pb-36 lg:pb-10">
+        <div className="flex-1 md:flex md:items-start">
+        <main className="flex-1 min-w-0 p-5 lg:p-8 flex flex-col gap-4 pb-36 md:pb-10">
           {more.map((x) => <ExtraPricer key={x.key} value={x} date={date} onPatch={(p) => patchMore(x.key, p)} />)}
           {/* 0. Car */}
           {step === 0 && (
@@ -562,7 +562,7 @@ export default function BookingFlow() {
 
         {/* Computer: your visit, the price and the next button stay in view on the right */}
         {step < 5 && (
-          <aside className="hidden lg:flex flex-col gap-4 w-[340px] shrink-0 sticky top-[112px] m-8 ml-0 rounded-2xl border p-5" style={{ borderColor: LINE }} aria-label="Your visit">
+          <aside className="hidden md:flex flex-col gap-4 w-[290px] lg:w-[340px] shrink-0 sticky top-[112px] m-5 lg:m-8 ml-0 lg:ml-0 rounded-2xl border p-5" style={{ borderColor: LINE }} aria-label="Your visit">
             <p className="text-[13px] font-bold tracking-[0.12em] text-[#4a5878]">YOUR VISIT</p>
             {carReady ? (
               <div>
@@ -594,7 +594,7 @@ export default function BookingFlow() {
 
         {/* Price bar */}
         {step < 5 && (
-          <div className="lg:hidden fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-10 bg-white border-t border-[#dde3ee] px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex flex-col gap-2">
+          <div className="md:hidden fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-10 bg-white border-t border-[#dde3ee] px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex flex-col gap-2">
             {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col">
