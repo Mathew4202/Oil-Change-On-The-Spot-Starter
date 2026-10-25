@@ -57,7 +57,7 @@ export default function StockScreen() {
 
         <div className="bg-white rounded-2xl p-3 flex flex-col gap-1.5 text-[14px]">
           <div className="flex items-center justify-between gap-2"><span className="font-bold">AI setup</span>
-            <button onClick={async () => { setCheck("busy"); const d = await fetch("/api/owner/ai-check", { cache: "no-store" }).then((r) => r.json()).catch(() => ({ free: "Couldn't reach HQ", paid: "" })); setCheck(d); }}
+            <button onClick={async () => { setCheck("busy"); const d = await fetch("/api/owner/ai-check", { cache: "no-store" }).then(async (r) => { const t = await r.text(); try { return JSON.parse(t); } catch { return { free: `HQ answered ${r.status}: ${t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120)}`, paid: "" }; } }).catch((e) => ({ free: `No answer from HQ (${String(e).slice(0, 80)})`, paid: "" })); setCheck(d); }}
               className="h-9 px-3 rounded-lg border font-bold text-sm" style={{ borderColor: LINE }}>{check === "busy" ? "Checking…" : "Test AI"}</button></div>
           {check && check !== "busy" && <>
             <p><span className="font-semibold">Free (Gemini):</span> <span style={{ color: check.free === "working" ? "#1d6b3a" : "#9b1c1c" }}>{check.free}</span></p>

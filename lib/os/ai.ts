@@ -29,7 +29,8 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
         // newer Gemini models "think" first and that counts against the output limit, so leave plenty of room (free either way)
         generationConfig: { maxOutputTokens: (opts.maxTokens ?? 2000) + 8192, temperature: 0.1 },
       }),
-    }).catch(() => null);
+      signal: AbortSignal.timeout(opts.search ? 40000 : 25000),
+    }).catch((e) => { lastError = `Couldn't reach Gemini (${String(e?.name === "TimeoutError" ? "took too long" : e?.message ?? e).slice(0, 80)})`; return null; });
     if (res?.ok) {
       const body = await res.json().catch(() => ({}));
       const c = body.candidates?.[0];
@@ -41,7 +42,7 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
       const t = (await res.text().catch(() => "")).slice(0, 300);
       lastError = `Gemini ${res.status}: ${t.match(/"message":\s*"([^"]+)/)?.[1] ?? t}`;   // 429 = free limit for today used up
       console.error(lastError);
-    } else lastError = "Couldn't reach Gemini";
+    }
   } else if (!g && !opts.private) lastError = "GEMINI_API_KEY isn't on this deployment (add it in Vercel, then redeploy)";
   // Paid backup, under the monthly budget
   const k = process.env.ANTHROPIC_API_KEY;
@@ -61,6 +62,7 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
       model, max_tokens: opts.maxTokens ?? 2000, messages: [{ role: "user", content }],
       ...(opts.search ? { tools: [{ type: process.env.ANTHROPIC_SEARCH_TOOL || "web_search_20250305", name: "web_search", max_uses: 2 }] } : {}),
     }),
+    signal: AbortSignal.timeout(45000),
   }).catch(() => null);
   if (!res?.ok) { const t = res ? (await res.text().catch(() => "")).slice(0, 200) : "couldn't reach it"; lastError = `${lastError ? `${lastError}. ` : ""}Claude ${res?.status ?? ""}: ${t}`; console.error(lastError); return null; }
   const body = await res.json().catch(() => ({}));

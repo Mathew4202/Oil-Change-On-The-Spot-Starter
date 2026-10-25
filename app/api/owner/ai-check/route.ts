@@ -7,7 +7,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET() {
-  if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
+  if (!currentOwner()) return NextResponse.json({ free: "Please sign in again", paid: "" }, { status: 401 });
+  try { return await check(); }
+  catch (e) { return NextResponse.json({ free: `Check failed: ${String(e).slice(0, 200)}`, paid: "" }); }
+}
+
+async function check() {
   const free = process.env.GEMINI_API_KEY ? await askAI({ prompt: "Reply with the single word: ready", maxTokens: 20 }) : null;
   const freeMsg = free?.provider === "gemini" ? "working" : aiLastError() ?? "not working";
   const paid = process.env.ANTHROPIC_API_KEY ? await askAI({ prompt: "Reply with the single word: ready", maxTokens: 20, private: true }) : null;
