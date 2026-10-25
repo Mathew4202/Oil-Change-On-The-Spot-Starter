@@ -29,7 +29,7 @@ export async function sendSms(to: string, content: string, meta: { kind: string;
   else {
     try {
       const res = await fetch(`${process.env.QUO_BASE_URL || "https://api.quo.com"}/v1/messages`, {
-        method: "POST", headers: { Authorization: key, "Content-Type": "application/json" },
+        method: "POST", headers: { Authorization: key, "Content-Type": "application/json", "Quo-Api-Version": process.env.QUO_API_VERSION || "2026-03-30" },
         body: JSON.stringify({ content, from: e164(from), to: [phone] }),
       });
       const body = await res.json().catch(() => ({}));
