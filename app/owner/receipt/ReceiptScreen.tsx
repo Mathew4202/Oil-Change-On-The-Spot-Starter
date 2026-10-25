@@ -117,13 +117,13 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
                       ? <input value={it.oilGrade ?? ""} onChange={(e) => updItem(i, { oilGrade: e.target.value.toUpperCase() })} placeholder="Grade, e.g. 0W-20" className={field} style={{ borderColor: LINE }} aria-label="Oil grade" />
                       : <input value={it.partNumber ?? ""} onChange={(e) => updItem(i, { partNumber: e.target.value.toUpperCase() || null })} placeholder="Part #" className={field} style={{ borderColor: LINE }} aria-label="Part number" />}
                     <label className="flex items-center gap-2 text-xs font-semibold text-[#4a5878]">Qty
-                      <input value={it.qty} onChange={(e) => updItem(i, { qty: Number(e.target.value.replace(/[^\d.]/g, "")) || 0 })} inputMode="decimal" className={field} style={{ borderColor: LINE }} /></label>
+                      <DecimalInput value={it.qty} onChange={(n) => updItem(i, { qty: n ?? 0 })} className={field} style={{ borderColor: LINE }} /></label>
                     <label className="flex items-center gap-2 text-xs font-semibold text-[#4a5878] whitespace-nowrap">Each $
-                      <input value={it.unitPrice} onChange={(e) => updItem(i, { unitPrice: Number(e.target.value.replace(/[^\d.]/g, "")) || 0 })} inputMode="decimal" className={field} style={{ borderColor: LINE }} /></label>
+                      <DecimalInput value={it.unitPrice} onChange={(n) => updItem(i, { unitPrice: n ?? 0 })} className={field} style={{ borderColor: LINE }} /></label>
                   </div>
                   {it.category === "oil" && (
                     <label className="text-xs font-semibold flex items-center gap-2">Litres per jug
-                      <input value={it.litresPerUnit ?? ""} onChange={(e) => updItem(i, { litresPerUnit: Number(e.target.value.replace(/[^\d.]/g, "")) || null })} inputMode="decimal" className="h-9 w-20 rounded-lg border px-2" style={{ borderColor: LINE }} />
+                      <DecimalInput value={it.litresPerUnit} onChange={(n) => updItem(i, { litresPerUnit: n })} className="h-9 w-20 rounded-lg border px-2" style={{ borderColor: LINE }} />
                     </label>
                   )}
                 </div>
@@ -162,4 +162,12 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
       <OwnerNav />
     </div>
   );
+}
+
+/** A number box you can type decimals into ("4." stays "4." while you type 4.4). */
+function DecimalInput({ value, onChange, className, style }: { value: number | null; onChange: (n: number | null) => void; className?: string; style?: React.CSSProperties }) {
+  const [text, setText] = useState(value == null ? "" : String(value));
+  useEffect(() => { if (Number(text) !== value && !(text === "" && value == null)) setText(value == null ? "" : String(value)); }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <input value={text} inputMode="decimal" className={className} style={style}
+    onChange={(e) => { const t = e.target.value.replace(/,/g, ".").replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1"); setText(t); onChange(t === "" || t === "." ? null : Number(t)); }} />;
 }
