@@ -93,8 +93,8 @@ export default function Services() {
                   ["Cabin air filter", `from $${SERVICE_PRICES.addonFilter} + filter`, `$${SERVICE_PRICES.standaloneCallout} + filter`],
                   ["Front wiper blades", `$${SERVICE_PRICES.addonWipers} + blades`, `$${SERVICE_PRICES.standaloneCallout} + blades`],
                   ["Battery replacement", `$${SERVICE_PRICES.batteryWithOilChange} + battery`, `$${SERVICE_PRICES.standaloneCallout} + battery`],
-                  ["Washer fluid top-up", "$5", "$10"],
-                  ["Coolant top-up", "Priced by type and amount", "Priced by type and amount"],
+                  ["Washer fluid top-up", "$5", `$${SERVICE_PRICES.standaloneCallout} + $10`],
+                  ["Coolant top-up", "Priced by type and amount", `$${SERVICE_PRICES.standaloneCallout} + coolant`],
                 ].map(([a, b, c]) => (
                   <tr key={a} className="border-t" style={{ borderColor: "#eef1f6" }}><td className="py-2 pr-3 font-semibold">{a}</td><td className="py-2 pr-3">{b}</td><td className="py-2">{c}</td></tr>
                 ))}
