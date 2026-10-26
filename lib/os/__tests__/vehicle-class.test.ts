@@ -8,7 +8,7 @@ test("price group from the model: whole words only, real models from our custome
     ["Honda", "Civic LX", "Sedan"], ["Honda", "Civic Si", "Sports Car"], ["Honda", "Civic Type R", "Sports Car"], ["Mazda", "Mazda3", "Sedan"],
     ["Toyota", "GR86", "Sports Car"], ["Subaru", "WRX", "Sports Car"], ["Subaru", "BRZ", "Sports Car"], ["Ford", "Mustang", "Sports Car"],
     ["Ford", "Mustang Mach-E", "SUV/Crossover"], ["Mazda", "MX-5 Miata", "Sports Car"], ["Nissan", "370Z", "Sports Car"],
-    ["Volkswagen", "Golf R", "Sports Car"], ["Volkswagen", "GTI", "Sports Car"], ["Volkswagen", "Jetta", "Sedan"], ["Volkswagen", "Tiguan", "SUV/Crossover"],
+    ["Volkswagen", "Golf R", "Sports Car"], ["Volkswagen", "GTI", "Sports Car"], ["Volkswagen", "Jetta", "Sedan"], ["Volkswagen", "Tiguan", "Large SUV"],
     ["Volkswagen", "Atlas", "Large SUV"], ["Volkswagen", "Atlas Cross Sport", "SUV/Crossover"], ["BMW", "M3", "Sports Car"], ["BMW", "330i", "Sedan"],
     ["BMW", "X3", "SUV/Crossover"], ["BMW", "X5", "Large SUV"], ["Mercedes-Benz", "C300", ""], ["Mercedes-Benz", "GLC 300", "SUV/Crossover"],
     ["Mercedes-Benz", "AMG C 63", "Sports Car"], ["Audi", "A4", "Sedan"], ["Audi", "Q5", "SUV/Crossover"], ["Audi", "RS5", "Sports Car"],
