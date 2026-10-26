@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type X = { name: string | null; year: number | null; make: string | null; model: string | null; job: string | null; cars: number; notes: string | null; wantsBooking: boolean } | null;
-export type Call = { id: string; phone: string | null; status: string | null; at: string; summary: string[] | null; extract: X; suggested: string | null; suggestedText: string | null;
+export type Call = { id: string; phone: string | null; status: string | null; at: string; summary: string[] | null; extract: X; suggested: string | null; suggestedText: string | null; wanted?: string | null;
   channel?: string; texts?: { at: string; from: "them" | "us"; body: string; by?: string | null }[] };
 // quick replies, signed like every customer text
 const QUICK = [
@@ -58,11 +58,16 @@ export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: s
               : c.summary?.length ? <p className="text-[15px] text-[#4a5878]">{c.summary.join(" ")}</p>
               : c.channel === "text" ? null
               : <p className="text-[15px] text-[#4a5878]">{missed ? "No message. Text them the booking link?" : "Waiting for Quo's summary of the call…"}</p>}
+            {!c.suggested && c.wanted && <p className="text-[14px] font-semibold text-[#8a5a00]">They asked for {c.wanted}: that time isn&apos;t open. The link lets them pick another.</p>}
             {msg[c.id] && <p className="text-sm font-semibold text-[#1d6b3a] break-all">{msg[c.id]}</p>}
             <div className="flex flex-wrap gap-2">
-              {c.suggested && <button disabled={busy === c.id} onClick={() => act(c, "hold")} className="h-11 px-3 rounded-lg font-extrabold text-[15px] disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Hold {c.suggestedText} + text link</button>}
-              <button disabled={busy === c.id} onClick={() => onPickTime(c)} className="h-11 px-3 rounded-lg border font-bold text-sm bg-white" style={{ borderColor: c.suggested ? LINE : NAVY }}>{c.suggested ? "Other time" : "Pick a time to hold"}</button>
-              <button disabled={busy === c.id} onClick={() => act(c, "link")} className="h-11 px-3 rounded-lg border font-bold text-sm bg-white" style={{ borderColor: LINE }}>Just text the booking link</button>
+              {c.suggested ? <>
+                <button disabled={busy === c.id} onClick={() => act(c, "hold")} className="h-11 px-3 rounded-lg font-extrabold text-[15px] disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Hold {c.suggestedText} + text link</button>
+                <button disabled={busy === c.id} onClick={() => act(c, "link")} className="h-11 px-3 rounded-lg border font-bold text-sm bg-white" style={{ borderColor: LINE }}>Text the booking link instead</button>
+              </> : <>
+                <button disabled={busy === c.id} onClick={() => act(c, "link")} className="h-11 px-3 rounded-lg font-extrabold text-[15px] disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Text the booking link{x ? " (filled in)" : ""}</button>
+                <button disabled={busy === c.id} onClick={() => onPickTime(c)} className="h-11 px-3 rounded-lg border font-bold text-sm bg-white" style={{ borderColor: LINE }}>Hold a time</button>
+              </>}
               <button disabled={busy === c.id} onClick={() => act(c, "done")} className="h-11 px-3 rounded-lg font-bold text-sm text-[#4a5878] underline">Done</button>
             </div>
             {c.phone && (

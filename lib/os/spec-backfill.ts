@@ -6,7 +6,7 @@ import { sbGet, sbPatch, sbInsert, enc } from "@/lib/os/db";
 import { lookupOilSpec } from "@/lib/os/spec-lookup-run";
 import { engineMatches } from "@/lib/os/quote-service";
 import { aiReady } from "@/lib/os/ai";
-import { claimLookup, finishLookup, lookupKey } from "@/lib/os/ai-budget";
+import { claimLookup, finishLookup, releaseLookup, lookupKey } from "@/lib/os/ai-budget";
 
 type Row = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_filter_part: string | null; oil_grade: string | null };
 const TODO = "source=in.(sheet,job_history)&oil_spec=is.null&looked_up_at=is.null&oil_grade=not.is.null";
@@ -29,7 +29,9 @@ export async function learnCar(ours: Row[]) {
   const claim = await claimLookup(key);
   if (claim === "cap" || claim === "busy") return false;   // try again another day
   if (claim === "done") { await Promise.all(ours.map((r) => sbPatch("vehicle_specs", `id=eq.${r.id}`, { looked_up_at: now }).catch(() => null))); return false; }
-  const found = await lookupOilSpec(year, make, model).catch(() => null);
+  let down = false;
+  const found = await lookupOilSpec(year, make, model).catch(() => { down = true; return null; });
+  if (down) { await releaseLookup(key); return false; }   // AI not reachable: try this car again later
   await finishLookup(key, !!found);
   if (!found) { await Promise.all(ours.map((r) => sbPatch("vehicle_specs", `id=eq.${r.id}`, { looked_up_at: now }).catch(() => null))); return false; }
 

@@ -30,21 +30,15 @@ export default function OwnerLogin() {
     window.location.href = "/owner";
   }
 
-  const pick = (n: string) => ({ background: name.toLowerCase() === n ? "#0d1b3e" : "#fff", color: name.toLowerCase() === n ? "#fff" : "#0d1b3e" });
   return (
     <div className="min-h-dvh bg-[#0d1b3e] flex items-center justify-center px-4">
       <form onSubmit={submit} method="post" action="/api/owner/login" className="w-full max-w-sm bg-white rounded-2xl p-6 flex flex-col gap-4 shadow-xl">
         <div className="flex flex-col gap-1">
           <p className="text-[#c98a00] font-bold tracking-widest text-xs">OCOTS HQ</p>
-          <h1 className="text-3xl font-extrabold text-[#0d1b3e]" style={{ fontFamily: "var(--font-condensed)" }}>Owner sign in</h1>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {["mathew", "harsh"].map((n) => (
-            <button key={n} type="button" onClick={() => setName(n)} className="h-11 rounded-xl border border-[#c8d0e0] font-bold capitalize" style={pick(n)}>{n}</button>
-          ))}
+          <h1 className="text-3xl font-extrabold text-[#0d1b3e]" style={{ fontFamily: "var(--font-condensed)" }}>Sign in</h1>
         </div>
         <label className="flex flex-col gap-1 text-sm font-semibold text-[#0d1b3e]">Name
-          <input id="username" name="username" value={name} onChange={(e) => setName(e.target.value)} required autoComplete="username"
+          <input id="username" name="username" value={name} placeholder="Your first name" onChange={(e) => setName(e.target.value)} required autoComplete="username"
             autoCapitalize="none" autoCorrect="off" spellCheck={false} className="h-12 rounded-xl border border-[#c8d0e0] px-3 text-base font-normal" />
         </label>
         <label className="flex flex-col gap-1 text-sm font-semibold text-[#0d1b3e]">Password

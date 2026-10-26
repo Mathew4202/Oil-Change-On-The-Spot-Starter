@@ -77,6 +77,7 @@ export default function BookingFlow() {
   const [payNow, setPayNow] = useState(false); const [payOnline, setPayOnline] = useState(false);   // pay online when booking (only once Converge is set up)
   const [agree, setAgree] = useState(false);   // cancellation (and diagnostic) terms   // signed in with a text code (works on any phone)
   const [manualEngine, setManualEngine] = useState("");
+  const [linkEngine, setLinkEngine] = useState("");   // engine from the link we texted, picked once the list loads
   // every engine this car came with (ours plus the ones found online), looked up as soon as the car is picked
   const [engList, setEngList] = useState<string[] | null>(null);
   useEffect(() => {
@@ -101,6 +102,11 @@ export default function BookingFlow() {
     // came from "See your price" on the home page with the car picked
     const q = new URLSearchParams(window.location.search);
     if (q.get("year") && q.get("make")) { setYear(q.get("year")!); setMake(q.get("make")!); if (q.get("model")) setModel(q.get("model")!); }
+    // the link we text after a call: what they told us is filled in, they just pick a time
+    if (q.get("name")) setName((n) => n || q.get("name")!.slice(0, 60));
+    if (q.get("phone")) setPhone((p) => p || q.get("phone")!.replace(/[^\d]/g, "").slice(-10));
+    if (/^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") && q.get("date")! >= new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax" })) setDate(q.get("date")!);
+    if (q.get("engine")) setLinkEngine(q.get("engine")!.slice(0, 40));
     // came from a Book button on the services page: that service is already picked
     const j = q.get("job") as JobId | null;
     if (j && ["oil_change", "seasonal", "tires", "rotation", "parts", "diagnostic"].includes(j)) setJob(j);
@@ -136,6 +142,12 @@ export default function BookingFlow() {
     if (hit) setModel(hit);
     setVinModel("");
   }, [models, vinModel]);
+  useEffect(() => {
+    if (!linkEngine || engine || !engList) return;
+    const hit = matchEngine(linkEngine.match(/\d\.\d/)?.[0] ?? null, engList);
+    if (hit) setEngine(hit);
+    setLinkEngine("");
+  }, [engList, linkEngine]); // eslint-disable-line react-hooks/exhaustive-deps
   // the VIN's engine size picks the engine once we know this car's engines
   useEffect(() => {
     if (!vinPhoto?.engineL || engine || !engList) return;

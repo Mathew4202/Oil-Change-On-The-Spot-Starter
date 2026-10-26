@@ -7,6 +7,7 @@ import { oilCostPerL } from "@/lib/os/pricing-engine";
 import { receiptHtml, receiptText, type ReceiptData } from "@/lib/os/receipt";
 import { sendSms, template, fill, reviewLink } from "@/lib/os/sms";
 import { emailFrom } from "@/lib/os/email-from";
+import { learnFromJob } from "@/lib/os/spec-learn";
 
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const TZ = "America/Halifax";
@@ -48,7 +49,7 @@ export type FinishInput = {
   oilGrade?: string | null; oilLitres?: number | null; filterPart?: string | null;
   inspection?: Record<string, { status: "ok" | "soon" | "now"; note?: string }>;
   extraLines?: { label: string; amount: number }[];     // things added on site (negative = discount)
-  doneBy?: "both" | "mathew" | "harsh";
+  doneBy?: string;   // "both", "mathew", "harsh", or a staff login
   notes?: string;
   payMethod?: "card_terminal" | "cash" | "etransfer" | "card_online" | null;   // null = not paid yet
   tip?: number | null;                                                          // no HST on tips
@@ -110,7 +111,7 @@ export async function finishJob(input: FinishInput, owner: string) {
     booking_id: ctx.booking.id, vehicle_id: ctx.vehicle?.id ?? null, customer_id: ctx.customer?.id ?? null,
     done_at: now, km, oil_grade: withOil ? grade : null, oil_litres: withOil ? litres : null, filter_part: withOil ? filterPart : null,
     revenue: subtotal, cost_oil: costOil, cost_parts: costParts, cost_other: withOil ? (rules.consumables ?? 1) : 0,
-    inspection: input.inspection ?? null, next_due_km: nextKm, next_due_date: nextDate,
+    inspection: withOil ? input.inspection ?? null : null, next_due_km: nextKm, next_due_date: nextDate,
     service: ctx.booking.services?.job ?? "oil_change", payment_method: input.payMethod ?? null, done_by: input.doneBy ?? "both",
     notes: input.notes?.slice(0, 1000) || null, vehicle_text: carText,
     receipt_no: receiptNo, receipt_token: token, lines, subtotal, hst, total,
@@ -119,6 +120,8 @@ export async function finishJob(input: FinishInput, owner: string) {
   if (!job.ok) return { ok: false as const, error: `Couldn't save the job: ${JSON.stringify(job.error)}` };
 
   await sbPatch("bookings", `id=eq.${ctx.booking.id}`, { status: "done", finished_at: now });
+  // what we used becomes this car's (and engine's) spec for next time
+  if (withOil && ctx.vehicle && own !== "both") await learnFromJob(ctx.vehicle, { grade, litres, filter: filterPart, cars: ctx.booking.cars || 1 }).catch(() => null);
   const vin = (input.vin || "").toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "");
   if (ctx.vehicle && (km || vin)) await sbPatch("vehicles", `id=eq.${ctx.vehicle.id}`, { ...(km ? { last_km: km } : {}), ...(vin.length === 17 ? { vin } : {}) });
   if (input.email && ctx.customer && !ctx.customer.email) await sbPatch("customers", `id=eq.${ctx.customer.id}`, { email: input.email.trim().toLowerCase() });
@@ -179,7 +182,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
   const [j] = await sbGet<{ id: string; receipt_no: number; receipt_token: string; done_at: string; lines: { label: string; amount: number }[];
     subtotal: number; hst: number; total: number; payment_method: string | null; km: number | null; next_due_km: number | null; next_due_date: string | null;
     oil_grade: string | null; oil_litres: number | null; vehicle_text: string | null; customer_id: string | null; booking_id: string | null;
-    filter_part: string | null; vehicle_id: string | null; review_requested: boolean | null; tip: number | null; inspection: Record<string, { status?: string }> | null }>(`jobs?select=*&${where}&limit=1`);
+    filter_part: string | null; vehicle_id: string | null; review_requested: boolean | null; tip: number | null; service: string | null; inspection: Record<string, { status?: string }> | null }>(`jobs?select=*&${where}&limit=1`);
   if (!j) return null;
   const [c] = j.customer_id ? await sbGet<{ first_name: string | null; last_name: string | null; email: string | null; review_asked_at: string | null }>(
     `customers?select=first_name,last_name,email,review_asked_at&id=eq.${j.customer_id}`) : [];
@@ -196,7 +199,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       oil: j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${spec ? ` (meets ${spec})` : ""}${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
       filter: j.filter_part ? `${fp?.brand || "NAPA ProFormer"} ${j.filter_part}` : null,
       vin: v?.vin ?? null,
-      checks: checksFrom(j.inspection),
+      checks: !j.service || ["oil_change", "seasonal"].includes(j.service) ? checksFrom(j.inspection) : null,
       receiptUrl: `${siteUrl()}/receipt/${j.receipt_token}`,
       logoUrl: `${siteUrl()}/email-logo.png`,
       reviewUrl: j.review_requested ? await reviewLink() : null,

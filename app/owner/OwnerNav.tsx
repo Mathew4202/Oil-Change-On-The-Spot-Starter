@@ -3,6 +3,8 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
+import { useRole } from "./RoleContext";
+import type { Tab } from "@/lib/os/roles";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e";
 const ICONS: Record<string, JSX.Element> = {
@@ -12,17 +14,19 @@ const ICONS: Record<string, JSX.Element> = {
   Stock: <><path d="M3 7l9-4 9 4-9 4z" /><path d="M3 7v10l9 4 9-4V7" /></>,
   Money: <><path d="M4 19V9M10 19V5M16 19v-7M22 19H2" /></>,
 };
-const ITEMS: { label: string; href: string | null }[] = [
-  { label: "Calendar", href: "/owner" }, { label: "Customers", href: "/owner/customers" }, { label: "Receipt", href: "/owner/receipt" },
-  { label: "Stock", href: "/owner/stock" }, { label: "Money", href: "/owner/money" },
+const ITEMS: { label: string; href: string | null; tab: Tab }[] = [
+  { label: "Calendar", href: "/owner", tab: "calendar" }, { label: "Customers", href: "/owner/customers", tab: "customers" }, { label: "Receipt", href: "/owner/receipt", tab: "receipt" },
+  { label: "Stock", href: "/owner/stock", tab: "stock" }, { label: "Money", href: "/owner/money", tab: "money" },
 ];
 
 export default function OwnerNav() {
   const path = usePathname();
+  const { can } = useRole();
+  const items = ITEMS.filter((i) => can.tabs.includes(i.tab));   // tabs a login doesn't have aren't shown at all
   return (
     <nav aria-label="App sections" className="fixed bottom-0 inset-x-0 z-20 bg-white border-t border-[#dde3ee] pb-[max(14px,env(safe-area-inset-bottom))] pt-2">
-      <div className="max-w-xl mx-auto grid grid-cols-5 gap-1 px-2">
-        {ITEMS.map(({ label, href }) => {
+      <div className="max-w-xl mx-auto grid gap-1 px-2" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+        {items.map(({ label, href }) => {
           const active = href === "/owner" ? path === "/owner" : !!href && path?.startsWith(href);
           const inner = (
             <>

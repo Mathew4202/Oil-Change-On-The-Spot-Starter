@@ -54,7 +54,7 @@ export default function Manage({ token }: { token: string }) {
           {!b && !err && <p className="text-[#4a5878]">Loading…</p>}
           {b && (
             <div className="rounded-2xl border p-4 flex flex-col gap-1" style={{ borderColor: LINE }}>
-              <p className="text-sm font-bold text-[#4a5878]">{b.status === "cancelled" ? "CANCELLED" : b.status === "done" ? "DONE" : "BOOKED"}</p>
+              <p className="text-sm font-bold text-[#4a5878]">{b.status === "cancelled" ? "CANCELLED" : b.status === "done" ? "DONE" : b.status === "in_progress" ? "WORKING ON IT NOW" : b.status === "no_show" ? "MISSED" : "BOOKED"}</p>
               <p className="text-xl font-bold">{long(b.start)}</p>
               <p className="text-[#4a5878]">{b.car}</p>
               {b.address && <p className="text-[#4a5878]">{b.address}</p>}
@@ -69,8 +69,15 @@ export default function Manage({ token }: { token: string }) {
               <p className="text-sm text-[#4a5878]">You can change or cancel here up to {hours} hours before your time.</p>
             </div>
           ) : (
-            <p className="rounded-xl bg-[#fff6dd] p-4">It&apos;s less than {hours} hours to your time, so please call or text <a className="font-bold underline" href={PHONE_TEL}>{PHONE}</a> to change it. Cancelling on the day may have a $30 + HST fee (we waive it for emergencies and bad storms).</p>
+            <div className="rounded-xl bg-[#fff6dd] p-4 flex flex-col gap-2">
+              <p className="font-bold">Changes online close {hours} hours before your time</p>
+              <p>Your appointment is less than {hours} hours away, so it can&apos;t be moved or cancelled here anymore. Please call or text <a className="font-bold underline" href={PHONE_TEL}>{PHONE}</a> and we&apos;ll sort it out.</p>
+              <p className="text-sm text-[#4a5878]">Cancelling on the day may have a $30 + HST fee (we waive it for emergencies and bad storms).</p>
+              <a href={PHONE_TEL.replace("tel:", "sms:")} className="h-12 rounded-xl font-extrabold flex items-center justify-center" style={{ background: GOLD, color: NAVY }}>Text us</a>
+            </div>
           ))}
+          {b && mode === "view" && b.status === "in_progress" && <p className="rounded-xl bg-[#eef1f6] p-4">We&apos;re working on your car right now. Questions? Call or text <a className="font-bold underline" href={PHONE_TEL}>{PHONE}</a>.</p>}
+          {b && mode === "view" && b.status === "done" && <p className="rounded-xl bg-[#eef1f6] p-4">This visit is done. Your receipt was emailed to you. Want to book the next one? <a className="font-bold underline" href="/booking">Book here</a>.</p>}
 
           {b && mode === "move" && (
             <div className="flex flex-col gap-3">

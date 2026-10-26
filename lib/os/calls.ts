@@ -67,7 +67,7 @@ export async function handleCallEvent(ev: CallEvent) {
         const car = [x.year, x.make, x.model].filter(Boolean).join(" ");
         const what = [x.job ? JOB_NAME[x.job] : null, car || null, x.cars > 1 ? `${x.cars} cars` : null].filter(Boolean).join(", ");
         await alert(row, `${x.name || (await who(row))} wants ${what || "to book"}`,
-          suggested ? `Tap to hold ${whenText(suggested)} and text them the link.` : "Tap to pick a time to hold and text them the link.");
+          suggested ? `Tap to hold ${whenText(suggested)} and text them the link.` : wantedText(x) ? `${wantedText(x)} is taken. Tap to text them the booking link.` : "Tap to text them the booking link with their details filled in.");
       }
     }
   }
@@ -125,19 +125,22 @@ export function cleanExtract(o: Record<string, unknown>): Extract {
   };
 }
 
-/** The open time that matches what they asked for: their day (or the next 7 days if they only said "afternoon"). */
+/** Hold only what they asked for: a day AND a time, and only if that exact time is open.
+ *  Anything vaguer ("next week", "Thursday afternoon") gets the booking link with their details filled in instead. */
 export async function suggestStart(x: Extract): Promise<string | null> {
+  if (!x.date || !x.time || x.date < halifaxDate(new Date())) return null;
   const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((r) => [r.key, Number(r.value)]));
   const minutes = jobMinutes(x.job ?? "oil_change", rules, []) * x.cars;
-  const today = halifaxDate(new Date());
-  const days = x.date ? [x.date] : Array.from({ length: 7 }, (_, i) => { const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + i); return d.toISOString().slice(0, 10); });
-  for (const d of days) {
-    if (d < today) continue;
-    const day = await dayAvailability(d, { cars: 1, minutes, filterInStock: true }).catch(() => null);
-    const hit = day ? pickSlot(day.slots, { time: x.time, part: x.part }) : null;
-    if (hit) return hit.start;
-  }
-  return null;
+  const day = await dayAvailability(x.date, { cars: 1, minutes, filterInStock: true }).catch(() => null);
+  return day ? pickSlot(day.slots, { time: x.time })?.start ?? null : null;
+}
+
+/** "Wed Oct 28 at 3:00 pm" from what they asked for (null if they didn't name a day and time). */
+export function wantedText(x: Extract | null) {
+  if (!x?.date || !x.time) return null;
+  const [h, m] = x.time.split(":").map(Number);
+  const d = new Date(`${x.date}T12:00:00Z`).toLocaleDateString("en-CA", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+  return `${d} at ${h % 12 || 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "pm" : "am"}`;
 }
 
 /** Calls still waiting for something from us (last 3 days). */
@@ -207,9 +210,15 @@ export async function linkFromCall(id: string) {
   const [c] = await sbGet<CallRow>(`calls?select=${COLS}&id=eq.${enc(id)}`);
   if (!c || !c.phone) return { ok: false as const, error: "No number for this call" };
   const x = c.extract;
+  // everything they told us is filled in, so they only pick a time (and check the rest)
   const q = new URLSearchParams();
   if (x?.year && x.make) { q.set("year", String(x.year)); q.set("make", x.make); if (x.model) q.set("model", x.model); }
+  if (x?.engine) q.set("engine", x.engine);
   if (x?.job) q.set("job", x.job);
+  if (x?.cars && x.cars > 1) q.set("cars", String(x.cars));
+  if (x?.date && x.date >= halifaxDate(new Date())) q.set("date", x.date);
+  if (x?.name) q.set("name", x.name);
+  q.set("phone", c.phone.replace(/^\+1/, ""));
   const link = `${siteUrl()}/booking${q.toString() ? `?${q}` : ""}`;
   const [t] = await rows(`id=eq.${c.id}`);
   const isText = t?.channel === "text";

@@ -2,6 +2,7 @@
 // Can also be run by hand: /api/cron/daily?key=ADMIN_SECRET
 import { runPlanBilling } from "@/lib/os/plans";
 import { backfillSpecs } from "@/lib/os/spec-backfill";
+import { attachUpcoming } from "@/lib/os/spec-learn";
 import { NextRequest, NextResponse } from "next/server";
 import { sbGet, sbPatch, sbDelete } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
@@ -58,9 +59,11 @@ export async function GET(req: NextRequest) {
   const plans = await runPlanBilling(today).catch(() => ({ billed: 0, ended: 0 }));
   // 4) A couple of cars we've done get their oil approval filled in (under the daily lookup cap)
   const specs = await backfillSpecs(2).catch(() => ({ filled: 0 }));
+  // 4b) Bookings in the next few days still without the oil on file: look them up again and attach it
+  const oilAttached = await attachUpcoming(4).catch(() => 0);
   // 5) What Quo sent us is only kept two weeks
   await sbDelete("webhook_log", `at=lt.${new Date(Date.now() - 14 * 86400000).toISOString()}`).catch(() => null);
-  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled });
+  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached });
 }
 
 function addDays(d: string, n: number) { const [y, m, dd] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); }

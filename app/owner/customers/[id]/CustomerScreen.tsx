@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import OwnerNav from "../../OwnerNav";
+import { useRole } from "../../RoleContext";
 import { DUE_BADGE } from "../CustomersScreen";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878", GOOD = "#1d6b3a";
@@ -29,6 +30,7 @@ const TEXT_KIND: Record<string, string> = { booking_confirmation: "Booking confi
 const field = "h-11 rounded-xl border px-3 text-base w-full bg-white";
 
 export default function CustomerScreen({ id }: { id: string }) {
+  const { can } = useRole();
   const [d, setD] = useState<Detail | null>(null); const [err, setErr] = useState("");
   const load = useCallback(() => fetch(`/api/owner/customers?id=${id}`, { cache: "no-store" }).then((r) => r.json())
     .then((x) => (x.error ? setErr(x.error) : setD(x))).catch(() => setErr("Couldn't load. Check your connection.")), [id]);
@@ -65,8 +67,8 @@ export default function CustomerScreen({ id }: { id: string }) {
 
       <section className="grid grid-cols-2 gap-2">
         <Stat label="Visits" value={String(s.visits)} />
-        <Stat label="Spent (before HST)" value={money(s.spent)} />
-        <Stat label="Average visit" value={s.visits ? money(s.average) : "–"} />
+        {can.money && <Stat label="Spent (before HST)" value={money(s.spent)} />}
+        {can.money && <Stat label="Average visit" value={s.visits ? money(s.average) : "–"} />}
         <Stat label="Last visit" value={s.lastVisit ? nice(s.lastVisit) : "–"} />
       </section>
       {(s.cancelled > 0 || s.noShows > 0) && <p className="text-sm -mt-2" style={{ color: MUTED }}>{[s.cancelled ? `${s.cancelled} cancelled` : "", s.noShows ? `${s.noShows} no-show${s.noShows === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ")}</p>}

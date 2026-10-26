@@ -8,6 +8,8 @@ import VinSnap from "@/components/VinSnap";
 import EnginePicker from "@/components/EnginePicker";
 import CarPicker from "@/components/CarPicker";
 import AccountForm, { type AccountIn } from "../AccountForm";
+import BulkVehicles from "@/components/BulkVehicles";
+import { useRole } from "../../RoleContext";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878";
 const field = "h-12 rounded-xl border px-3 text-base w-full bg-white font-normal";
@@ -47,7 +49,10 @@ export default function FleetAccount({ id }: { id: string }) {
   const [edit, setEdit] = useState(false);
   const [vForm, setVForm] = useState<Record<string, string> | null>(null);
   const [pick, setPick] = useState<string[]>([]);
-  const [date, setDate] = useState(todayHfx()); const [time, setTime] = useState("09:00"); const [note, setNote] = useState("");
+  const { can } = useRole();
+  const [date, setDate] = useState(todayHfx()); const [time, setTime] = useState(""); const [note, setNote] = useState("");
+  const [slots, setSlots] = useState<{ time: string; label: string }[] | null>(null); const [other, setOther] = useState(false);
+  const [bulk, setBulk] = useState(false);
   const [billPick, setBillPick] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [portal, setPortal] = useState<string | null>(null);
@@ -64,6 +69,9 @@ export default function FleetAccount({ id }: { id: string }) {
   }
 
   const active = useMemo(() => (d?.vehicles ?? []).filter((v) => v.active), [d]);
+  // only open times are offered (anything booked, held or blocked is left out)
+  const loadSlots = () => { setSlots(null); fetch(`/api/owner/fleet?times=${date}&count=${pick.length || 1}`, { cache: "no-store" }).then((r) => r.json()).then((x) => setSlots(x.slots || [])).catch(() => setSlots([])); };
+  useEffect(() => { if (pick.length) loadSlots(); setTime(""); }, [date, pick.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const car = (v: V) => [v.year, v.make, v.model].filter(Boolean).join(" ");
   const priceOf = (v: V) => v.fleet_price ?? d?.normal[v.id]?.price ?? null;
   const pickedTotal = pick.reduce((t, x) => { const v = active.find((y) => y.id === x); return t + (v ? priceOf(v) ?? 0 : 0); }, 0);
@@ -74,7 +82,9 @@ export default function FleetAccount({ id }: { id: string }) {
   }
   async function book() {
     if (!pick.length) return setErr("Tick the vehicles to book.");
+    if (!time) return setErr("Pick a start time.");
     const j = await post({ action: "book", vehicleIds: pick, start: halifaxIso(date, time), note });
+    if (!j) loadSlots();
     if (j) { setPick([]); setNote(""); setMsg(`Booked ${j.bookings.length} vehicle${j.bookings.length > 1 ? "s" : ""}, back to back. They're on the calendar, and each gets its own job screen.`); load(); }
   }
   async function invoice() {
@@ -121,8 +131,10 @@ export default function FleetAccount({ id }: { id: string }) {
             <p className="text-sm" style={{ color: MUTED }}>A private link for {a.contact_name || "the fleet manager"}: their vehicles, what&apos;s due, booking a yard visit, service history and invoices. No password, so only send it to them.</p>
             {portal && <p className="font-mono text-[13px] break-all select-all bg-[#f4f6fa] rounded-lg p-2">{portal}</p>}
             <div className="flex flex-wrap gap-2">
-              <button disabled={busy} onClick={async () => { const j = await post({ action: "portal", send: true }); if (j) { setPortal(j.link); setMsg(j.sms?.sent === false ? "Link made, but the text didn't go out. Copy it and send it yourself." : `Texted the link to ${a.contact_name || "them"}.`); } }}
-                className="h-11 px-4 rounded-xl font-bold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Text them the link</button>
+              <button disabled={busy} onClick={async () => { const j = await post({ action: "portal", send: true }); if (j) { setPortal(j.link);
+                  const how = [j.email?.sent ? `emailed it to ${j.to}` : null, j.sms?.sent ? "texted it" : null].filter(Boolean);
+                  setMsg(how.length ? `Done: ${how.join(" and ")}.${!j.email?.sent && j.to ? ` (Email didn't go: ${j.email?.reason}.)` : !j.to ? " Add their email to the account so they get it on their computer too." : ""}` : "Link made, but it didn't go out. Copy it and send it yourself."); } }}
+                className="h-11 px-4 rounded-xl font-bold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Email and text them the link</button>
               <button disabled={busy} onClick={async () => { const j = await post({ action: "portal" }); if (j) { setPortal(j.link); try { await navigator.clipboard.writeText(j.link); setMsg("Link copied."); } catch { /* shown above */ } } }}
                 className="h-11 px-4 rounded-xl border font-bold bg-white disabled:opacity-60" style={{ borderColor: LINE }}>Copy link</button>
               <button disabled={busy} onClick={async () => { if (!confirm("Make a new link? The old one stops working.")) return; const j = await post({ action: "portal", reset: true }); if (j) { setPortal(j.link); setMsg("New link made. The old one no longer works."); } }}
@@ -139,9 +151,14 @@ export default function FleetAccount({ id }: { id: string }) {
                 {active.some((v) => v.due.state === "due" || v.due.state === "soon") && (
                   <button onClick={() => setPick(active.filter((v) => v.due.state === "due" || v.due.state === "soon").map((v) => v.id))} className="h-9 px-3 rounded-lg border font-bold text-sm bg-white" style={{ borderColor: LINE }}>Pick the due ones</button>
                 )}
-                <button onClick={() => setVForm({ unit_number: "", vin: "", year: "", make: "", model: "", engine: "", plate: "", fleet_price: "", notes: "" })} className="h-9 px-3 rounded-lg font-bold text-sm" style={{ background: GOLD, color: NAVY }}>+ Vehicle</button>
+                <button onClick={() => { setBulk(true); setVForm(null); }} className="h-9 px-3 rounded-lg font-bold text-sm text-white" style={{ background: NAVY }}>+ Many</button>
+                <button onClick={() => { setBulk(false); setVForm({ unit_number: "", vin: "", year: "", make: "", model: "", engine: "", plate: "", fleet_price: "", notes: "" }); }} className="h-9 px-3 rounded-lg font-bold text-sm" style={{ background: GOLD, color: NAVY }}>+ One</button>
               </div>
             </div>
+
+            {bulk && <BulkVehicles onCancel={() => setBulk(false)} onDone={(m) => { setBulk(false); setMsg(m); load(); }}
+              scan={async (file) => { const r = await fetch("/api/owner/fleet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: id, action: "scan", file }) }); return r.json().catch(() => ({ error: "Couldn't read that. Try again." })); }}
+              save={async (rows) => { const r = await fetch("/api/owner/fleet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: id, action: "vehicles", vehicles: rows.map((x) => ({ ...x, unit_number: x.unit })) }) }); return r.json().catch(() => ({ error: "Couldn't save. Try again." })); }} />}
 
             {vForm && (
               <div className="bg-white rounded-2xl p-4 flex flex-col gap-3 border-2" style={{ borderColor: NAVY }}>
@@ -165,7 +182,7 @@ export default function FleetAccount({ id }: { id: string }) {
               </div>
             )}
 
-            {active.length === 0 && !vForm && <p className="bg-white rounded-2xl p-4" style={{ color: MUTED }}>No vehicles yet. Add each one with its unit number, or just the VIN.</p>}
+            {active.length === 0 && !vForm && <p className="bg-white rounded-2xl p-4" style={{ color: MUTED }}>No vehicles yet. Tap + Many and take a photo of their vehicle list or the VINs, or add them one at a time.</p>}
             {active.map((v) => {
               const n = d.normal[v.id]; const on = pick.includes(v.id); const b = BADGE[v.due.state];
               const price = priceOf(v); const profit = price != null && n?.cost != null ? price - n.cost : null;
@@ -175,7 +192,7 @@ export default function FleetAccount({ id }: { id: string }) {
                   <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                     <p className="font-bold text-[16px]">{v.unit_number ? `Unit ${v.unit_number} · ` : ""}{car(v)}{v.engine ? ` ${v.engine}` : ""}</p>
                     <p className="text-sm" style={{ color: MUTED }}>{[v.plate, n?.oil, v.lastKm ? `${v.lastKm.toLocaleString()} km` : null].filter(Boolean).join(" · ")}</p>
-                    <p className="text-sm">{price != null ? <><strong>{money(price)}</strong>{v.fleet_price != null ? " fleet price" : " (normal price)"}</> : "Price on booking"}{profit != null && <span style={{ color: profit < 45 ? "#9b1c1c" : MUTED }}> · about {money(profit)} profit</span>}</p>
+                    <p className="text-sm">{price != null ? <><strong>{money(price)}</strong>{v.fleet_price != null ? " fleet price" : " (normal price)"}</> : "Price on booking"}{profit != null && can.money && <span style={{ color: profit < 45 ? "#9b1c1c" : MUTED }}> · about {money(profit)} profit</span>}</p>
                     {b.text(v.due, v) && <span className="self-start text-xs font-bold rounded-full px-2 py-1 mt-1" style={{ background: b.bg, color: b.fg }}>{b.text(v.due, v)}</span>}
                   </div>
                   <button onClick={() => setVForm({ id: v.id, unit_number: v.unit_number ?? "", vin: v.vin ?? "", year: String(v.year ?? ""), make: v.make ?? "", model: v.model ?? "", engine: v.engine ?? "", plate: v.plate ?? "", fleet_price: v.fleet_price != null ? String(v.fleet_price) : "", notes: v.notes ?? "" })}
@@ -189,9 +206,15 @@ export default function FleetAccount({ id }: { id: string }) {
         {d && pick.length > 0 && (
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-3 border-2" style={{ borderColor: GOLD }}>
             <h2 className="font-extrabold text-lg">Book {pick.length} vehicle{pick.length > 1 ? "s" : ""} at the yard</h2>
-            <div className="grid grid-cols-2 gap-2">
-              <label className={lbl}>Day<input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
-              <label className={lbl}>Start<input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
+            <label className={lbl}>Day<input type="date" value={date} min={todayHfx()} onChange={(e) => setDate(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-semibold">Start time</span>
+              {slots == null ? <p className="text-sm" style={{ color: MUTED }}>Checking open times…</p>
+                : slots.length ? <div className="flex flex-wrap gap-2">{slots.map((s) => <button key={s.time} type="button" onClick={() => { setTime(s.time); setOther(false); }} className="h-11 px-3 rounded-full border font-bold text-sm" style={chip(time === s.time && !other)}>{s.label}</button>)}</div>
+                : <p className="text-sm rounded-lg bg-[#f4f6fa] p-2" style={{ color: MUTED }}>No open time that day for {pick.length} vehicle{pick.length > 1 ? "s" : ""} back to back. Try another day.</p>}
+              {can.timeOff && (other
+                ? <label className={lbl}>Outside our usual hours<input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
+                : <button type="button" onClick={() => { setOther(true); setTime(""); }} className="self-start text-sm font-semibold underline mt-1" style={{ color: MUTED }}>Book outside our usual hours</button>)}
             </div>
             <label className={lbl}>Note for the visit<input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Keys at the front desk, PO 4471" className={field} style={{ borderColor: LINE }} /></label>
             <p className="text-sm" style={{ color: MUTED }}>Done one after another, about {Math.round(pick.length * 75 / 60 * 10) / 10} hours. {money(pickedTotal)} + HST, billed on the fleet&apos;s invoice.</p>
@@ -199,7 +222,7 @@ export default function FleetAccount({ id }: { id: string }) {
           </section>
         )}
 
-        {d && (
+        {d && can.invoices && (
           <section className="flex flex-col gap-2">
             <h2 className="font-extrabold text-lg">To invoice</h2>
             {d.unbilled.length === 0 ? <p className="bg-white rounded-2xl p-4" style={{ color: MUTED }}>Nothing waiting. Finished fleet jobs show up here.</p> : (
@@ -222,7 +245,7 @@ export default function FleetAccount({ id }: { id: string }) {
           </section>
         )}
 
-        {d && d.invoices.length > 0 && (
+        {d && can.invoices && d.invoices.length > 0 && (
           <section className="flex flex-col gap-2">
             <h2 className="font-extrabold text-lg">Invoices</h2>
             {d.invoices.filter((i) => i.status !== "void").map((i) => (

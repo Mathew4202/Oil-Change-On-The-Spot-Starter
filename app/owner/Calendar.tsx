@@ -7,6 +7,7 @@ import ChangeBooking from "./ChangeBooking";
 import HoldTime, { type HoldPreset } from "./HoldTime";
 import CallsPanel from "./CallsPanel";
 import OwnerNav from "./OwnerNav";
+import { useRole } from "./RoleContext";
 
 type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
@@ -21,7 +22,7 @@ type Job = {
 type Day = {
   date: string; jobs: Job[]; timeOff: { id: string; starts_at: string; ends_at: string; reason: string | null }[];
   holds?: { id: string; start: string; end: string; expires: string; name: string | null; phone: string | null; job: string; cars: number; note: string | null; by: string | null; link: string }[];
-  totals: { jobs: number; booked: number; profit: number };
+  totals: { jobs: number; booked: number | null; profit: number | null };
   bring: { oil: { grade: string; litres: number }[]; filters: { part: string; qty: number; inStock: number }[] };
 };
 type Alert = { id: string; title: string; body: string | null; created_at: string; read_at: string | null; bookings: { starts_at: string } | null };
@@ -38,7 +39,16 @@ const money = (n: number | null | undefined) => n == null ? "" : `$${n.toFixed(n
 const ago = (iso: string) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 
 export default function Calendar({ owner, initialDate, bookFor }: { owner: string; initialDate?: string; bookFor?: string }) {
+  const { can } = useRole();
   const [date, setDate] = useState(initialDate ?? todayStr());
+  const [oilMsg, setOilMsg] = useState<Record<string, string>>({});
+  async function lookUpOil(id: string) {
+    setOilMsg((m) => ({ ...m, [id]: "Looking it up…" }));
+    const r = await fetch("/api/owner/oil-lookup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId: id }) });
+    const j = await r.json().catch(() => ({}));
+    setOilMsg((m) => ({ ...m, [id]: j.ok ? "" : j.error || "Couldn't look it up right now." }));
+    if (j.ok) load(date);
+  }
   const [day, setDay] = useState<Day | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -134,8 +144,8 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
         </div>
 
         {/* Totals */}
-        <div className="grid grid-cols-3 gap-2">
-          {[["Jobs", String(day?.totals.jobs ?? "–")], ["Booked", day ? money(day.totals.booked) || "$0" : "–"], ["Est. profit", day ? money(day.totals.profit) || "$0" : "–"]].map(([k, v]) => (
+        <div className={`grid gap-2 ${can.money ? "grid-cols-3" : "grid-cols-1"}`}>
+          {([["Jobs", String(day?.totals.jobs ?? "–")], ...(can.money ? [["Booked", day ? money(day.totals.booked) || "$0" : "–"], ["Est. profit", day ? money(day.totals.profit) || "$0" : "–"]] : [])] as [string, string][]).map(([k, v]) => (
             <div key={k} className="rounded-xl px-3 py-2" style={{ background: "#142a5c" }}>
               <p className="text-xs text-[#c9d3ea]">{k}</p><p className="text-[22px] font-extrabold leading-tight">{v}</p>
             </div>
@@ -144,9 +154,9 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
       </header>
 
       <main className="flex-1 p-4 flex flex-col gap-3 pb-28">
-        <CallsPanel key={callsKey} focus={callFocus} onChanged={() => load(date)}
+        {can.calls && <CallsPanel key={callsKey} focus={callFocus} onChanged={() => load(date)}
           onPickTime={(c) => { setHoldPreset({ callId: c.id, name: c.extract?.name, phone: c.phone, job: c.extract?.job, cars: c.extract?.cars,
-            note: c.extract ? [[c.extract.year, c.extract.make, c.extract.model].filter(Boolean).join(" "), c.extract.notes].filter(Boolean).join(" · ") : null }); setHolding(true); }} />
+            note: c.extract ? [[c.extract.year, c.extract.make, c.extract.model].filter(Boolean).join(" "), c.extract.notes].filter(Boolean).join(" · ") : null }); setHolding(true); }} />}
         {error && <p className="rounded-xl bg-red-50 text-red-800 p-3 text-sm" role="alert">{error}</p>}
         <PushToggle compact />
         {!day && !error && <p className="text-center text-[#4a5878] py-10">Loading…</p>}
@@ -166,12 +176,12 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
               <span className="text-xs font-bold rounded-full px-2 py-1" style={{ background: "#fff6dd", color: "#8a5a00" }}>until {time(h.expires)}</span>
             </div>
             <p className="text-sm text-[#4a5878]">{[h.phone?.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3"), h.cars > 1 ? `${h.cars} cars` : null, h.job.replace("_", " "), h.note, h.by ? `held by ${h.by[0].toUpperCase()}${h.by.slice(1)}` : null].filter(Boolean).join(" · ")}</p>
-            <div className="flex gap-2">
+            {can.book && <div className="flex gap-2">
               <button onClick={async () => { await fetch("/api/owner/hold", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "resend", id: h.id }) }); }}
                 className="h-10 px-3 rounded-lg border border-[#c8d0e0] text-sm font-bold bg-white">Text link again</button>
               <button onClick={async () => { await fetch("/api/owner/hold", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "release", id: h.id }) }); load(date); }}
                 className="h-10 px-3 rounded-lg border border-[#c8d0e0] text-sm font-bold bg-white">Let it go</button>
-            </div>
+            </div>}
           </div>
         ))}
 
@@ -188,8 +198,8 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
           .map(({ off: t, job }) => t ? (
           <div key={t.id} className="rounded-xl bg-white/70 border border-dashed border-[#c8d0e0] p-3 flex items-center justify-between gap-2">
             <div><p className="font-bold">{time(t.starts_at)} – {time(t.ends_at)}</p><p className="text-sm text-[#4a5878]">{t.reason || "Blocked"}</p></div>
-            <button onClick={async () => { await fetch(`/api/owner/time-off?id=${t.id}`, { method: "DELETE" }); load(date); }}
-              className="h-10 px-3 rounded-lg border border-[#c8d0e0] text-sm font-bold">Remove</button>
+            {can.timeOff && <button onClick={async () => { await fetch(`/api/owner/time-off?id=${t.id}`, { method: "DELETE" }); load(date); }}
+              className="h-10 px-3 rounded-lg border border-[#c8d0e0] text-sm font-bold">Remove</button>}
           </div>
         ) : ((j: Job) => {
           const expanded = open === j.id;
@@ -236,6 +246,13 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                     </a>))}</div>
                 )}
               </button>
+              {!j.oil && (!j.job || j.job === "oil_change" || j.job === "seasonal") && (j.status === "confirmed" || j.status === "requested") && (can.book || can.jobs) && (
+                <div className="flex flex-col gap-1">
+                  <button onClick={() => lookUpOil(j.id)} disabled={oilMsg[j.id] === "Looking it up…"} className="self-start h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm disabled:opacity-60">
+                    {oilMsg[j.id] === "Looking it up…" ? "Looking it up…" : "Look up the oil now"}</button>
+                  {oilMsg[j.id] && oilMsg[j.id] !== "Looking it up…" && <p className="text-[13px] text-[#8a5a00]">{oilMsg[j.id]}</p>}
+                </div>
+              )}
 
               {expanded && (
                 <div className="border-t border-[#eef1f6] pt-2 flex flex-col gap-1 text-[15px]">
@@ -244,7 +261,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>Est. profit</span><span>{money(j.profit)}</span></div>}
                   {j.notes && <p className="text-[#4a5878] mt-1">Note: {j.notes}</p>}
                   {j.imported && <p className="text-xs text-[#4a5878] mt-1">Imported from Square</p>}
-                  {(j.status === "confirmed" || j.status === "requested") && (
+                  {(j.status === "confirmed" || j.status === "requested") && can.book && (
                     <button onClick={() => setChanging({ id: j.id, name: j.name.split(" ")[0] })} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Move or cancel</button>
                   )}
                 </div>
@@ -256,7 +273,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 <a href={j.phone ? `tel:${j.phone}` : undefined} className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.phone}>Call</a>
                 <a href={j.phone ? `sms:${j.phone}` : undefined} className="h-11 rounded-lg flex items-center justify-center font-bold text-sm text-white aria-disabled:opacity-40" style={{ background: NAVY }} aria-disabled={!j.phone}>Text</a>
               </div>
-              {(
+              {can.jobs && (
                 j.status === "confirmed" || j.status === "requested" ? (
                   <button onClick={async () => { await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", bookingId: j.id }) }); setJobOpen(j.id); load(date); }}
                     className="h-12 rounded-xl font-extrabold text-base" style={{ background: GOLD, color: NAVY }}>Start job</button>
@@ -273,12 +290,12 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
           );
         })(job!))}
 
-        {day && (
+        {day && can.book && (
           <button onClick={() => setHolding(true)} className="h-12 rounded-xl border-2 border-dashed font-bold" style={{ borderColor: GOLD, color: NAVY }}>
             + Hold a time for a caller
           </button>
         )}
-        {day && (
+        {day && can.timeOff && (
           <button onClick={() => setBlocking(true)} className="h-12 rounded-xl border-2 border-dashed border-[#c8d0e0] text-[#4a5878] font-bold">
             + Block time on {shortDay(date).wd} {shortDay(date).n}
           </button>
@@ -314,7 +331,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
       )}
 
       {/* New booking (phone customers) */}
-      {!booking && !showAlerts && !blocking && !holding && !jobOpen && !changing && (
+      {can.book && !booking && !showAlerts && !blocking && !holding && !jobOpen && !changing && (
         <button onClick={() => setBooking(true)} aria-label="New booking"
           className="fixed z-20 right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] h-14 px-5 rounded-full shadow-lg font-extrabold text-base flex items-center gap-2"
           style={{ background: GOLD, color: NAVY }}>

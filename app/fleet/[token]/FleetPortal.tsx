@@ -4,6 +4,7 @@ import { PHONE, PHONE_TEL } from "@/lib/os/business";
 import VinSnap from "@/components/VinSnap";
 import CarPicker from "@/components/CarPicker";
 import EnginePicker from "@/components/EnginePicker";
+import BulkVehicles from "@/components/BulkVehicles";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878";
 type Due = { state: "ok" | "soon" | "due" | "booked" | "new"; date: string | null };
@@ -36,6 +37,9 @@ export default function FleetPortal({ token }: { token: string }) {
   const [note, setNote] = useState(""); const [busy, setBusy] = useState(false); const [bookErr, setBookErr] = useState("");
   const [adding, setAdding] = useState(false); const [nv, setNv] = useState({ unit_number: "", vin: "", plate: "", year: "", make: "", model: "", engine: "" }); const [addErr, setAddErr] = useState("");
   const [tab, setTab] = useState<"history" | "invoices">("invoices");
+  const [bulk, setBulk] = useState(false);
+  const [slotTick, setSlotTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setSlotTick((n) => n + 1), 60000); return () => clearInterval(t); }, []);   // keeps the open times fresh
 
   const load = () => fetch(`/api/os/fleet-portal?t=${encodeURIComponent(token)}`, { cache: "no-store" }).then((r) => r.json())
     .then((x) => { if (x.error) setErr(x.error); else { setD(x); setPick((p) => p.length ? p : x.vehicles.filter((v: Vehicle) => v.due.state === "due" || v.due.state === "soon").map((v: Vehicle) => v.id)); } })
@@ -47,6 +51,12 @@ export default function FleetPortal({ token }: { token: string }) {
     if (!pick.length || !date) return;
     fetch(`/api/os/fleet-portal?t=${encodeURIComponent(token)}&date=${date}&count=${pick.length}`, { cache: "no-store" }).then((r) => r.json()).then((x) => setSlots(x.slots || [])).catch(() => setSlots([]));
   }, [date, pick.length, token]);
+  // quietly refresh every minute: a time someone else just took disappears (the picked one stays picked if it's still open)
+  useEffect(() => {
+    if (!slotTick || !pick.length || !date) return;
+    fetch(`/api/os/fleet-portal?t=${encodeURIComponent(token)}&date=${date}&count=${pick.length}`, { cache: "no-store" }).then((r) => r.json())
+      .then((x) => { const list = x.slots || []; setSlots(list); setStart((s) => (list.some((y: { start: string }) => y.start === s) ? s : "")); }).catch(() => {});
+  }, [slotTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dueCount = useMemo(() => d?.vehicles.filter((v) => v.due.state === "due" || v.due.state === "soon").length ?? 0, [d]);
 
@@ -55,7 +65,7 @@ export default function FleetPortal({ token }: { token: string }) {
     setBusy(true);
     const r = await fetch("/api/os/fleet-portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, action: "book", vehicleIds: pick, start, note }) });
     const j = await r.json().catch(() => ({})); setBusy(false);
-    if (!r.ok || !j.ok) return setBookErr(j.error || "Couldn't book. Call or text us.");
+    if (!r.ok || !j.ok) { setSlotTick((n) => n + 1); return setBookErr(j.error || "Couldn't book. Call or text us."); }
     setMsg(`Booked: ${pick.length} vehicle${pick.length > 1 ? "s" : ""} on ${at(start)}. We'll text you a confirmation and a reminder the day before.`);
     setPick([]); setNote(""); setStart(""); load(); window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -122,7 +132,7 @@ export default function FleetPortal({ token }: { token: string }) {
                 </label>
               );
             })}
-            {!d.vehicles.length && <p style={{ color: MUTED }}>No vehicles yet. Add one below.</p>}
+            {!d.vehicles.length && <p style={{ color: MUTED }}>No vehicles yet. Add them below: a photo of your list does them all at once.</p>}
           </div>
           {pick.length > 0 && (
             <>
@@ -145,8 +155,15 @@ export default function FleetPortal({ token }: { token: string }) {
         </section>
 
         <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
-          <div className="flex justify-between items-center"><h2 className="font-extrabold text-lg">Add a vehicle</h2>
-            {!adding && <button onClick={() => setAdding(true)} className="h-10 px-4 rounded-full border font-bold" style={{ borderColor: NAVY }}>+ Add</button>}</div>
+          <div className="flex justify-between items-center gap-2"><h2 className="font-extrabold text-lg">Add vehicles</h2>
+            {!adding && !bulk && <div className="flex gap-2">
+              <button onClick={() => setBulk(true)} className="h-10 px-4 rounded-full font-bold text-white" style={{ background: NAVY }}>+ Many at once</button>
+              <button onClick={() => setAdding(true)} className="h-10 px-4 rounded-full border font-bold" style={{ borderColor: NAVY }}>+ One</button>
+            </div>}</div>
+          {!adding && !bulk && <p className="text-sm" style={{ color: MUTED }}>Got a list? Take a photo of it (or of the VINs) or upload it, and we&apos;ll add them all.</p>}
+          {bulk && <BulkVehicles onCancel={() => setBulk(false)} onDone={(m) => { setBulk(false); setMsg(`${m} We'll set their prices and they're ready to book.`); load(); }}
+            scan={async (file) => { const r = await fetch("/api/os/fleet-portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, action: "scan", file }) }); return r.json().catch(() => ({ error: "Couldn't read that. Try again." })); }}
+            save={async (rows) => { const r = await fetch("/api/os/fleet-portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, action: "vehicles", vehicles: rows.map((x) => ({ ...x, unit_number: x.unit })) }) }); return r.json().catch(() => ({ error: "Couldn't save. Try again." })); }} />}
           {adding && (
             <div className="flex flex-col gap-2">
               <div className="grid grid-cols-2 gap-2">

@@ -25,14 +25,14 @@ test("older format call", () => {
   assert.equal(e.phone, "+19025550199");
 });
 
-test("pick the slot that matches what they asked for", () => {
+test("only the time they asked for is held; no time asked means no guess", () => {
   const slots = ["09:00", "09:30", "13:00", "14:30", "18:00"].map((time) => ({ time }));
-  assert.equal(pickSlot(slots, { part: "afternoon" })?.time, "13:00");
-  assert.equal(pickSlot(slots, { time: "14:00" })?.time, "14:30");
-  assert.equal(pickSlot(slots, { time: "11:00" })?.time, "09:30");
+  assert.equal(pickSlot(slots, { time: "14:30" })?.time, "14:30");
+  assert.equal(pickSlot(slots, { time: "13:15" })?.time, "13:00");
+  assert.equal(pickSlot(slots, { time: "14:00" }), null);      // 2 pm is taken: don't hold 2:30 instead
   assert.equal(pickSlot(slots, { time: "21:30" }), null);
-  assert.equal(pickSlot(slots, { part: "evening" })?.time, "18:00");
-  assert.equal(pickSlot(slots, {})?.time, "09:00");
+  assert.equal(pickSlot(slots, { part: "afternoon" }), null);   // "sometime in the afternoon": send the link
+  assert.equal(pickSlot(slots, {}), null);
 });
 
 test("caller number from object participants, fromPhoneNumber, or the transcript", () => {

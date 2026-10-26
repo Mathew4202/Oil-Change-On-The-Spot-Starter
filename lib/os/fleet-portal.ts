@@ -1,11 +1,13 @@
 // The fleet's own page: a private link per account (no password). Everything a fleet manager needs without calling us.
 import crypto from "crypto";
 import { sbGet, sbPatch, enc } from "@/lib/os/db";
-import { accountDetail, bookFleetVisit, saveVehicle, visitMinutes } from "@/lib/os/fleet";
+import { accountDetail, bookFleetVisit, saveVehicle, saveVehicles, visitMinutes } from "@/lib/os/fleet";
 import { dayAvailability } from "@/lib/os/calendar";
 import { checksFrom } from "@/lib/os/fleet-math";
 import { halifaxDate } from "@/lib/os/slots";
 import { sendSms, template, fill } from "@/lib/os/sms";
+import { Resend } from "resend";
+import { emailFrom } from "@/lib/os/email-from";
 import { siteUrl, when as whenText } from "@/lib/os/customer-texts";
 import { pushToOwners } from "@/lib/os/push";
 
@@ -29,15 +31,35 @@ export async function ensurePortal(accountId: string, reset = false) {
   return portalLink(token);
 }
 
+/** Send the fleet their page: a text to the contact's mobile AND an email (fleet offices mostly work on a laptop). */
 export async function textPortal(accountId: string) {
   const link = await ensurePortal(accountId);
   const d = await accountDetail(accountId);
   if (!link || !d) return { ok: false as const, error: "Account not found" };
-  if (!d.account.phone) return { ok: false as const, error: "Add the contact's mobile number first" };
-  const body = (await template("fleet_portal")) || "Hi {first_name}, here is your {business} page with Oil Change On The Spot: {link}\n- Mathew, Oil Change On The Spot";
-  const r = await sendSms(d.account.phone, fill(body, { first_name: (d.account.contact_name || "there").split(/\s+/)[0], business: d.account.business_name, link }), { kind: "fleet_portal" });
+  const a = d.account;
+  const first = (a.contact_name || "there").split(/\s+/)[0];
+  const to = (a.email || a.invoice_email || "").trim();
+  if (!a.phone && !to) return { ok: false as const, error: "Add the contact's mobile number or email first" };
+  const sms = a.phone
+    ? await sendSms(a.phone, fill((await template("fleet_portal")) || "Hi {first_name}, here is your {business} page with Oil Change On The Spot: {link}\n- Mathew, Oil Change On The Spot", { first_name: first, business: a.business_name, link }), { kind: "fleet_portal" })
+    : null;
+  const email = to ? await emailPortal(to, first, a.business_name, link) : { sent: false, reason: "no email on the account" };
   await sbPatch("fleet_accounts", `id=eq.${enc(accountId)}`, { portal_sent_at: new Date().toISOString() }).catch(() => null);
-  return { ok: true as const, link, sms: r };
+  return { ok: true as const, link, sms, email, to: to || null };
+}
+
+async function emailPortal(to: string, first: string, business: string, link: string): Promise<{ sent: boolean; reason?: string }> {
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return { sent: false, reason: "email doesn't look right" };
+  if (!process.env.RESEND_API_KEY) return { sent: false, reason: "email service not set up" };
+  const text = fill((await template("fleet_portal_email")) || "Hi {first_name},\n\nHere is the {business} page with Oil Change On The Spot: {link}\n\nMathew\nOil Change On The Spot", { first_name: first, business, link });
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:16px;line-height:1.5;color:#0d1b3e;max-width:560px">
+    ${esc(text).split(link).join(`</p><p><a href="${link}" style="display:inline-block;background:#f2b01e;color:#0d1b3e;font-weight:800;padding:12px 20px;border-radius:10px;text-decoration:none">Open your fleet page</a></p><p>`).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>").replace(/^/, "<p>")}</p></div>`;
+  try {
+    await new Resend(process.env.RESEND_API_KEY).emails.send({ from: emailFrom(), to, replyTo: process.env.NOTIFY_TO || process.env.EMAIL_TO || undefined,
+      subject: `Your ${business} page with Oil Change On The Spot`, html, text });
+    return { sent: true };
+  } catch (e) { return { sent: false, reason: String(e).slice(0, 120) }; }
 }
 
 /** What the fleet sees. Our cost, profit and notes never leave HQ. */
@@ -100,6 +122,17 @@ export async function portalAddVehicle(accountId: string, input: Record<string, 
   return r;
 }
 
+/** The fleet adds many vehicles at once (from a photo or file of their list). One buzz for us. */
+export async function portalAddVehicles(accountId: string, rows: Record<string, unknown>[]) {
+  const r = await saveVehicles(accountId, rows);
+  if (r.saved) {
+    const d = await accountDetail(accountId);
+    await Promise.race([pushToOwners({ title: `${d?.account.business_name ?? "A fleet"} added ${r.saved} vehicle${r.saved > 1 ? "s" : ""}`, body: "Set their fleet prices on the Fleets screen.", url: `/owner/fleets/${accountId}`, tag: `${accountId}-bulk` }).catch(() => null),
+      new Promise((x) => setTimeout(x, 3000))]);
+  }
+  return r;
+}
+
 /** "Fleet login": they type the mobile or email on their account and we text the link to the account's phone.
  *  Always answers the same way, so nobody can find out which numbers are fleet accounts. */
 export async function sendPortalLink(contact: string) {
@@ -110,7 +143,7 @@ export async function sendPortalLink(contact: string) {
   if (!phone && !email) return { ok: false as const, error: "Enter the mobile number or email on your fleet account." };
   const or = [phone ? `phone.eq.${enc(phone)}` : "", email ? `email.ilike.${enc(email)}` : "", email ? `invoice_email.ilike.${enc(email)}` : ""].filter(Boolean).join(",");
   const [a] = await sbGet<{ id: string; phone: string | null; active: boolean; portal_sent_at: string | null }>(`fleet_accounts?select=id,phone,active,portal_sent_at&or=(${or})&limit=1`).catch(() => []);
-  // one text a minute per account at most
-  if (a?.active !== false && a?.phone && !(a.portal_sent_at && Date.now() - new Date(a.portal_sent_at).getTime() < 60000)) await textPortal(a.id).catch(() => null);
+  // one send a minute per account at most (text + email)
+  if (a && a.active !== false && !(a.portal_sent_at && Date.now() - new Date(a.portal_sent_at).getTime() < 60000)) await textPortal(a.id).catch(() => null);
   return { ok: true as const };
 }

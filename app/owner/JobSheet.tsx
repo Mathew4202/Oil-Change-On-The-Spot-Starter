@@ -1,6 +1,7 @@
 "use client";
 // Finish a job: odometer, quick check, what was used, extras, who did it, payment, receipt.
 import { useEffect, useMemo, useState } from "react";
+import SnapRead from "@/components/SnapRead";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type Line = { label: string; amount: number };
@@ -32,7 +33,9 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
   const [grade, setGrade] = useState(""); const [litres, setLitres] = useState(""); const [filter, setFilter] = useState("");
   const [checks, setChecks] = useState<Record<string, "ok" | "soon" | "now">>(Object.fromEntries(CHECKS.map(([k]) => [k, "ok"])));
   const [extras, setExtras] = useState<{ label: string; amount: string }[]>([]);
-  const [doneBy, setDoneBy] = useState<"both" | "mathew" | "harsh">("both");
+  // who did it: the owners, plus whoever is signed in (a technician gets their own name, picked already)
+  const people: [string, string][] = [["both", "Both"], ["mathew", "Mathew"], ["harsh", "Harsh"], ...(["both", "mathew", "harsh"].includes(owner) ? [] : [[owner, owner[0].toUpperCase() + owner.slice(1)] as [string, string]])];
+  const [doneBy, setDoneBy] = useState<string>(["both", "mathew", "harsh"].includes(owner) ? "both" : owner);
   const [notes, setNotes] = useState("");
   const [pay, setPay] = useState<string>(""); const [tip, setTip] = useState("");
   const [email, setEmail] = useState("");
@@ -82,7 +85,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
     const j = await post({
       action: "finish", km: km ? Number(km.replace(/\D/g, "")) : null, vin: vin.trim() || null,
       oilGrade: withOil ? grade || null : null, oilLitres: withOil && litres ? Number(litres) : null, filterPart: withOil ? filter || null : null,
-      inspection: Object.fromEntries(Object.entries(checks).map(([k, v]) => [k, { status: v }])),
+      inspection: withOil ? Object.fromEntries(Object.entries(checks).map(([k, v]) => [k, { status: v }])) : undefined,
       extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined,
       payMethod: pay || null, tip: pay && Number(tip) > 0 ? Number(tip) : null, email: email.trim() || null, sendReceipt: true,
     });
@@ -165,17 +168,28 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
             <>
               <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
                 <h3 className="font-extrabold text-lg">The car</h3>
-                <label className="flex flex-col gap-1 text-sm font-semibold">Odometer (km)
-                  <input value={km} onChange={(e) => setKm(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" placeholder={ctx.vehicle?.last_km ? `Last time: ${ctx.vehicle.last_km.toLocaleString()} km` : "e.g. 84210"} className={field} style={{ borderColor: LINE }} />
-                </label>
-                <label className="flex flex-col gap-1 text-sm font-semibold">VIN (optional, prints on the receipt for warranty)
-                  <input value={vin} onChange={(e) => setVin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17))} autoCapitalize="characters"
-                    placeholder="17 characters, bottom of windshield" className={`${field} font-mono tracking-wide`} style={{ borderColor: LINE }} />
-                </label>
+                <div className="flex flex-col gap-1 text-sm font-semibold">
+                  <label htmlFor="job-km">Odometer (km)</label>
+                  <div className="flex flex-wrap gap-2">
+                    <input id="job-km" value={km} onChange={(e) => setKm(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" placeholder={ctx.vehicle?.last_km ? `Last time: ${ctx.vehicle.last_km.toLocaleString()} km` : "e.g. 84210"} className={`${field} flex-1 min-w-0`} style={{ borderColor: LINE }} />
+                    <SnapRead kind="odometer" onRead={(r) => r.km && setKm(String(r.km))} />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 text-sm font-semibold">
+                  <label htmlFor="job-vin">VIN (optional, prints on the receipt for warranty)</label>
+                  <div className="flex flex-wrap gap-2">
+                    <input id="job-vin" value={vin} onChange={(e) => setVin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17))} autoCapitalize="characters"
+                      placeholder="17 characters, windshield" className={`${field} flex-1 min-w-0 font-mono tracking-wide`} style={{ borderColor: LINE }} />
+                    <SnapRead kind="vin" onRead={(r) => r.vin && setVin(r.vin)} />
+                  </div>
+                </div>
                 {withOil && ctx.vehicle?.vehicle_specs && (() => { const sp = ctx.vehicle!.vehicle_specs!; return (
                   <p className="rounded-lg bg-[#f4f6fa] px-3 py-2 text-[14px] leading-snug">
                     <strong>Spec:</strong> {ctx.vehicle!.engine || sp.engine || "engine not on file"}{sp.fuel === "diesel" ? " diesel" : ""} · {sp.oil_grade.replace(/^Euro /, "")} {sp.fuel === "diesel" ? "diesel oil" : "full synthetic"}{sp.oil_spec ? `, must meet ${sp.oil_spec}` : ""} · {Number(sp.capacity_l)} L · filter {sp.oil_filter_part ? `NAPA ${sp.oil_filter_part}` : "not on file"}{sp.wix_filter ? ` (WIX ${sp.wix_filter})` : ""}
                   </p>); })()}
+                {withOil && !ctx.vehicle?.vehicle_specs && ctx.booking.services?.own !== "both" && (
+                  <p className="rounded-lg bg-[#fff6dd] px-3 py-2 text-[14px] leading-snug">Oil not on file for this car yet. Check the cap or the manual and fill these in: it&apos;s saved for this car{ctx.vehicle?.engine ? ` (${ctx.vehicle.engine})` : ""} next time.</p>
+                )}
                 {withOil && ctx.booking.services?.own !== "both" && (
                   <div className="grid grid-cols-3 gap-2">
                     <label className="flex flex-col gap-1 text-sm font-semibold">Oil<input value={grade} onChange={(e) => setGrade(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
@@ -185,7 +199,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 )}
               </section>
 
-              <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
+              {withOil && <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
                 <h3 className="font-extrabold text-lg">Quick check</h3>
                 <p className="text-sm text-[#4a5878]">Tap to change: OK → Soon → Needs it now.</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -196,7 +210,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                     </button>
                   ))}
                 </div>
-              </section>
+              </section>}
 
               <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
                 <h3 className="font-extrabold text-lg">Charges</h3>
@@ -223,7 +237,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
 
               <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
                 <h3 className="font-extrabold text-lg">Who did it</h3>
-                <div className="grid grid-cols-3 gap-2">{([["both", "Both"], ["mathew", "Mathew"], ["harsh", "Harsh"]] as const).map(([k, n]) => <button key={k} onClick={() => setDoneBy(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(doneBy === k)}>{n}</button>)}</div>
+                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${people.length}, minmax(0, 1fr))` }}>{people.map(([k, n]) => <button key={k} onClick={() => setDoneBy(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(doneBy === k)}>{n}</button>)}</div>
                 {fleetJob ? (
                   <p className="rounded-lg p-3 text-[15px] font-semibold" style={{ background: "#e6ecf8", color: "#0d1b3e" }}>Fleet vehicle: this goes on the fleet&apos;s invoice. Nothing to collect on site.</p>
                 ) : <>

@@ -2,7 +2,8 @@
 import { activeHolds, holdLink } from "@/lib/os/holds";
 import { bookingPhotoLink } from "@/lib/os/vin-photo";
 import { NextRequest, NextResponse } from "next/server";
-import { currentOwner } from "@/lib/os/auth";
+import { currentStaff } from "@/lib/os/auth";
+import { canOf } from "@/lib/os/roles";
 import { sbGet } from "@/lib/os/db";
 import { halifaxToDate, halifaxDate } from "@/lib/os/slots";
 
@@ -21,7 +22,9 @@ type Row = {
 };
 
 export async function GET(req: NextRequest) {
-  if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
+  const me = currentStaff();
+  if (!me) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
+  const money = canOf(me.role).money;   // staff don't see profit, costs or the day's takings
   const date = req.nextUrl.searchParams.get("date") || halifaxDate(new Date());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "bad date" }, { status: 400 });
   const from = halifaxToDate(date, 0).toISOString(), to = halifaxToDate(date, 24 * 60).toISOString();
@@ -75,13 +78,13 @@ export async function GET(req: NextRequest) {
       job: r.services?.job ?? "oil_change", addons: r.services?.addons ?? [],
       oil: s && (!r.services?.job || ["oil_change", "seasonal"].includes(r.services.job)) ? { grade: s.oil_grade, litres: Number(s.capacity_l), filter: s.oil_filter_part, spec: s.oil_spec,
         engine: s.engine, diesel: s.fuel === "diesel", wix: s.wix_filter, checked: !!s.verified, lowConfidence: s.source === "ai_lookup" && s.confidence === "low",
-        filterInStock: s.oil_filter_part ? (stock[s.oil_filter_part] ?? 0) >= 1 : null, filterCost: s.oil_filter_part ? filterCosts[s.oil_filter_part] ?? null : null,
+        filterInStock: s.oil_filter_part ? (stock[s.oil_filter_part] ?? 0) >= 1 : null, filterCost: money && s.oil_filter_part ? filterCosts[s.oil_filter_part] ?? null : null,
         filterNote: s.filter_note ?? null } : null,
       // part numbers we have used on this car before
       partNos: s ? [s.cabin_filter_part ? `Cabin filter ${s.cabin_filter_part}` : null, s.air_filter_part ? `Engine air filter ${s.air_filter_part}` : null,
         s.wiper_driver || s.wiper_passenger ? `Wipers ${[s.wiper_driver && `driver ${s.wiper_driver}`, s.wiper_passenger && `passenger ${s.wiper_passenger}`].filter(Boolean).join(", ")}` : null].filter(Boolean) as string[] : [],
       lines: r.quote_breakdown?.lines ?? [], total: r.quoted_total != null ? Number(r.quoted_total) : null,
-      profit: r.quote_breakdown?.profit ?? null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
+      profit: money ? r.quote_breakdown?.profit ?? null : null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       vin: (r.services as { vin?: string } | null)?.vin ?? null, vinCar: (r.services as { vinCar?: string } | null)?.vinCar ?? null,
     };
   });
@@ -92,8 +95,8 @@ export async function GET(req: NextRequest) {
     date, jobs, timeOff: off, holds,
     totals: {
       jobs: jobs.length,
-      booked: Math.round(jobs.reduce((s, j) => s + (j.total || 0), 0) * 100) / 100,
-      profit: Math.round(jobs.reduce((s, j) => s + (j.profit || 0), 0) * 100) / 100,
+      booked: money ? Math.round(jobs.reduce((s, j) => s + (j.total || 0), 0) * 100) / 100 : null,
+      profit: money ? Math.round(jobs.reduce((s, j) => s + (j.profit || 0), 0) * 100) / 100 : null,
     },
     bring: {
       oil: Object.entries(oil).map(([grade, litres]) => ({ grade, litres })),

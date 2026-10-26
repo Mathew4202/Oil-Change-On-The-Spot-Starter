@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import OwnerNav from "../OwnerNav";
+import { useRole } from "../RoleContext";
 import { matches } from "@/lib/os/customer-summary";
 
 const NAVY = "#0d1b3e", LINE = "#c8d0e0", MUTED = "#4a5878";
@@ -21,6 +22,7 @@ export const DUE_BADGE: Record<string, { text: (c: { nextDue: string | null; nex
 };
 
 export default function CustomersScreen() {
+  const { can } = useRole();
   const [all, setAll] = useState<C[] | null>(null); const [err, setErr] = useState("");
   const [q, setQ] = useState(""); const [filter, setFilter] = useState<Filter>("all"); const [sort, setSort] = useState<Sort>("name");
   useEffect(() => {
@@ -74,7 +76,7 @@ export default function CustomersScreen() {
             <span style={{ color: MUTED }}>{all ? `${shown.length} shown` : ""}</span>
             <label className="flex items-center gap-2 font-semibold">Sort
               <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="h-9 rounded-lg border px-2 bg-white" style={{ borderColor: LINE }}>
-                <option value="name">A to Z</option><option value="recent">Last visit</option><option value="spent">Most spent</option>
+                <option value="name">A to Z</option><option value="recent">Last visit</option>{can.money && <option value="spent">Most spent</option>}
               </select>
             </label>
           </div>
@@ -98,7 +100,7 @@ export default function CustomersScreen() {
                       <p className="text-sm truncate" style={{ color: MUTED }}>{c.cars[0] ?? "No car saved"}{c.cars.length > 1 ? ` +${c.cars.length - 1}` : ""}</p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="font-extrabold">{c.visits ? money(c.spent) : ""}</p>
+                      <p className="font-extrabold">{c.visits && can.money ? money(c.spent) : ""}</p>
                       <p className="text-xs" style={{ color: MUTED }}>{c.visits ? `${c.visits} visit${c.visits === 1 ? "" : "s"}` : "No visits yet"}</p>
                     </div>
                   </div>

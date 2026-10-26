@@ -19,7 +19,7 @@ const Finish = z.object({
   filterPart: z.string().max(20).nullable().optional(),
   inspection: z.record(z.string(), Check).optional(),
   extraLines: z.array(z.object({ label: z.string().max(80), amount: z.number().min(-2000).max(5000) })).max(10).optional(),
-  doneBy: z.enum(["both", "mathew", "harsh"]).optional(), notes: z.string().max(1000).optional(),
+  doneBy: z.string().regex(/^[a-z0-9_-]{2,30}$/).optional(), notes: z.string().max(1000).optional(),
   payMethod: z.enum(["card_terminal", "cash", "etransfer", "card_online"]).nullable().optional(),
   tip: z.number().min(0).max(1000).nullable().optional(),
   email: z.string().email().nullable().optional().or(z.literal("")), sendReceipt: z.boolean().optional(),

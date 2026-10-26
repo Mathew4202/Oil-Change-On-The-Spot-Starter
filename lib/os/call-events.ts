@@ -37,17 +37,14 @@ export function parseCallEvent(raw: unknown): CallEvent | null {
 
 export type Want = { date?: string | null; time?: string | null; part?: "morning" | "afternoon" | "evening" | null };
 
-/** Pick the open time that best matches what the caller asked for (slots are for one day, start times in Halifax "HH:MM"). */
+/** The open slot at the time the caller asked for (within 15 minutes: "3:15" can be the 3:00 slot). No time asked → null,
+ *  so we text them the booking link to pick one instead of guessing. Slots are for one day, start times in Halifax "HH:MM". */
 export function pickSlot<T extends { time: string }>(slots: T[], want: Want): T | null {
-  if (!slots.length) return null;
+  if (!slots.length || !want.time || !/^\d{1,2}:\d{2}$/.test(want.time)) return null;
   const min = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-  if (want.time && /^\d{1,2}:\d{2}$/.test(want.time)) {
-    const target = min(want.time);
-    const best = [...slots].sort((a, b) => Math.abs(min(a.time) - target) - Math.abs(min(b.time) - target))[0];
-    return Math.abs(min(best.time) - target) <= 90 ? best : null;
-  }
-  const range = want.part === "morning" ? [0, 720] : want.part === "afternoon" ? [720, 1020] : want.part === "evening" ? [1020, 1440] : [0, 1440];
-  return slots.find((s) => min(s.time) >= range[0] && min(s.time) < range[1]) ?? null;
+  const target = min(want.time);
+  const best = [...slots].sort((a, b) => Math.abs(min(a.time) - target) - Math.abs(min(b.time) - target))[0];
+  return Math.abs(min(best.time) - target) <= 15 ? best : null;
 }
 
 /** No-AI backup: pull the car, service and day out of a call summary or text with plain rules.

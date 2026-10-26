@@ -2,6 +2,7 @@
 // Money: profit for the week / month / year, HST to set aside, who still owes us, and the monthly bank statement check.
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import OwnerNav from "../OwnerNav";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878", GOOD = "#1d6b3a", BAD = "#9b1c1c";
@@ -42,7 +43,10 @@ export default function MoneyScreen() {
     <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl mx-auto">
       <header className="sticky top-0 z-10 text-white px-4 pt-[max(14px,env(safe-area-inset-top))] pb-3" style={{ background: NAVY }}>
         <p className="text-sm text-[#c9d3ea] font-semibold">Profit, HST and the bank</p>
-        <h1 className="text-[30px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>Money</h1>
+        <div className="flex items-end justify-between gap-2">
+          <h1 className="text-[30px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>Money</h1>
+          <Link href={"/owner/team" as Route} className="h-9 px-3 rounded-lg border border-[#3b4d7a] text-sm font-bold flex items-center no-underline text-white">Team logins</Link>
+        </div>
         <div className="mt-3 grid grid-cols-3 gap-1 bg-white/10 rounded-xl p-1" role="tablist" aria-label="Time period">
           {(["week", "month", "year"] as Kind[]).map((k) => (
             <button key={k} role="tab" aria-selected={kind === k} onClick={() => { setKind(k); setOffset(0); }}
@@ -74,8 +78,8 @@ export default function MoneyScreen() {
               <p className="text-sm" style={{ color: MUTED }}>
                 {s.jobs ? <>{s.jobs} job{s.jobs === 1 ? "" : "s"} · {money(s.avgJob)} average · {money(s.avgJobProfit)} left per job after oil and parts</> : "No jobs in this period yet."}
               </p>
-              {s.jobs > 0 && (s.doneBy.mathew > 0 || s.doneBy.harsh > 0) && (
-                <p className="text-sm" style={{ color: MUTED }}>Done by: {[["mathew", "Mathew"], ["harsh", "Harsh"], ["both", "both of you"]].filter(([k]) => s.doneBy[k]).map(([k, n]) => `${n} ${s.doneBy[k]}`).join(", ")}</p>
+              {s.jobs > 0 && Object.entries(s.doneBy).some(([k, v]) => k !== "both" && v > 0) && (
+                <p className="text-sm" style={{ color: MUTED }}>Done by: {Object.entries(s.doneBy).filter(([, v]) => v > 0).map(([k, v]) => `${k === "both" ? "both of you" : k[0].toUpperCase() + k.slice(1)} ${v}`).join(", ")}</p>
               )}
               <p className="text-xs" style={{ color: MUTED }}>All amounts before HST. Money out is everything spent: receipts, bank fees and lines added from the bank statement.</p>
             </section>

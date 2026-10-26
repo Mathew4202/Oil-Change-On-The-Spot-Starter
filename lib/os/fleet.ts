@@ -109,6 +109,20 @@ export async function saveVehicle(accountId: string, input: Record<string, unkno
   return r.ok ? { ok: true as const, id: r.data!.id, decoded: d } : { ok: false as const, error: "Couldn't save the vehicle" };
 }
 
+/** Many vehicles at once (from a photo of their list or of several VINs). A VIN already on the account is skipped. */
+export async function saveVehicles(accountId: string, rows: Record<string, unknown>[]) {
+  const have = await sbGet<{ vin: string | null }>(`vehicles?select=vin&fleet_account_id=eq.${enc(accountId)}&vin=not.is.null`);
+  const vins = new Set(have.map((h) => h.vin));
+  const saved: string[] = [], skipped: { row: number; reason: string }[] = [];
+  for (const [i, r] of rows.slice(0, 200).entries()) {
+    const vin = cleanVin(String(r.vin || ""));
+    if (vin && vins.has(vin)) { skipped.push({ row: i, reason: "already on the account" }); continue; }
+    const x = await saveVehicle(accountId, { unit_number: r.unit_number ?? r.unit, plate: r.plate, vin: vin || null, year: r.year, make: r.make, model: r.model, engine: r.engine, notes: r.notes });
+    if (x.ok) { saved.push(x.id); if (vin) vins.add(vin); } else skipped.push({ row: i, reason: x.error });
+  }
+  return { ok: true as const, saved: saved.length, skipped };
+}
+
 /** What we'd normally charge for this vehicle's oil change (before HST), so you can set a fleet price next to it. */
 export async function normalPrice(v: Pick<FleetVehicle, "year" | "make" | "model" | "engine">) {
   if (!v.year || !v.make || !v.model) return null;

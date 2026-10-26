@@ -1,7 +1,7 @@
 // Loads what the pricing engine needs, looks up unknown cars automatically, and returns a quote.
 import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
 import { sameCar } from "@/lib/os/car-match";
-import { claimLookup, finishLookup, lookupKey } from "@/lib/os/ai-budget";
+import { claimLookup, finishLookup, releaseLookup, forgetFailed, lookupKey } from "@/lib/os/ai-budget";
 import { euroOilKey, quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUNT, type VehicleClass, type Addon, type Quote, type JobType } from "@/lib/os/pricing-engine";
 
 // Customer price for each add-on part or top-up (settings can override; part prices get replaced by the parts lookup later)
@@ -61,10 +61,10 @@ function withParts(rows: Spec[]) {
 }
 
 /** Find this exact car (year/make/model). If we've never seen it, look it up once and save it. */
-export async function findSpecs(year: number, make: string, model: string, engine?: string | null) {
+export async function findSpecs(year: number, make: string, model: string, engine?: string | null, opts: { retry?: boolean } = {}) {
   const all = await specsFor(year, make, model);
   let rows = withParts(all);
-  let lookedUp = false;
+  let lookedUp = false, down = false;
   const ours = rows.filter((r) => r.source === "sheet" || r.source === "job_history" || r.verified);
   const needLookup = !rows.length || (engine && !rows.some((r) => engineMatches(engine, r.engine)));
   // we did this car but nobody wrote the filter down: get just the filter number online and keep it
@@ -75,9 +75,10 @@ export async function findSpecs(year: number, make: string, model: string, engin
     const engineOnly = !needFilter && rows.length > 0 && !!engine;
     const engTag = engine ? `eng${engine.match(/\d\.\d/)?.[0] ?? engine.toLowerCase().replace(/[^a-z0-9]/g, "")}${/hybrid/i.test(engine) ? "h" : ""}${/plug-?in/i.test(engine) ? "p" : ""}${/diesel/i.test(engine) ? "d" : ""}` : "";
     const key = lookupKey(year, make, model, needFilter ? "filter" : engineOnly ? engTag : "");
+    if (opts.retry) await forgetFailed(key);
     const go = (await claimLookup(key)) === "go";
-    const found = go ? await lookupOilSpec(year, make, model, engine).catch(() => null) : null;   // lookup down: fall back below, never break the quote
-    if (go) await finishLookup(key, !!found);
+    const found = go ? await lookupOilSpec(year, make, model, engine).catch(() => { down = true; return null; }) : null;   // lookup down: fall back below, never break the quote
+    if (go) await (down ? releaseLookup(key) : finishLookup(key, !!found));
     if (found) {
       lookedUp = true;
       for (const e of found.engines) {
@@ -111,7 +112,7 @@ export async function findSpecs(year: number, make: string, model: string, engin
   // our own record of this car beats an online lookup of it
   const mine = rows.filter((r) => r.source === "sheet" || r.source === "job_history");
   if (mine.length && (!engine || mine.some((r) => engineMatches(engine, r.engine)))) rows = mine;
-  return { rows, lookedUp };
+  return { rows, lookedUp, down };
 }
 
 export async function filterInStock(part: string | null | undefined): Promise<boolean> {

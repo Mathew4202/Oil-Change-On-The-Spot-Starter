@@ -1,7 +1,7 @@
 // HQ: calls waiting on us. GET → list · POST {id, action: "hold"|"link"|"done", start?}
 import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
-import { openCalls, holdFromCall, linkFromCall, doneCall, replyToText } from "@/lib/os/calls";
+import { openCalls, holdFromCall, linkFromCall, doneCall, replyToText, wantedText } from "@/lib/os/calls";
 import { when } from "@/lib/os/customer-texts";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export async function GET() {
   if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
   const calls = await openCalls();
   return NextResponse.json({ calls: calls.map((c) => ({ id: c.id, phone: c.phone, status: c.status, at: c.started_at ?? c.created_at, summary: c.summary, extract: c.extract,
-    suggested: c.suggested_start, suggestedText: c.suggested_start ? when(c.suggested_start) : null, customerId: c.customer_id, channel: c.channel ?? "call", texts: c.texts ?? [] })) });
+    suggested: c.suggested_start, suggestedText: c.suggested_start ? when(c.suggested_start) : null, wanted: wantedText(c.extract), customerId: c.customer_id, channel: c.channel ?? "call", texts: c.texts ?? [] })) });
 }
 
 export async function POST(req: NextRequest) {

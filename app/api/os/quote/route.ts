@@ -2,7 +2,7 @@
 // GET /api/os/quote?year=2019&make=Honda&model=Civic&engine=2.0L&addons=wipers,cabin_filter&own=both&km=12
 import { NextRequest, NextResponse } from "next/server";
 import { buildQuote, filterInStock } from "@/lib/os/quote-service";
-import { currentOwner } from "@/lib/os/auth";
+import { currentOwner, isOwner } from "@/lib/os/auth";
 import { seasonWindows } from "@/lib/os/calendar";
 import { seasonFor } from "@/lib/os/seasons";
 import { halifaxDate } from "@/lib/os/slots";
@@ -27,7 +27,8 @@ export async function GET(req: NextRequest) {
       inSeason: !!seasonFor(/^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date")! : halifaxDate(new Date()), await seasonWindows()),
       job: (["seasonal", "parts", "diagnostic", "tires", "rotation"].includes(q.get("job") || "") ? q.get("job") : "oil_change") as "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires" | "rotation",
     });
-    const owner = (q.get("key") && q.get("key") === process.env.ADMIN_SECRET) || !!currentOwner();
+    const owner = (q.get("key") && q.get("key") === process.env.ADMIN_SECRET) || !!currentOwner();   // any HQ login: part numbers and notes
+    const boss = (q.get("key") && q.get("key") === process.env.ADMIN_SECRET) || isOwner();            // owners only: our cost and profit
     const { cost, profit, raised, needsReview, ...publicQuote } = quote;
     return NextResponse.json({
       vehicle: { year, make, model, class: vehicleClass },
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
       engines,          // more than one engine: the booking page asks which one
       lookedUp,         // true the first time we see this car
       ...publicQuote,
-            ...(owner ? { cost, profit, raised, needsReview } : {}),
+            ...(owner ? { needsReview } : {}), ...(boss ? { cost, profit, raised } : {}),
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

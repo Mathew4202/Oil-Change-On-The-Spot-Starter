@@ -63,7 +63,7 @@ export function summarize(jobs: JobRow[], expenses: ExpRow[]) {
   const cats = new Map<string, number>();
   for (const e of expenses) { const g = groupOf(e.category, e.description); cats.set(g, r2((cats.get(g) ?? 0) + beforeHst(e))); }
   const people = { mathew: 0, harsh: 0, both: 0 } as Record<string, number>;
-  for (const j of jobs) { const k = (j.done_by || "both").toLowerCase(); people[k in people ? k : "both"]++; }
+  for (const j of jobs) { const k = (j.done_by || "both").toLowerCase(); people[k] = (people[k] ?? 0) + 1; }   // staff logins count under their own name
   return {
     jobs: jobs.length, sales, hstCollected, spending, hstPaid,
     profit: r2(sales - spending),
