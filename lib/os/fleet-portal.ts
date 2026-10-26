@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { sbGet, sbPatch, enc } from "@/lib/os/db";
 import { accountDetail, bookFleetVisit, saveVehicle, visitMinutes } from "@/lib/os/fleet";
 import { dayAvailability } from "@/lib/os/calendar";
+import { checksFrom } from "@/lib/os/fleet-math";
 import { halifaxDate } from "@/lib/os/slots";
 import { sendSms, template, fill } from "@/lib/os/sms";
 import { siteUrl, when as whenText } from "@/lib/os/customer-texts";
@@ -51,10 +52,13 @@ export async function portalView(accountId: string) {
   return {
     account: { name: a.business_name, contact: a.contact_name, address: a.address, billing: a.billing, terms: a.terms_days, every: a.service_every_months },
     vehicles: d.vehicles.filter((v) => v.active !== false).map((v) => ({ id: v.id, unit: v.unit_number, car: [v.year, v.make, v.model].filter(Boolean).join(" "), engine: v.engine,
-      plate: v.plate, vin: v.vin, price: v.fleet_price, lastService: v.lastService, lastKm: v.lastKm, booked: v.booked, due: v.due })),
+      plate: v.plate, vin: v.vin, price: v.fleet_price, lastService: v.lastService, lastKm: v.lastKm, booked: v.booked, due: v.due,
+      // what we found on the last visit (Now / Soon), so the fleet knows before it becomes a breakdown
+      checks: checksFrom(d.history.find((j) => j.vehicle_id === v.id && j.service !== "cancellation_fee")?.inspection ?? null) })),
     upcoming: upcoming.map((b) => ({ id: b.id, at: b.starts_at, vehicle: name(b.vehicle_id) })),
     history: d.history.filter((j) => j.service !== "cancellation_fee").map((j) => ({ date: halifaxDate(new Date(j.done_at)), vehicle: name(j.vehicle_id) ?? j.vehicle_text, km: j.km,
-      work: (j.lines ?? []).filter((l) => !/^Travel/.test(l.label)).map((l) => l.label).join(", ") || j.service, total: Number(j.total), invoiced: !!j.invoice_id })),
+      work: (j.lines ?? []).filter((l) => !/^Travel/.test(l.label)).map((l) => l.label).join(", ") || j.service, total: Number(j.total), invoiced: !!j.invoice_id,
+      checks: checksFrom(j.inspection ?? null) })),
     invoices: d.invoices.filter((i) => i.status !== "void").map((i) => ({ no: i.invoice_no, link: `/invoice/${i.token}`, issued: i.issued_at.slice(0, 10), due: i.due_at, total: Number(i.total), status: i.status,
       overdue: i.status === "open" && !!i.due_at && i.due_at < halifaxDate(new Date()) })),
     owing: Math.round(d.invoices.filter((i) => i.status === "open").reduce((t, i) => t + Number(i.total), 0) * 100) / 100,

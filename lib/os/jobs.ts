@@ -1,10 +1,12 @@
 // The job screen: start, finish (record the work), take payment, update stock, email the receipt.
+import { checksFrom } from "@/lib/os/fleet-math";
 import crypto from "crypto";
 import { Resend } from "resend";
 import { sbGet, sbInsert, sbPatch, sbRpc, enc } from "@/lib/os/db";
 import { oilCostPerL } from "@/lib/os/pricing-engine";
 import { receiptHtml, receiptText, type ReceiptData } from "@/lib/os/receipt";
 import { sendSms, template, fill, reviewLink } from "@/lib/os/sms";
+import { emailFrom } from "@/lib/os/email-from";
 
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const TZ = "America/Halifax";
@@ -177,7 +179,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
   const [j] = await sbGet<{ id: string; receipt_no: number; receipt_token: string; done_at: string; lines: { label: string; amount: number }[];
     subtotal: number; hst: number; total: number; payment_method: string | null; km: number | null; next_due_km: number | null; next_due_date: string | null;
     oil_grade: string | null; oil_litres: number | null; vehicle_text: string | null; customer_id: string | null; booking_id: string | null;
-    filter_part: string | null; vehicle_id: string | null; review_requested: boolean | null; tip: number | null }>(`jobs?select=*&${where}&limit=1`);
+    filter_part: string | null; vehicle_id: string | null; review_requested: boolean | null; tip: number | null; inspection: Record<string, { status?: string }> | null }>(`jobs?select=*&${where}&limit=1`);
   if (!j) return null;
   const [c] = j.customer_id ? await sbGet<{ first_name: string | null; last_name: string | null; email: string | null; review_asked_at: string | null }>(
     `customers?select=first_name,last_name,email,review_asked_at&id=eq.${j.customer_id}`) : [];
@@ -194,6 +196,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       oil: j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${spec ? ` (meets ${spec})` : ""}${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
       filter: j.filter_part ? `${fp?.brand || "NAPA ProFormer"} ${j.filter_part}` : null,
       vin: v?.vin ?? null,
+      checks: checksFrom(j.inspection),
       receiptUrl: `${siteUrl()}/receipt/${j.receipt_token}`,
       logoUrl: `${siteUrl()}/email-logo.png`,
       reviewUrl: j.review_requested ? await reviewLink() : null,
@@ -211,7 +214,7 @@ export async function sendReceipt(jobId: string, emailOverride: string | null): 
   const data = r.data;
   try {
     await new Resend(process.env.RESEND_API_KEY).emails.send({
-      from: process.env.EMAIL_FROM || "Oil Change On The Spot <onboarding@resend.dev>",
+      from: emailFrom(),
       to, replyTo: process.env.NOTIFY_TO || process.env.EMAIL_TO || undefined,
       subject: `Your receipt from Oil Change On The Spot (#${data.receiptNo})`,
       html: receiptHtml(data), text: receiptText(data),

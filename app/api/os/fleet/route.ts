@@ -6,6 +6,7 @@ import { sbInsert } from "@/lib/os/db";
 import { e164 } from "@/lib/os/booking";
 import { pushToOwners } from "@/lib/os/push";
 import { FLEET_SERVICES } from "@/lib/site/fleet";
+import { emailFrom } from "@/lib/os/email-from";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     const lines = [`Company: ${b.company}`, `Contact: ${b.contactName}${b.role ? `, ${b.role}` : ""}`, `Phone: ${b.phone}`, `Email: ${b.email || "-"}`,
       `Vehicles: ${b.vehicles ?? "-"}${b.vehicleTypes ? ` (${b.vehicleTypes})` : ""}`, `Services: ${names.join(", ") || "-"}`, `How often: ${b.howOften || "-"}`,
       `Where: ${b.address || "-"}`, `Notes: ${b.notes || "-"}`];
-    await new Resend(process.env.RESEND_API_KEY).emails.send({ from: process.env.EMAIL_FROM || "Oil Change On The Spot <onboarding@resend.dev>", to, replyTo: b.email || undefined,
+    await new Resend(process.env.RESEND_API_KEY).emails.send({ from: emailFrom(), to, replyTo: b.email || undefined,
       subject: title, text: lines.join("\n") }).catch(() => null);
   }
   if (!row.ok) return NextResponse.json({ ok: true, saved: false });   // still told you by push/email

@@ -7,12 +7,13 @@ import EnginePicker from "@/components/EnginePicker";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878";
 type Due = { state: "ok" | "soon" | "due" | "booked" | "new"; date: string | null };
+type Checks = { now: string[]; soon: string[]; ok: string[] } | null;
 type Vehicle = { id: string; unit: string | null; car: string; engine: string | null; plate: string | null; vin: string | null; price: number | null;
-  lastService: string | null; lastKm: number | null; booked: string | null; due: Due };
+  lastService: string | null; lastKm: number | null; booked: string | null; due: Due; checks?: Checks };
 type Data = {
   account: { name: string; contact: string | null; address: string | null; billing: string; terms: number; every: number };
   vehicles: Vehicle[]; upcoming: { id: string; at: string; vehicle: string | null }[];
-  history: { date: string; vehicle: string | null; km: number | null; work: string | null; total: number; invoiced: boolean }[];
+  history: { date: string; vehicle: string | null; km: number | null; work: string | null; total: number; invoiced: boolean; checks?: Checks }[];
   invoices: { no: number; link: string; issued: string; due: string | null; total: number; status: string; overdue: boolean }[]; owing: number; error?: string;
 };
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -115,6 +116,7 @@ export default function FleetPortal({ token }: { token: string }) {
                     <span className="block font-bold">{name(v)}</span>
                     <span className="block text-sm" style={{ color: MUTED }}>{[v.plate, v.lastService ? `last done ${day(v.lastService)}${v.lastKm ? ` at ${v.lastKm.toLocaleString()} km` : ""}` : null].filter(Boolean).join(" · ")}</span>
                     {s.text(v) && <span className="inline-block mt-1 text-[12px] font-bold rounded-full px-2 py-0.5" style={{ background: s.bg, color: s.fg }}>{s.text(v)}</span>}
+                    <CheckLine c={v.checks} />
                   </span>
                   {v.price != null && <span className="text-sm font-bold whitespace-nowrap text-right">{money(v.price)}<span className="block text-[11px] font-semibold" style={{ color: MUTED }}>+ HST</span></span>}
                 </label>
@@ -174,7 +176,7 @@ export default function FleetPortal({ token }: { token: string }) {
             </a>)) : <p style={{ color: MUTED }}>No invoices yet.</p>)
           : (d.history.length ? d.history.map((h, k) => (
             <div key={k} className="flex justify-between gap-3 border-b pb-2 last:border-0" style={{ borderColor: LINE }}>
-              <span className="min-w-0"><span className="font-bold">{day(h.date)}</span> · {h.vehicle}<span className="block text-sm" style={{ color: MUTED }}>{[h.work, h.km ? `${h.km.toLocaleString()} km` : null].filter(Boolean).join(" · ")}</span></span>
+              <span className="min-w-0"><span className="font-bold">{day(h.date)}</span> · {h.vehicle}<span className="block text-sm" style={{ color: MUTED }}>{[h.work, h.km ? `${h.km.toLocaleString()} km` : null].filter(Boolean).join(" · ")}</span><CheckLine c={h.checks} /></span>
               <span className="font-bold whitespace-nowrap">{money(h.total)}</span>
             </div>)) : <p style={{ color: MUTED }}>Nothing yet.</p>)}
         </section>
@@ -182,5 +184,16 @@ export default function FleetPortal({ token }: { token: string }) {
         <p className="text-center text-sm" style={{ color: MUTED }}>Questions? Call or text <a className="underline font-semibold" href={PHONE_TEL}>{PHONE}</a>. Keep this link private, it works like a key to your account.</p>
       </main>
     </div>
+  );
+}
+
+/** What we found on the last visit: needs doing now, coming up soon (everything else checked OK). */
+function CheckLine({ c }: { c?: Checks }) {
+  if (!c || (!c.now.length && !c.soon.length)) return c?.ok.length ? <span className="block text-[12px] mt-1" style={{ color: "#1d6b3a" }}>Last check: all good</span> : null;
+  return (
+    <span className="block text-[13px] mt-1 leading-snug">
+      {c.now.length > 0 && <span className="block font-semibold" style={{ color: "#9b1c1c" }}>Needs doing now: {c.now.join(", ")}</span>}
+      {c.soon.length > 0 && <span className="block font-semibold" style={{ color: "#8a5a00" }}>Coming up soon: {c.soon.join(", ")}</span>}
+    </span>
   );
 }

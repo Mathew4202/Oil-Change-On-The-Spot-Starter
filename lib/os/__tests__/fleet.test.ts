@@ -18,3 +18,10 @@ test("due dates", () => {
   assert.equal(dueState("2026-09-01", 4, "2026-11-01", false).state, "ok");     // due Jan 1
   assert.equal(dueState("2026-06-01", 4, "2026-11-01", true).state, "booked");
 });
+
+test("vehicle check summary: now, soon, ok", async () => {
+  const { checksFrom } = await import("../fleet-math.ts");
+  const c = checksFrom({ wipers: { status: "now" }, cabin_filter: { status: "soon" }, coolant: { status: "ok" } })!;
+  assert.deepEqual(c, { now: ["Wiper blades"], soon: ["Cabin air filter"], ok: ["Coolant"] });
+  assert.equal(checksFrom(null), null);
+});

@@ -16,6 +16,7 @@ export type ReceiptData = {
   paidWith?: string | null; km?: number | null; nextDueKm?: number | null; nextDueDate?: string | null;
   oil?: string | null; filter?: string | null; vin?: string | null;
   reviewUrl?: string | null; receiptUrl?: string | null; logoUrl?: string | null;
+  checks?: { now: string[]; soon: string[]; ok: string[] } | null;   // the OK / Soon / Now taps from the job
 };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -27,7 +28,7 @@ export const METHOD_NAMES: Record<string, string> = {
 export function receiptHtml(r: ReceiptData): string {
   const row = (a: string, b: string, bold = false) =>
     `<tr><td style="padding:6px 0;${bold ? "font-weight:700;font-size:17px;" : ""}">${a}</td><td style="padding:6px 0;text-align:right;${bold ? "font-weight:700;font-size:17px;" : ""}">${b}</td></tr>`;
-  return `<!doctype html><html><body style="margin:0;background:#eef1f6;font-family:Arial,Helvetica,sans-serif;color:#0d1b3e">
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Receipt #${r.receiptNo}</title></head><body style="margin:0;background:#eef1f6;font-family:Arial,Helvetica,sans-serif;color:#0d1b3e">
 <div style="max-width:560px;margin:0 auto;padding:16px">
  <div style="background:#fff;border-radius:14px 14px 0 0;padding:18px 20px;border-bottom:4px solid #f2b01e">
   <table style="width:100%;border-collapse:collapse"><tr>
@@ -58,6 +59,13 @@ export function receiptHtml(r: ReceiptData): string {
    ${r.filter ? `<div><strong>Oil filter:</strong> ${esc(r.filter)}</div>` : ""}
    ${r.nextDueKm || r.nextDueDate ? `<div><strong>Next oil change:</strong> ${r.nextDueKm ? `${r.nextDueKm.toLocaleString("en-CA")} km` : ""}${r.nextDueKm && r.nextDueDate ? " or " : ""}${r.nextDueDate ? esc(r.nextDueDate) : ""}, whichever comes first</div>` : ""}
   </div>` : ""}
+  ${r.checks && (r.checks.now.length || r.checks.soon.length || r.checks.ok.length) ? `<div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6;border:1px solid #c8d0e0">
+   <div style="font-weight:700;margin-bottom:4px">What we checked</div>
+   ${r.checks.now.length ? `<div style="color:#9b1c1c"><strong>Needs doing now:</strong> ${esc(r.checks.now.join(", "))}</div>` : ""}
+   ${r.checks.soon.length ? `<div style="color:#8a5a00"><strong>Coming up soon:</strong> ${esc(r.checks.soon.join(", "))}</div>` : ""}
+   ${r.checks.ok.length ? `<div style="color:#1d6b3a"><strong>Good:</strong> ${esc(r.checks.ok.join(", "))}</div>` : ""}
+   ${r.checks.now.length || r.checks.soon.length ? `<div style="margin-top:6px;color:#4a5878">We can take care of these on your next visit. Reply or text ${esc(BUSINESS.phone)} and we'll add them.</div>` : ""}
+  </div>` : ""}
   ${r.reviewUrl ? `<div style="border:2px solid #f2b01e;border-radius:10px;padding:14px;margin-top:16px;font-size:15px;line-height:1.5">
    Happy with the service? A quick Google review helps other people in HRM find us and supports our small business.<br>
    <a href="${esc(r.reviewUrl)}" style="display:inline-block;margin-top:10px;background:#f2b01e;color:#0d1b3e;font-weight:700;text-decoration:none;padding:10px 16px;border-radius:8px">Leave a review</a>
@@ -76,6 +84,7 @@ export function receiptText(r: ReceiptData): string {
     r.paidWith ? `Paid: ${METHOD_NAMES[r.paidWith] || r.paidWith}, ${money(r.total + (r.tip || 0))}` : "",
     r.vin ? `VIN: ${r.vin}` : "", r.km ? `Odometer: ${r.km} km` : "", r.oil ? `Oil: ${r.oil}` : "", r.filter ? `Oil filter: ${r.filter}` : "",
     r.nextDueKm ? `Next oil change: ${r.nextDueKm} km${r.nextDueDate ? ` or ${r.nextDueDate}` : ""}` : "",
+    r.checks?.now.length ? `Needs doing now: ${r.checks.now.join(", ")}` : "", r.checks?.soon.length ? `Coming up soon: ${r.checks.soon.join(", ")}` : "",
     "", `${BUSINESS.name}, HST # ${BUSINESS.hst}, ${BUSINESS.phone}`,
   ].filter((x) => x !== "").join("\n");
 }

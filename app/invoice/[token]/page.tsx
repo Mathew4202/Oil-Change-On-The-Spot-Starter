@@ -48,7 +48,11 @@ export default async function InvoicePage({ params }: { params: { token: string 
               <tr key={n} className="border-b border-[#dde3ee] align-top">
                 <td className="py-2 pr-2 whitespace-nowrap">{nice(l.date)}</td>
                 <td className="py-2 pr-2">{l.unit ? <strong>Unit {l.unit}<br /></strong> : null}{l.vehicle}{l.plate ? <><br />{l.plate}</> : null}{l.vin ? <><br /><span className="font-mono text-[12px]">{l.vin}</span></> : null}{l.km ? <><br />{l.km.toLocaleString()} km</> : null}</td>
-                <td className="py-2 pr-2">{l.items.map((x, k) => <div key={k}>{x.label}{l.items.length > 1 ? ` (${money(x.amount)})` : ""}</div>)}{l.receiptNo ? <div className="text-[12px] text-[#4a5878]">Job #{l.receiptNo}</div> : null}</td>
+                <td className="py-2 pr-2">{l.items.map((x, k) => <div key={k}>{x.label}{l.items.length > 1 ? ` (${money(x.amount)})` : ""}</div>)}{l.receiptNo ? <div className="text-[12px] text-[#4a5878]">Job #{l.receiptNo}</div> : null}
+                  {l.checks && (l.checks.now.length > 0 || l.checks.soon.length > 0) && <div className="text-[12px] mt-1 leading-snug">
+                    {l.checks.now.length > 0 && <div className="font-semibold text-[#9b1c1c]">Needs doing now: {l.checks.now.join(", ")}</div>}
+                    {l.checks.soon.length > 0 && <div className="font-semibold text-[#8a5a00]">Coming up soon: {l.checks.soon.join(", ")}</div>}
+                  </div>}</td>
                 <td className="py-2 text-right whitespace-nowrap">{money(l.amount)}</td>
               </tr>
             ))}

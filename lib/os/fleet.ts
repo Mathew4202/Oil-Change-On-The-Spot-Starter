@@ -13,6 +13,7 @@ import { decodeVin } from "@/lib/os/vin-photo";
 import { vinOk, cleanVin } from "@/lib/os/vin";
 import { halifaxDate } from "@/lib/os/slots";
 import { invoiceLines, invoiceTotals, dueState, type InvoiceLine } from "@/lib/os/fleet-math";
+import { emailFrom } from "@/lib/os/email-from";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -43,7 +44,7 @@ export async function listAccounts() {
   return { accounts: out, requests };
 }
 
-type JobRow = { id: string; done_at: string; km: number | null; service: string | null; lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; total: number;
+type JobRow = { id: string; done_at: string; km: number | null; service: string | null; inspection?: Record<string, { status?: string }> | null; lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; total: number;
   vehicle_id: string | null; vehicle_text: string | null; booking_id: string | null; invoice_id: string | null; receipt_no: number | null };
 
 export async function accountDetail(id: string) {
@@ -51,7 +52,7 @@ export async function accountDetail(id: string) {
   if (!a) return null;
   const vehicles = await sbGet<FleetVehicle>(`vehicles?select=${VEH}&fleet_account_id=eq.${a.id}&order=unit_number.asc.nullslast,year.desc`);
   const ids = vehicles.map((v) => v.id);
-  const jobs = ids.length ? await sbGet<JobRow>(`jobs?select=id,done_at,km,service,lines,subtotal,hst,total,vehicle_id,vehicle_text,booking_id,invoice_id,receipt_no&vehicle_id=in.(${ids.join(",")})&order=done_at.desc&limit=500`) : [];
+  const jobs = ids.length ? await sbGet<JobRow>(`jobs?select=id,done_at,km,service,lines,subtotal,hst,total,vehicle_id,vehicle_text,booking_id,invoice_id,receipt_no,inspection&vehicle_id=in.(${ids.join(",")})&order=done_at.desc&limit=500`) : [];
   const upcoming = ids.length ? await sbGet<{ id: string; starts_at: string; vehicle_id: string; status: string }>(
     `bookings?select=id,starts_at,vehicle_id,status&vehicle_id=in.(${ids.join(",")})&status=in.(confirmed,requested,in_progress)&starts_at=gte.${new Date(Date.now() - 86400000).toISOString()}&order=starts_at`) : [];
   const invoices = await sbGet<{ id: string; invoice_no: number; token: string; period_start: string | null; period_end: string | null; issued_at: string; due_at: string | null;
@@ -216,7 +217,7 @@ export async function sendInvoice(invoiceId: string, to?: string | null) {
   const link = `${siteUrl()}/invoice/${inv.token}`;
   const text = `Hi${a?.contact_name ? ` ${a.contact_name.split(" ")[0]}` : ""},\n\nHere is invoice #${inv.invoice_no} from Oil Change On The Spot for $${Number(inv.total).toFixed(2)} (HST included)${inv.due_at ? `, due ${inv.due_at}` : ""}.\n\nView, print or pay it by card here: ${link}\nOr pay by e-transfer to ${process.env.ETRANSFER_EMAIL || "oilchangeonthespot@gmail.com"} with the invoice number in the message.\n\nThank you,\nMathew\nOil Change On The Spot`;
   try {
-    await new Resend(process.env.RESEND_API_KEY).emails.send({ from: process.env.EMAIL_FROM || "Oil Change On The Spot <onboarding@resend.dev>", to: email,
+    await new Resend(process.env.RESEND_API_KEY).emails.send({ from: emailFrom(), to: email,
       replyTo: process.env.NOTIFY_TO || process.env.EMAIL_TO || undefined, subject: `Invoice #${inv.invoice_no} from Oil Change On The Spot`, text });
   } catch (e) { return { sent: false, reason: String(e).slice(0, 120) }; }
   await sbPatch("invoices", `id=eq.${inv.id}`, { sent_at: new Date().toISOString(), sent_to: email });
