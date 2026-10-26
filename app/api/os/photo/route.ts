@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { storeBookingPhoto, readVin, decodeVin } from "@/lib/os/vin-photo";
 import { cleanVin, vinOk } from "@/lib/os/vin";
+import { currentOwner } from "@/lib/os/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -9,7 +10,7 @@ export const maxDuration = 30;
 const hits = new Map<string, number[]>();
 const tooMany = (ip: string) => {
   const now = Date.now(), list = (hits.get(ip) ?? []).filter((t) => now - t < 60 * 60_000);
-  list.push(now); hits.set(ip, list); return list.length > 10;
+  list.push(now); hits.set(ip, list); return !currentOwner() && list.length > 30;   // owners adding a fleet aren't limited
 };
 
 export async function POST(req: NextRequest) {

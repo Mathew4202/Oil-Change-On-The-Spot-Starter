@@ -9,7 +9,7 @@ export type VinResult = { photo: string | null; vin: string | null; engineL: str
 export const decodedName = (d: Decoded | null | undefined) =>
   d ? [d.year, d.make, d.model, d.engineL ? `${d.engineL}L` : null, /diesel/i.test(d.fuel || "") ? "diesel" : null].filter(Boolean).join(" ") : "";
 
-async function shrink(file: File): Promise<string> {
+export async function shrink(file: File): Promise<string> {
   const img = await createImageBitmap(file).catch(async () => {
     const url = URL.createObjectURL(file);
     const el = new Image(); el.src = url; await el.decode(); return el as unknown as ImageBitmap;

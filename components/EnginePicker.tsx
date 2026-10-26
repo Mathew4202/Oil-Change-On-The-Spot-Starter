@@ -27,7 +27,12 @@ export default function EnginePicker({ year, make, model, value, onChange, label
           const list: string[] = d.engines || [];
           setEngines(list); setLoading(false);
           if (list.length === 1 && !value) onChange(list[0]);
-          if (value && value !== "unsure" && list.length && !list.includes(value)) setTyping(true);   // a saved engine that isn't in the list
+          if (value && value !== "unsure" && list.length && !list.includes(value)) {
+            // "2.0L" from a VIN or an old record → the list's "2.0L 4-cyl" when only one engine that size fits
+            const size = value.match(/\d\.\d/)?.[0];
+            const same = size ? list.filter((e) => e.includes(size) && /hybrid/i.test(e) === /hybrid/i.test(value)) : [];
+            if (same.length === 1) onChange(same[0]); else setTyping(true);
+          }
         });
     }, 250);
     return () => { live = false; clearTimeout(t); };

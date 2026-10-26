@@ -87,7 +87,7 @@ export async function portalBook(accountId: string, vehicleIds: string[], startI
 
 /** The fleet adds a vehicle themselves (a VIN fills in the rest). We get a buzz so we can set its price. */
 export async function portalAddVehicle(accountId: string, input: Record<string, unknown>) {
-  const r = await saveVehicle(accountId, { unit_number: input.unit_number, vin: input.vin, plate: input.plate, year: input.year, make: input.make, model: input.model });
+  const r = await saveVehicle(accountId, { unit_number: input.unit_number, vin: input.vin, plate: input.plate, year: input.year, make: input.make, model: input.model, engine: input.engine });
   if (r.ok) {
     const d = await accountDetail(accountId);
     await Promise.race([pushToOwners({ title: `${d?.account.business_name ?? "A fleet"} added a vehicle`, body: "Set its fleet price on the Fleets screen.", url: `/owner/fleets/${accountId}`, tag: r.id }).catch(() => null),

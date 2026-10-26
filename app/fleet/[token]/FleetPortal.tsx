@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { PHONE, PHONE_TEL } from "@/lib/os/business";
+import VinSnap from "@/components/VinSnap";
+import CarPicker from "@/components/CarPicker";
+import EnginePicker from "@/components/EnginePicker";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878";
 type Due = { state: "ok" | "soon" | "due" | "booked" | "new"; date: string | null };
@@ -30,7 +33,7 @@ export default function FleetPortal({ token }: { token: string }) {
   const [pick, setPick] = useState<string[]>([]);
   const [date, setDate] = useState(todayHfx()); const [slots, setSlots] = useState<{ time: string; label: string; start: string }[] | null>(null); const [start, setStart] = useState("");
   const [note, setNote] = useState(""); const [busy, setBusy] = useState(false); const [bookErr, setBookErr] = useState("");
-  const [adding, setAdding] = useState(false); const [nv, setNv] = useState({ unit_number: "", vin: "", plate: "", year: "", make: "", model: "" }); const [addErr, setAddErr] = useState("");
+  const [adding, setAdding] = useState(false); const [nv, setNv] = useState({ unit_number: "", vin: "", plate: "", year: "", make: "", model: "", engine: "" }); const [addErr, setAddErr] = useState("");
   const [tab, setTab] = useState<"history" | "invoices">("invoices");
 
   const load = () => fetch(`/api/os/fleet-portal?t=${encodeURIComponent(token)}`, { cache: "no-store" }).then((r) => r.json())
@@ -61,7 +64,7 @@ export default function FleetPortal({ token }: { token: string }) {
     const r = await fetch("/api/os/fleet-portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, action: "vehicle", vehicle: nv }) });
     const j = await r.json().catch(() => ({})); setBusy(false);
     if (!r.ok || !j.ok) return setAddErr(j.error || "Couldn't add it.");
-    setAdding(false); setNv({ unit_number: "", vin: "", plate: "", year: "", make: "", model: "" }); setMsg("Vehicle added. We'll set its price and it's ready to book."); load();
+    setAdding(false); setNv({ unit_number: "", vin: "", plate: "", year: "", make: "", model: "", engine: "" }); setMsg("Vehicle added. We'll set its price and it's ready to book."); load();
   }
 
   const field = "h-12 rounded-xl border px-3 text-[16px] w-full bg-white";
@@ -144,19 +147,14 @@ export default function FleetPortal({ token }: { token: string }) {
             {!adding && <button onClick={() => setAdding(true)} className="h-10 px-4 rounded-full border font-bold" style={{ borderColor: NAVY }}>+ Add</button>}</div>
           {adding && (
             <div className="flex flex-col gap-2">
-              <p className="text-sm" style={{ color: MUTED }}>The VIN is enough, we read the year, make and model from it.</p>
               <div className="grid grid-cols-2 gap-2">
                 <input value={nv.unit_number} onChange={(e) => setNv({ ...nv, unit_number: e.target.value })} placeholder="Unit #" className={field} style={{ borderColor: LINE }} />
-                <input value={nv.plate} onChange={(e) => setNv({ ...nv, plate: e.target.value })} placeholder="Plate" className={field} style={{ borderColor: LINE }} />
+                <input value={nv.plate} onChange={(e) => setNv({ ...nv, plate: e.target.value.toUpperCase() })} placeholder="Plate" className={field} style={{ borderColor: LINE }} />
               </div>
-              <input value={nv.vin} onChange={(e) => setNv({ ...nv, vin: e.target.value.toUpperCase() })} placeholder="VIN (17 characters)" maxLength={17} className={`${field} font-mono`} style={{ borderColor: LINE }} />
-              <details><summary className="text-sm font-semibold cursor-pointer">No VIN handy?</summary>
-                <div className="grid grid-cols-3 gap-2 mt-2">
-                  <input value={nv.year} onChange={(e) => setNv({ ...nv, year: e.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="Year" inputMode="numeric" className={field} style={{ borderColor: LINE }} />
-                  <input value={nv.make} onChange={(e) => setNv({ ...nv, make: e.target.value })} placeholder="Make" className={field} style={{ borderColor: LINE }} />
-                  <input value={nv.model} onChange={(e) => setNv({ ...nv, model: e.target.value })} placeholder="Model" className={field} style={{ borderColor: LINE }} />
-                </div>
-              </details>
+              <VinSnap vin={nv.vin} onVin={(v) => setNv((x) => ({ ...x, vin: v }))}
+                onDecoded={(d, v) => setNv((x) => ({ ...x, vin: v, year: d.year ? String(d.year) : x.year, make: d.make ?? x.make, model: d.model ?? x.model, engine: d.engineL ? `${d.engineL}L` : x.engine }))} />
+              <CarPicker year={nv.year} make={nv.make} model={nv.model} onChange={(c) => setNv((x) => ({ ...x, ...c }))} />
+              <EnginePicker year={nv.year} make={nv.make} model={nv.model} value={nv.engine} onChange={(e) => setNv((x) => ({ ...x, engine: e === "unsure" ? "" : e }))} />
               {addErr && <p className="text-sm font-semibold text-[#b3261e]" role="alert">{addErr}</p>}
               <div className="flex gap-2"><button onClick={addVehicle} disabled={busy} className="h-12 flex-1 rounded-xl font-bold text-white disabled:opacity-60" style={{ background: NAVY }}>{busy ? "Adding…" : "Add vehicle"}</button>
                 <button onClick={() => setAdding(false)} className="h-12 px-4 rounded-xl border font-bold" style={{ borderColor: LINE }}>Cancel</button></div>

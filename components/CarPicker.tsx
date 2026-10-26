@@ -20,14 +20,23 @@ export default function CarPicker({ year, make, model, onChange }: {
     if (makesCache) return;
     fetch("/api/makes").then((r) => r.json()).then((d) => { makesCache = d.makes || []; setMakes(makesCache!); }).catch(() => {});
   }, []);
-  // a make we don't list (e.g. typed before, or from an old record): show it as typed
-  useEffect(() => { if (make && makes.length && !makes.some((m) => m.toLowerCase() === make.toLowerCase())) setTypeMake(true); }, [make, makes]);
+  // a make we don't list (e.g. typed before, or from an old record): show it as typed. Same make spelled differently ("FORD"): use the list's spelling.
+  useEffect(() => {
+    if (!make || !makes.length) return;
+    const hit = makes.find((m) => m.toLowerCase() === make.toLowerCase());
+    if (!hit) setTypeMake(true); else if (hit !== make) onChange({ year, make: hit, model });
+  }, [make, makes]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setModels([]); if (!year || !make || typeMake) return;
     setLoading(true);
     fetch(`/api/models?make=${encodeURIComponent(make)}&year=${year}`).then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {}).finally(() => setLoading(false));
   }, [year, make, typeMake]);
-  useEffect(() => { if (model && models.length && !models.some((m) => m.toLowerCase() === model.toLowerCase())) setTypeModel(true); }, [model, models]);
+  useEffect(() => {
+    if (!model || !models.length) return;
+    const squash = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const hit = models.find((m) => m.toLowerCase() === model.toLowerCase()) ?? models.find((m) => squash(m) === squash(model));
+    if (!hit) setTypeModel(true); else if (hit !== model) onChange({ year, make, model: hit });
+  }, [model, models]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (p: Partial<{ year: string; make: string; model: string }>) => onChange({ year, make, model, ...p });
   return (
