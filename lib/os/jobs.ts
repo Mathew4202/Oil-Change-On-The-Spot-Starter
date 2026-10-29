@@ -9,6 +9,8 @@ import { sendSms, template, fill, reviewLink } from "@/lib/os/sms";
 import { emailFrom } from "@/lib/os/email-from";
 import { learnFromJob } from "@/lib/os/spec-learn";
 import { textCustomer, payLink } from "@/lib/os/customer-texts";
+import { lateRules, lateTerms, owing } from "@/lib/os/bill-late";
+const dueText = (iso: string) => new Date(iso).toLocaleString("en-CA", { timeZone: TZ, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).replace(/\./g, "");
 import { rewardReferrer, ensureRefCode, refLink } from "@/lib/os/referrals";
 
 const r2 = (x: number) => Math.round(x * 100) / 100;
@@ -171,9 +173,15 @@ export async function finishJob(input: FinishInput, owner: string) {
   if (paidNow && input.sendReceipt !== false) receipt = await sendReceipt(job.data!.id, input.email ?? null);
   let billText: { sent: boolean; status?: string } | null = null;
   if (!paidNow && !fleet && input.bill) {
-    receipt = await sendReceipt(job.data!.id, input.email ?? null);   // shows what's owed and a Pay button
+    // due in 48 hours (setting bill_due_hours); after that the late fee, then monthly interest (bill-late.ts). They're told up front.
+    const lr = lateRules(rules);
+    const dueAt = new Date(Date.now() + lr.dueHours * 3600000).toISOString();
+    await sbPatch("jobs", `id=eq.${job.data!.id}`, { bill_sent_at: now, bill_due_at: dueAt }).catch(() => null);
+    receipt = await sendReceipt(job.data!.id, input.email ?? null);   // shows what's owed, the due date and a Pay button
     const due = r2(total - prepaid);
-    billText = await textCustomer("pay_request", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(token) }, ctx.booking.id).catch(() => null);
+    const body = (await template("bill_sent")) || "Hi {first_name}, thanks for having us! Your total is {total}, due by {due_by}. Pay here (card or e-transfer): {pay_link}\n{late_terms}\n- Mathew, Oil Change On The Spot";
+    billText = ctx.customer ? await textCustomer("bill_sent", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }, ctx.booking.id)
+      .then((x) => (x.status === "template_off" && body ? sendSms(ctx.customer!.phone || "", fill(body, { first_name: ctx.customer!.first_name?.trim() || "there", total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }), { kind: "bill_sent", customerId: ctx.customer!.id, bookingId: ctx.booking.id }) : x)).catch(() => null) : null;
   }
   return { ok: true as const, jobId: job.data!.id, receiptNo, total, prepaid, refund, receipt, reviewText, billText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
 }
@@ -183,8 +191,9 @@ export async function recordPayment(bookingId: string, amount: number, method: s
   const t = r2(Math.max(0, tip || 0));
   await sbInsert("payments", { booking_id: bookingId, amount: r2(amount + t), method, processor_ref: `recorded by ${owner}${t ? `, includes $${t.toFixed(2)} tip` : ""}` });
   await sbPatch("bookings", `id=eq.${enc(bookingId)}`, { paid_at: new Date().toISOString() });
-  const [j] = await sbGet<{ subtotal: number | null }>(`jobs?select=subtotal&booking_id=eq.${enc(bookingId)}&limit=1`);
-  await sbPatch("jobs", `booking_id=eq.${enc(bookingId)}`, { payment_method: method, tip: t, ...(j?.subtotal != null ? { revenue: r2(Number(j.subtotal) + t) } : {}) });
+  const [j] = await sbGet<{ subtotal: number | null; late_fee?: number | null; late_interest?: number | null }>(`jobs?select=*&booking_id=eq.${enc(bookingId)}&limit=1`);
+  const late = Number(j?.late_fee ?? 0) + Number(j?.late_interest ?? 0);   // late charges are income too (no HST on them)
+  await sbPatch("jobs", `booking_id=eq.${enc(bookingId)}`, { payment_method: method, tip: t, ...(j?.subtotal != null ? { revenue: r2(Number(j.subtotal) + t + late) } : {}) });
 }
 
 const siteUrl = () => process.env.SITE_URL || (process.env.VERCEL_BRANCH_URL ? `https://${process.env.VERCEL_BRANCH_URL}` : process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://oilchangeonthespot.ca");
@@ -212,8 +221,13 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       vin: v?.vin ?? null,
       ...(await (async () => {
         const paid = j.booking_id ? (await sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${j.booking_id}`).catch(() => [])).reduce((t, p) => t + Number(p.amount), 0) - Number(j.tip ?? 0) : 0;
-        const due = r2(Math.max(0, Number(j.total) - paid));
-        return { due: j.payment_method === "invoice" ? 0 : due, payUrl: due > 0 && j.payment_method !== "invoice" ? payLink(j.receipt_token) : null };
+        const x = j as unknown as { late_fee?: number | null; late_interest?: number | null; bill_due_at?: string | null };
+        const due = owing({ total: Number(j.total), paid, lateFee: Number(x.late_fee ?? 0), lateInterest: Number(x.late_interest ?? 0) });
+        const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value").catch(() => [])).map((y) => [y.key, Number(y.value)]));
+        return { due: j.payment_method === "invoice" ? 0 : due, payUrl: due > 0 && j.payment_method !== "invoice" ? payLink(j.receipt_token) : null,
+          late: [Number(x.late_fee) > 0 ? { label: "Late fee", amount: Number(x.late_fee) } : null, Number(x.late_interest) > 0 ? { label: "Interest on late payment", amount: Number(x.late_interest) } : null].filter(Boolean) as { label: string; amount: number }[],
+          dueBy: due > 0 && x.bill_due_at && !(Number(x.late_fee) > 0) ? dueText(x.bill_due_at) : null,
+          lateTerms: !(due > 0 && x.bill_due_at) ? null : Number(x.late_fee) > 0 ? `This bill is past due. ${lateRules(rules).monthlyPct > 0 ? `${lateRules(rules).monthlyPct}% interest is added each month until it's paid.` : ""}`.trim() : lateTerms(lateRules(rules)) };
       })()),
       checks: !j.service || ["oil_change", "seasonal"].includes(j.service) ? checksFrom(j.inspection) : null,
       receiptUrl: `${siteUrl()}/receipt/${j.receipt_token}`,

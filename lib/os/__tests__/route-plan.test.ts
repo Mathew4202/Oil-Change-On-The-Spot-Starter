@@ -35,3 +35,18 @@ test("route link goes through the stops in order", () => {
   assert.match(u, /destination=3%20C%20St/);
   assert.match(u, /waypoints=1%20A%20St%7C2%20B%20St/);
 });
+
+test("a full day: Dartmouth 1:00, Bedford 2:30, Dartmouth 4:00 → the Bedford job trades so the Dartmouth jobs sit together", async () => {
+  const { planSwaps, dayKm } = await import("../route-plan.ts");
+  const stops = [s("d1", DART, 780), s("bed", BEDFORD, 870), s("d2", DART, 960)];
+  const sw = planSwaps(stops, home);
+  assert.equal(sw.length, 1);
+  assert.ok([sw[0].a, sw[0].b].includes("bed"));
+  const traded = stops.map((x) => (x.id === sw[0].a ? { ...x, start: sw[0].bStart } : x.id === sw[0].b ? { ...x, start: sw[0].aStart } : x));
+  const order = [...traded].sort((p, q) => p.start - q.start).map((x) => x.id);
+  assert.notEqual(order[1], "bed");   // Bedford is no longer stuck between the two Dartmouth jobs
+  assert.ok(dayKm(traded, home) < dayKm(stops, home));
+  // can't trade: different lengths, or someone who can't be texted
+  assert.deepEqual(planSwaps([s("d1", DART, 780), { ...s("bed", BEDFORD, 870), end: 870 + 120 }, s("d2", DART, 960)], home), []);
+  assert.deepEqual(planSwaps([s("d1", DART, 780, false), s("bed", BEDFORD, 870), s("d2", DART, 960, false)], home), []);
+});

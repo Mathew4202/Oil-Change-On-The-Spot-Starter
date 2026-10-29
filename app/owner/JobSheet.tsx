@@ -11,7 +11,7 @@ type Ctx = {
   customer: { first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
   vehicle: { year: number | null; make: string | null; model: string | null; engine?: string | null; last_km: number | null; vin: string | null;
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null } | null } | null;
-  job: { receipt_no: number; total: number; tip?: number | null; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null } | null;
+  job: { receipt_no: number; total: number; tip?: number | null; late_fee?: number | null; late_interest?: number | null; bill_due_at?: string | null; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null } | null;
   paid: number; payOnline: boolean;
 };
 const CHECKS: [string, string][] = [
@@ -61,7 +61,8 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
   const total = Math.round((subtotal + hst) * 100) / 100;
   const prepaid = ctx && !ctx.job ? ctx.paid : 0;                    // paid online when they booked
   const balance = Math.max(0, Math.round((total - prepaid) * 100) / 100);
-  const owedAfter = ctx?.job ? Math.max(0, Math.round((Number(ctx.job.total) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100) : 0;
+  const late = ctx?.job ? Number(ctx.job.late_fee ?? 0) + Number(ctx.job.late_interest ?? 0) : 0;   // a late pay-later bill
+  const owedAfter = ctx?.job ? Math.max(0, Math.round((Number(ctx.job.total) + late - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100) : 0;
   const fleetJob = ctx?.booking.pay_mode === "fleet_invoice";   // billed on the fleet's invoice
   const payChoices = prepaid > 0 ? PAY.filter(([k]) => k !== "card_online") : PAY;
 
@@ -150,7 +151,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
               <h3 className="font-extrabold text-lg">Receipt #{ctx.job!.receipt_no} · {money(Number(ctx.job!.total))}</h3>
               {fleetJob ? <p className="font-semibold">On the fleet&apos;s invoice{ctx.job!.payment_method === "invoice" ? " (invoiced)" : " (not invoiced yet)"}.</p> : owedAfter <= 0 ? <p className="font-semibold text-[#1d6b3a]">Paid{ctx.job!.payment_method ? ` (${PAY.find(([k]) => k === ctx.job!.payment_method)?.[1] ?? ctx.job!.payment_method})` : ""}</p> : (
                 <>
-                  <p className="font-semibold text-[#8a5a00]">{owedAfter < Number(ctx.job!.total) ? `${money(owedAfter)} still owed (${money(Number(ctx.job!.total) - owedAfter)} paid online).` : "Not paid yet."} How did they pay?</p>
+                  <p className="font-semibold text-[#8a5a00]">{late > 0 ? `${money(owedAfter)} owed, including ${money(late)} in late charges.` : owedAfter < Number(ctx.job!.total) ? `${money(owedAfter)} still owed (${money(Number(ctx.job!.total) - owedAfter)} paid online).` : ctx.job!.bill_due_at ? `Bill sent, due ${new Date(ctx.job!.bill_due_at).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "short", hour: "numeric", minute: "2-digit" })}.` : "Not paid yet."} How did they pay?</p>
                   <div className="grid grid-cols-2 gap-2">{PAY.filter(([k]) => k !== "bill").map(([k, n]) => <button key={k} onClick={() => setPay(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
                   {pay && <TipBox tip={tip} setTip={setTip} total={owedAfter} />}
                   {ctx.customer?.phone && (

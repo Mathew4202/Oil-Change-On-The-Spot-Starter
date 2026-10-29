@@ -25,10 +25,10 @@ export async function importStatement(p: Parsed, fileName: string, owner: string
     .map((x) => ({ id: x.id, date: halifaxDate(new Date(x.paid_at)), amount: Number(x.amount), method: x.method }));
 
   // bills we sent that aren't paid yet (an e-transfer for one marks it paid)
-  const owedRows = await sbGet<{ id: string; starts_at: string; customers: { first_name: string | null; last_name: string | null } | null; jobs: { receipt_no: number | null; total: number | null; tip: number | null }[] | null; payments: { amount: number }[] | null }>(
-    `bookings?select=id,starts_at,customers(first_name,last_name),jobs(receipt_no,total,tip),payments(amount)&status=eq.done&paid_at=is.null&pay_mode=neq.fleet_invoice&starts_at=gte.${shift(from, -45)}`).catch(() => []);
+  const owedRows = await sbGet<{ id: string; starts_at: string; customers: { first_name: string | null; last_name: string | null } | null; jobs: { receipt_no: number | null; total: number | null; tip: number | null; late_fee: number | null; late_interest: number | null }[] | null; payments: { amount: number }[] | null }>(
+    `bookings?select=id,starts_at,customers(first_name,last_name),jobs(receipt_no,total,tip,late_fee,late_interest),payments(amount)&status=eq.done&paid_at=is.null&pay_mode=neq.fleet_invoice&starts_at=gte.${shift(from, -45)}`).catch(() => []);
   const owed = owedRows.filter((b) => b.jobs?.[0]?.total != null).map((b) => ({ bookingId: b.id, date: halifaxDate(new Date(b.starts_at)), receiptNo: b.jobs![0].receipt_no,
-    due: Math.round((Number(b.jobs![0].total) - (b.payments ?? []).reduce((t, x) => t + Number(x.amount), 0)) * 100) / 100,
+    due: Math.round((Number(b.jobs![0].total) + Number(b.jobs![0].late_fee ?? 0) + Number(b.jobs![0].late_interest ?? 0) - (b.payments ?? []).reduce((t, x) => t + Number(x.amount), 0)) * 100) / 100,
     name: [b.customers?.first_name, b.customers?.last_name].filter(Boolean).join(" ") || "Customer" })).filter((o) => o.due > 0);
   const results = matchStatement(fresh.map((x) => x.l), exps, pays, owed);
   const imp = await sbInsert<{ id: string }>("bank_imports", { file_name: fileName.slice(0, 120), account: p.account, from_date: from, to_date: to, lines: fresh.length, added_by: owner });

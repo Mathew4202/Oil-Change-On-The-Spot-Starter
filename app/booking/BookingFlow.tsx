@@ -566,7 +566,7 @@ export default function BookingFlow() {
               )}
               <label className="flex items-start gap-3 rounded-xl border p-4 text-[15px] leading-relaxed cursor-pointer" style={{ borderColor: agree ? NAVY : LINE }}>
                 <input type="checkbox" checked={agree} onChange={(e) => { setAgree(e.target.checked); setErr(""); }} className="mt-1 w-5 h-5 shrink-0" style={{ accentColor: NAVY }} />
-                <span>I agree to the terms: please give us at least 24 hours&apos; notice to change or cancel. Same-day cancellations may have a $30 + HST fee (we waive it for emergencies and bad storms).
+                <span>I agree to the terms: please give us at least 24 hours&apos; notice to change or cancel. Same-day cancellations may have a $30 + HST fee (we waive it for emergencies and bad storms). If you pay later by bill, it&apos;s due within 48 hours, then a $10 late fee and 2% a month.
                   {job === "diagnostic" && " The $100 diagnostic is charged on its own, separate from any repair, and repairs are only done with my OK."}</span>
               </label>
             </>

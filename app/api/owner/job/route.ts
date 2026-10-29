@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       if (!method.success || !ctx?.job) return NextResponse.json({ error: "Finish the job first, then pick how they paid" }, { status: 400 });
       if (ctx.job.imported_from === "job_tracker") return NextResponse.json({ error: "This job is already in your Job Tracker sheet, so it's already counted." }, { status: 400 });
       const tip = Math.min(1000, Math.max(0, Number(body.tip) || 0));
-      const due = Math.max(0, Math.round((Number(ctx.job.total) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100);
+      const due = Math.max(0, Math.round((Number(ctx.job.total) + Number(ctx.job.late_fee ?? 0) + Number(ctx.job.late_interest ?? 0) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100);   // late charges included
       await recordPayment(id, due, method.data, owner, tip);
       const receipt = body.sendReceipt === false ? null : await sendReceipt(String(ctx.job.id), body.email || null);
       return NextResponse.json({ ok: true, receipt });
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       const ctx = await jobContext(id);
       if (!ctx?.job || !ctx.job.receipt_token) return NextResponse.json({ error: "Finish the job first" }, { status: 400 });
       if (!ctx.customer?.phone) return NextResponse.json({ error: "No phone number on file" }, { status: 400 });
-      const due = Math.max(0, Math.round((Number(ctx.job.total) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100);
+      const due = Math.max(0, Math.round((Number(ctx.job.total) + Number(ctx.job.late_fee ?? 0) + Number(ctx.job.late_interest ?? 0) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100);   // late charges included
       if (due <= 0) return NextResponse.json({ error: "Nothing left to pay" }, { status: 400 });
       const r = await textCustomer("pay_request", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(String(ctx.job.receipt_token)) }, id);
       return NextResponse.json({ ok: true, sms: r });

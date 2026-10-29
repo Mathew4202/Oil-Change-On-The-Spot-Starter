@@ -72,6 +72,42 @@ export function planOffers(stopsIn: Stop[], open: (id: string) => number[], home
   return offers;
 }
 
+export type Swap = { a: string; b: string; aStart: number; bStart: number; savedKm: number };
+
+/**
+ * Two customers trading times, when that groups the day better (Dartmouth 1:00, Bedford 2:30, Dartmouth 4:00 →
+ * the Bedford job trades with a Dartmouth one, so the two Dartmouth jobs sit together). Works on a full day, since
+ * nobody needs an empty time. Only jobs of the same length trade, so nothing runs into the next job.
+ * Both customers are asked; the trade only happens if both say yes.
+ */
+export function planSwaps(stopsIn: Stop[], home: Pt, opts: { minKm?: number; max?: number; maxShift?: number } = {}): Swap[] {
+  const minKm = opts.minKm ?? 6, max = opts.max ?? 1, maxShift = opts.maxShift ?? 240;
+  let stops = [...stopsIn].sort((a, b) => a.start - b.start);
+  const out: Swap[] = [];
+  const used = new Set<string>();
+  for (let round = 0; round < max; round++) {
+    const base = dayKm(stops, home);
+    let best: (Swap & { score: number }) | null = null;
+    for (let i = 0; i < stops.length; i++) for (let j = i + 1; j < stops.length; j++) {
+      const a = stops[i], b = stops[j];
+      if (!a.movable || !b.movable || used.has(a.id) || used.has(b.id)) continue;
+      if (a.end - a.start !== b.end - b.start || Math.abs(a.start - b.start) > maxShift) continue;
+      if (km(a, b) < 2) continue;   // same area: trading changes nothing
+      const traded = stops.map((x) => (x.id === a.id ? { ...x, start: b.start, end: b.end } : x.id === b.id ? { ...x, start: a.start, end: a.end } : x));
+      const saved = base - dayKm(traded, home);
+      const score = saved - (Math.abs(a.start - b.start) / 60) * 2 * 2;   // two people's times change
+      if (saved >= minKm && (!best || score > best.score)) best = { a: a.id, b: b.id, aStart: a.start, bStart: b.start, savedKm: Math.round(saved * 10) / 10, score };
+    }
+    if (!best) break;
+    const w: Swap & { score: number } = best;
+    out.push({ a: w.a, b: w.b, aStart: w.aStart, bStart: w.bStart, savedKm: w.savedKm });
+    used.add(w.a); used.add(w.b);
+    stops = stops.map((x) => (x.id === w.a ? { ...x, start: w.bStart, end: w.bStart + (x.end - x.start) } : x.id === w.b ? { ...x, start: w.aStart, end: w.aStart + (x.end - x.start) } : x))
+      .sort((p, q) => p.start - q.start);
+  }
+  return out;
+}
+
 /** Their reply to "Can we move you?": yes, no, or something else (a question: it goes to HQ like any text). */
 export function replyIs(text: string): "yes" | "no" | null {
   const t = text.trim().toLowerCase().replace(/[!.\s]+$/g, "");

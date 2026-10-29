@@ -32,16 +32,18 @@ async function paidSoFar(bookingId: string) {
 /** A pay link token is either a receipt (pay after the job, or a cancellation fee) or a booking's own link (pay before). */
 export async function payTarget(token: string): Promise<PayTarget | null> {
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
-  const [j] = await sbGet<{ id: string; receipt_no: number | null; booking_id: string | null; service: string | null; lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; total: number;
+  const [j] = await sbGet<{ id: string; receipt_no: number | null; late_fee: number | null; late_interest: number | null; bill_due_at: string | null; booking_id: string | null; service: string | null; lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; total: number;
     tip: number | null; vehicle_text: string | null; imported_from: string | null; customers: Cust }>(
-    `jobs?select=id,receipt_no,booking_id,service,lines,subtotal,hst,total,tip,vehicle_text,imported_from,customers(first_name,last_name,email)&receipt_token=eq.${enc(token)}&limit=1`);
+    `jobs?select=id,receipt_no,booking_id,service,late_fee,late_interest,bill_due_at,lines,subtotal,hst,total,tip,vehicle_text,imported_from,customers(first_name,last_name,email)&receipt_token=eq.${enc(token)}&limit=1`);
   if (j) {
     if (!j.booking_id || j.imported_from) return null;
     // a tip already paid isn't part of what was owed
     const paid = r2((await paidSoFar(j.booking_id)) - Number(j.tip ?? 0));
-    const total = Number(j.total);
+    // a late pay-later bill: the late fee and interest are part of what's owed (no HST on them)
+    const late = [Number(j.late_fee) > 0 ? { label: "Late fee", amount: Number(j.late_fee) } : null, Number(j.late_interest) > 0 ? { label: "Interest on late payment", amount: Number(j.late_interest) } : null].filter(Boolean) as { label: string; amount: number }[];
+    const total = r2(Number(j.total) + late.reduce((t, l) => t + l.amount, 0));
     return { kind: "job", bookingId: j.booking_id, jobId: j.id, token, title: j.service === "cancellation_fee" ? "Same-day cancellation fee" : "Your service",
-      car: j.vehicle_text || "", when: null, lines: j.lines ?? [], subtotal: Number(j.subtotal), hst: Number(j.hst), total, paid: Math.max(0, paid), due: amountDue(total, paid),
+      car: j.vehicle_text || "", when: null, lines: [...(j.lines ?? []), ...late], subtotal: Number(j.subtotal), hst: Number(j.hst), total, paid: Math.max(0, paid), due: amountDue(total, paid),
       firstName: j.customers?.first_name ?? null, lastName: j.customers?.last_name ?? null, email: j.customers?.email ?? null, receiptUrl: `/receipt/${token}`, ref: j.receipt_no ? String(j.receipt_no) : null };
   }
   // a maintenance plan monthly payment
