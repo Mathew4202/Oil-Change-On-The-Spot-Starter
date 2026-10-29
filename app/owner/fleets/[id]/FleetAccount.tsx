@@ -109,7 +109,7 @@ export default function FleetAccount({ id }: { id: string }) {
         {a && <p className="text-sm text-[#c9d3ea] mt-1">{[a.contact_name, a.billing === "per_job" ? "invoice each job" : "monthly invoice", a.via ? `via ${a.via}` : null].filter(Boolean).join(" · ")}</p>}
       </header>
 
-      <main className="flex-1 p-4 flex flex-col gap-4 pb-28">
+      <div className="flex-1 p-4 flex flex-col gap-4 pb-28">
         {err && <p className="text-red-700 bg-white rounded-xl p-3" role="alert">{err}</p>}
         {msg && <p className="rounded-xl p-3 font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }} role="status">{msg}</p>}
         {!d && !err && <p className="text-center py-10" style={{ color: MUTED }}>Loading…</p>}
@@ -272,7 +272,7 @@ export default function FleetAccount({ id }: { id: string }) {
             ))}
           </section>
         )}
-      </main>
+      </div>
       <OwnerNav />
     </div>
   );

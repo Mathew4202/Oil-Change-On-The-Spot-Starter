@@ -5,6 +5,8 @@ import { halifaxDate } from "@/lib/os/slots";
 import { pushToOwners } from "@/lib/os/push";
 import crypto from "crypto";
 import { textCustomer, when, payLink } from "@/lib/os/customer-texts";
+import { releaseCredits } from "@/lib/os/referrals";
+import { repriceForDate, type Priced } from "@/lib/os/deals";
 
 export type ManagedBooking = {
   id: string; starts_at: string; ends_at: string; status: string; address: string | null; quoted_total: number | null; cars: number; vehicle_id?: string | null;
@@ -69,6 +71,7 @@ export async function cancelBooking(b: ManagedBooking, by: "customer" | string, 
   const sameDay = isSameDay(b);
   await sbPatch("bookings", `id=eq.${b.id}`, { status: "cancelled", cancelled_at: new Date().toISOString(), cancel_reason: `${by}: ${reason || "no reason given"}`.slice(0, 300),
     ...(sameDay && by !== "customer" && !opts.chargeFee ? { cancel_fee_waived: true } : {}) });
+  await releaseCredits(b.id);   // a referral credit used on it goes back on their account
   const fee = sameDay && by !== "customer" && opts.chargeFee ? await chargeCancelFee(b) : null;
   await tellOwners(b, "cancelled", `Cancelled: ${when(b.starts_at)}, ${carOf(b)}`, `${nameOf(b)}${by === "customer" ? " cancelled online" : ` (cancelled by ${by})`}${reason ? `: ${reason}` : ""}`);
   if (by !== "customer") await textCustomer("booking_cancelled", b.customers, { when: when(b.starts_at), car: carOf(b) }, b.id).catch(() => null);
@@ -110,6 +113,7 @@ export async function moveGroup(members: ManagedBooking[], startIso: string, by:
       ends_at: new Date(new Date(m.ends_at).getTime() + shift).toISOString(), reminder_sent_at: null });
     if (!ok) return { ok: false, error: "That time overlaps another job. Pick a different time." };
   }
+  await repriceMoved(members.map((m) => m.id));
   const cars = members.map(carOf).join(" and ");
   await tellOwners(members[0], "moved", `Moved: ${cars} to ${when(start.toISOString())}`, `${nameOf(members[0])} moved ${members.length} cars from ${when(members[0].starts_at)}${by === "customer" ? " (online)" : ` (by ${by})`}`);
   await textCustomer("booking_moved", members[0].customers, { when: when(start.toISOString()), car: cars }, members[0].id).catch(() => null);
@@ -134,7 +138,21 @@ export async function moveBooking(b: ManagedBooking, startIso: string, by: "cust
   const old = b.starts_at;
   const okPatch = await sbPatch("bookings", `id=eq.${b.id}`, { starts_at: start.toISOString(), ends_at: end.toISOString(), reminder_sent_at: null });
   if (!okPatch) return { ok: false, error: "That time overlaps another job. Pick a different time." };
+  await repriceMoved([b.id]);
   await tellOwners(b, "moved", `Moved: ${carOf(b)} to ${when(start.toISOString())}`, `${nameOf(b)} moved from ${when(old)}${by === "customer" ? " (online)" : ` (by ${by})`}`);
   await textCustomer("booking_moved", b.customers, { when: when(start.toISOString()), car: carOf(b) }, b.id).catch(() => null);
   return { ok: true, start: start.toISOString() };
+}
+
+/** After a move: the Christmas deal goes by the visit day, so the price follows the booking (fleets keep their own prices). */
+async function repriceMoved(ids: string[]) {
+  if (!ids.length) return;
+  const r = await rules();
+  const rows = await sbGet<{ id: string; starts_at: string; cars: number; pay_mode: string; services: { job?: string } | null; quote_breakdown: Priced | null }>(
+    `bookings?select=id,starts_at,cars,pay_mode,services,quote_breakdown&id=in.(${ids.join(",")})`).catch(() => []);
+  for (const b of rows) {
+    if (b.pay_mode === "fleet_invoice") continue;
+    const q = repriceForDate(b.quote_breakdown, halifaxDate(new Date(b.starts_at)), b.services?.job, b.cars || 1, r, Number(r.hst_rate ?? 0.14));
+    if (q) await sbPatch("bookings", `id=eq.${b.id}`, { quote_breakdown: q, quoted_total: q.total }).catch(() => null);
+  }
 }

@@ -106,6 +106,7 @@ export default function CustomerScreen({ id }: { id: string }) {
         ))}
       </section>
 
+      <Referrals id={c.id} first={c.name.split(" ")[0]} />
       <Texts c={c} texts={d.texts} reload={load} />
       <Details c={c} reload={load} />
       <Merge c={c} />
@@ -121,7 +122,7 @@ function Shell({ title, sub, children }: { title: string; sub?: string; children
         <h1 className="text-[28px] leading-tight font-extrabold mt-1" style={{ fontFamily: "var(--font-condensed)" }}>{title}</h1>
         {sub && <p className="text-sm text-[#c9d3ea]">{sub}</p>}
       </header>
-      <main className="flex-1 p-4 flex flex-col gap-4 pb-28">{children}</main>
+      <div className="flex-1 p-4 flex flex-col gap-4 pb-28">{children}</div>
       <OwnerNav />
     </div>
   );
@@ -233,6 +234,60 @@ function Merge({ c }: { c: Detail["customer"] }) {
         </div>
       )}
       <button onClick={() => { setOpen(false); setPick(null); setQ(""); }} className="text-sm font-bold underline self-start" style={{ color: MUTED }}>Cancel</button>
+    </section>
+  );
+}
+
+type RefInfo = { code: string | null; link: string | null; referredBy: { id: string; name: string } | null; sent: { id: string; name: string }[];
+  credits: { id: string; amount: number; why: string; at: string; used: boolean; removed: boolean }[]; balance: number; error?: string };
+
+/** Refer a friend: their link, who sent them, who they sent, and $5 credits (they come off the next booking by themselves). */
+function Referrals({ id, first }: { id: string; first: string }) {
+  const [r, setR] = useState<RefInfo | null>(null); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
+  const [pick, setPick] = useState(false); const [q, setQ] = useState(""); const [hits, setHits] = useState<{ id: string; first_name: string | null; last_name: string | null; phone: string | null }[]>([]);
+  const load = useCallback(() => fetch(`/api/owner/customers?referrals=${id}`, { cache: "no-store" }).then((x) => x.json()).then(setR).catch(() => {}), [id]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (q.trim().length < 2) { setHits([]); return; }
+    const t = setTimeout(() => fetch(`/api/owner/customers?q=${encodeURIComponent(q)}`).then((x) => x.json()).then((j) => setHits((j.customers || []).filter((c: { id: string }) => c.id !== id))).catch(() => {}), 300);
+    return () => clearTimeout(t);
+  }, [q, id]);
+  async function post(body: object, done: string) {
+    setBusy(true); setMsg("");
+    const x = await fetch("/api/owner/customers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...body }) });
+    const j = await x.json().catch(() => ({})); setBusy(false);
+    setMsg(x.ok && j.ok !== false ? done : j.error || "Something went wrong"); load();
+  }
+  if (!r || r.error) return null;
+  const open = r.credits.filter((c) => !c.used);
+  return (
+    <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-extrabold text-lg">Refer a friend</h2>
+        {r.balance > 0 && <span className="text-sm font-extrabold rounded-full px-3 py-1" style={{ background: "#dff3e6", color: "#1d6b3a" }}>{money(r.balance)} credit</span>}
+      </div>
+      <p className="text-sm" style={{ color: MUTED }}>When someone {first} sends books and we finish their first visit, {first} gets $5 off. It comes off their next booking by itself.</p>
+      {r.link && <p className="font-mono text-[13px] break-all select-all bg-[#f4f6fa] rounded-lg p-2">{r.link}</p>}
+      <div className="flex flex-wrap gap-2">
+        <button disabled={busy} onClick={() => post({ action: "sendLink" }, `Texted ${first} their link.`)} className="h-10 px-3 rounded-lg font-bold text-sm text-white disabled:opacity-60" style={{ background: NAVY }}>Text {first} their link</button>
+        <button disabled={busy} onClick={() => post({ action: "credit", amount: 5, note: "Referral (added in HQ)" }, `$5 credit added. It comes off ${first}'s next booking.`)} className="h-10 px-3 rounded-lg border font-bold text-sm" style={{ borderColor: LINE }}>+ $5 credit</button>
+      </div>
+      {open.map((c) => (
+        <p key={c.id} className="text-[15px] flex justify-between gap-2"><span>{money(c.amount)} · {c.why}</span>
+          <button disabled={busy} onClick={() => post({ action: "uncredit", creditId: c.id }, "Credit removed.")} className="text-sm underline" style={{ color: MUTED }}>Remove</button></p>
+      ))}
+      {r.credits.filter((c) => c.used && !c.removed).slice(0, 3).map((c) => <p key={c.id} className="text-sm" style={{ color: MUTED }}>{money(c.amount)} used · {c.why}</p>)}
+      <p className="text-[15px]"><span style={{ color: MUTED }}>Referred by: </span>{r.referredBy ? <Link href={`/owner/customers/${r.referredBy.id}` as Route} className="font-bold underline">{r.referredBy.name}</Link>
+        : pick ? null : <button onClick={() => setPick(true)} className="font-bold underline">Set who sent them</button>}</p>
+      {pick && !r.referredBy && (
+        <div className="flex flex-col gap-1">
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name or phone of who sent them" className="h-11 rounded-xl border px-3 text-base" style={{ borderColor: LINE }} />
+          {hits.map((h) => <button key={h.id} disabled={busy} onClick={() => { setPick(false); setQ(""); post({ action: "referredBy", referrerId: h.id }, `Saved. ${[h.first_name, h.last_name].filter(Boolean).join(" ")} gets $5 off when ${first}'s first visit is done.`); }}
+            className="text-left rounded-lg border px-3 py-2 text-[15px]" style={{ borderColor: LINE }}>{[h.first_name, h.last_name].filter(Boolean).join(" ")} <span style={{ color: MUTED }}>{h.phone?.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3")}</span></button>)}
+        </div>
+      )}
+      {r.sent.length > 0 && <p className="text-[15px]"><span style={{ color: MUTED }}>Sent us: </span>{r.sent.map((x, i) => <span key={x.id}>{i ? ", " : ""}<Link href={`/owner/customers/${x.id}` as Route} className="font-bold underline">{x.name}</Link></span>)}</p>}
+      {msg && <p className="text-sm font-semibold" role="status">{msg}</p>}
     </section>
   );
 }

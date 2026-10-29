@@ -2,6 +2,8 @@
 // More cars on the same visit. Each car is picked on the car step and gets the same full service choice on the services step
 // (any service, add-ons, own oil). Each is priced on its own; travel is only charged once for the visit.
 import { useEffect, useMemo, useState } from "react";
+import VinSnap from "@/components/VinSnap";
+import { matchEngine } from "@/lib/os/vin";
 
 const NAVY = "#0d1b3e", LINE = "#c8d0e0", GOLD = "#f2b01e";
 const input = "h-[52px] rounded-xl border px-3 text-[17px] w-full bg-white text-[#0d1b3e]";
@@ -9,7 +11,7 @@ const labelCls = "flex flex-col gap-1.5 text-sm font-semibold text-[#4a5878]";
 
 export type ExtraJob = "oil_change" | "seasonal" | "tires" | "rotation" | "parts" | "diagnostic";
 export type Extra = {
-  key: string; year: string; make: string; model: string; engine: string; job: ExtraJob; addons: string[]; own: "" | "both" | "oil" | "filter"; problem: string;
+  key: string; year: string; make: string; model: string; engine: string; vin?: string; job: ExtraJob; addons: string[]; own: "" | "both" | "oil" | "filter"; problem: string;
   quote: { subtotal: number; total: number; lines: { label: string; amount: number }[]; spec?: import("@/components/SpecCard").HqSpec | null } | null; engines: string[]; pricing: boolean;
 };
 export const newExtra = (): Extra => ({ key: Math.random().toString(36).slice(2), year: "", make: "", model: "", engine: "", job: "oil_change", addons: [], own: "", problem: "",
@@ -74,12 +76,33 @@ export function ExtraCarFields({ n, value: e, onPatch, onRemove, makes }: { n: n
     setModels([]); if (!e.year || !e.make) return;
     fetch(`/api/models?make=${encodeURIComponent(e.make)}&year=${e.year}`).then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {});
   }, [e.year, e.make]);
+  // a snapped or typed VIN fills the car: year and make now, the model once its list loads, the engine once its list loads
+  const [vinModel, setVinModel] = useState(""); const [vinEngine, setVinEngine] = useState("");
+  useEffect(() => {
+    if (!vinModel || !models.length) return;
+    const v = vinModel.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const k = (m: string) => m.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const hit = models.find((m) => k(m) === v) ?? models.find((m) => k(m).startsWith(v) || v.startsWith(k(m)));
+    if (hit) set({ model: hit, engine: "", quote: null, engines: [] });
+    setVinModel("");
+  }, [models, vinModel]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!vinEngine || lookingUp || !e.engines.length) return;
+    const hit = matchEngine(vinEngine, e.engines);
+    if (hit) set({ engine: hit });
+    setVinEngine("");
+  }, [e.engines, lookingUp, vinEngine]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="rounded-2xl border-2 p-4 flex flex-col gap-3" style={{ borderColor: NAVY }}>
       <div className="flex items-center justify-between">
         <p className="font-bold text-[18px]">Car {n}</p>
         <button type="button" onClick={onRemove} className="text-sm underline font-semibold">Remove</button>
       </div>
+      <VinSnap vin={e.vin ?? ""} onVin={(v) => set({ vin: v })} onDecoded={(d, v) => {
+        const mk = makes.find((m) => m.toLowerCase() === (d.make || "").toLowerCase()) ?? d.make ?? e.make;
+        set({ vin: v, ...(d.year ? { year: String(d.year) } : {}), make: mk, model: "", engine: "", quote: null, engines: [] });
+        setVinModel(d.model || ""); setVinEngine(d.engineL || "");
+      }} />
       <div className="grid grid-cols-2 gap-2">
         <label className={labelCls}>Year
           <select value={e.year} onChange={(x) => set({ year: x.target.value, model: "", engine: "", quote: null, engines: [] })} className={input} style={{ borderColor: LINE }}>

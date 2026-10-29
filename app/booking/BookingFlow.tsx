@@ -69,7 +69,7 @@ export default function BookingFlow() {
   const [pricing, setPricing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [done, setDone] = useState<{ when: string; date: string; total: number } | null>(null);
+  const [done, setDone] = useState<{ when: string; date: string; total: number; credit: number } | null>(null);
   // "Save my info on this phone" (optional). Text-code accounts come with texting.
   const [saved, setSaved] = useState<Saved | null>(null);
   const [saveState, setSaveState] = useState<"ask" | "saved" | "declined">("ask");
@@ -77,7 +77,8 @@ export default function BookingFlow() {
   const [payNow, setPayNow] = useState(false); const [payOnline, setPayOnline] = useState(false);   // pay online when booking (only once Converge is set up)
   const [agree, setAgree] = useState(false);   // cancellation (and diagnostic) terms   // signed in with a text code (works on any phone)
   const [manualEngine, setManualEngine] = useState("");
-  const [linkEngine, setLinkEngine] = useState("");   // engine from the link we texted, picked once the list loads
+  const [linkEngine, setLinkEngine] = useState("");
+  const [refCode, setRefCode] = useState(""); const [referredBy, setReferredBy] = useState("");   // a friend's link, or who they say sent them   // engine from the link we texted, picked once the list loads
   // every engine this car came with (ours plus the ones found online), looked up as soon as the car is picked
   const [engList, setEngList] = useState<string[] | null>(null);
   useEffect(() => {
@@ -107,6 +108,13 @@ export default function BookingFlow() {
     if (q.get("phone")) setPhone((p) => p || q.get("phone")!.replace(/[^\d]/g, "").slice(-10));
     if (/^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") && q.get("date")! >= new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax" })) setDate(q.get("date")!);
     if (q.get("engine")) setLinkEngine(q.get("engine")!.slice(0, 40));
+    // a friend's referral link (/r/CODE): kept on this phone for a month, so booking later still counts
+    try {
+      const rc = (q.get("ref") || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+      if (rc) localStorage.setItem("ocots_ref", JSON.stringify({ c: rc, t: Date.now() }));
+      const kept = JSON.parse(localStorage.getItem("ocots_ref") || "null");
+      if (kept?.c && Date.now() - kept.t < 30 * 86400000) setRefCode(kept.c);
+    } catch { /* private mode */ }
     // came from a Book button on the services page: that service is already picked
     const j = q.get("job") as JobId | null;
     if (j && ["oil_change", "seasonal", "tires", "rotation", "parts", "diagnostic"].includes(j)) setJob(j);
@@ -245,16 +253,18 @@ export default function BookingFlow() {
         own: (job === "oil_change" || job === "seasonal") && own ? own : null,
         ...(vinPhoto ? { ...(vinPhoto.photo ? { photos: [vinPhoto.photo] } : {}), ...(vinPhoto.vin ? { vin: vinPhoto.vin } : {}) } : {}),
         ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine && x.engine !== "unsure" ? { engine: x.engine } : {}) },
-          job: x.job, addons: extraAddons(x), own: (x.job === "oil_change" || x.job === "seasonal") && x.own ? x.own : null,
+          job: x.job, addons: extraAddons(x), own: (x.job === "oil_change" || x.job === "seasonal") && x.own ? x.own : null, ...(x.vin && x.vin.length === 17 ? { vin: x.vin } : {}),
           ...(x.job === "diagnostic" ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
-        start: slot.start, ...(hold && slot.start === hold.start ? { holdToken: hold.token } : {}), payMode: payOnline && payNow ? "online" : "after", notes: [job === "diagnostic" && problem.trim() ? `Problem: ${problem.trim()}` : "", notes.trim()].filter(Boolean).join("\n").slice(0, 1000) || undefined, agreeTerms: agree,
+        start: slot.start, ...(hold && slot.start === hold.start ? { holdToken: hold.token } : {}), ...(refCode ? { refCode } : {}), ...(referredBy.trim() ? { referredBy: referredBy.trim().slice(0, 80) } : {}), payMode: payOnline && payNow ? "online" : "after", notes: [job === "diagnostic" && problem.trim() ? `Problem: ${problem.trim()}` : "", notes.trim()].filter(Boolean).join("\n").slice(0, 1000) || undefined, agreeTerms: agree,
       }),
     });
     const j = await r.json().catch(() => ({}));
     setBusy(false);
     if (r.status === 409) { setErr(j.error || "That time was just taken. Please pick another."); setStep(2); setSlot(null); return; }
     if (!r.ok) return setErr(j.error || `Something went wrong. Please call or text ${PHONE}.`);
-    setDone({ when: j.when, date: j.date, total: j.total });
+    // a referral credit on their account comes off on the server: say so, since it isn't in the price they saw
+    const credit = Math.abs((j.lines ?? []).filter((l: { label: string }) => /Referral credit/.test(l.label)).reduce((t: number, l: { amount: number }) => t + l.amount, 0));
+    setDone({ when: j.when, date: j.date, total: j.total, credit });
     trackLead("website_booking", { service_type: job, value: Number(j.total) || 0, currency: "CAD" });
     if (j.payUrl) { setBusy(true); setTimeout(() => { window.location.href = j.payUrl; }, 400); return; }   // booked: now off to pay
     setStep(5);
@@ -288,7 +298,7 @@ export default function BookingFlow() {
         </header>
 
         <div className="flex-1 md:flex md:items-start">
-        <main className="flex-1 min-w-0 p-5 lg:p-8 flex flex-col gap-4 pb-36 md:pb-10">
+        <div className="flex-1 min-w-0 p-5 lg:p-8 flex flex-col gap-4 pb-36 md:pb-10">
           {more.map((x) => <ExtraPricer key={x.key} value={x} date={date} onPatch={(p) => patchMore(x.key, p)} />)}
           {/* 0. Car */}
           {step === 0 && (
@@ -495,6 +505,8 @@ export default function BookingFlow() {
               <label className={labelCls}>Email (optional)<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" placeholder="For your receipt" className={input} style={{ borderColor: LINE }} /></label>
               <AddressField value={address} onChange={setAddress} onPlace={setPlace} label="Address" placeholder="Start typing your street address" labelClass={labelCls} inputClass={input} inputStyle={{ borderColor: LINE }} />
               <label className={labelCls}>Anything we should know? (optional)<input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Gate code, parking spot" className={input} style={{ borderColor: LINE }} /></label>
+              {refCode ? <p className="text-sm font-semibold rounded-xl px-3 py-2" style={{ background: "#dff3e6", color: "#1d6b3a" }}>A friend sent you. Thanks for booking with their link!</p>
+                : !account && <label className={labelCls}>Did someone send you our way? (optional)<input value={referredBy} onChange={(e) => setReferredBy(e.target.value)} placeholder="Their name or phone number" className={input} style={{ borderColor: LINE }} /></label>}
               {!place && <p className="text-sm text-[#4a5878]">Travel is free within 30 km. Further out, the fee shows here as soon as you pick your address.</p>}
             </>
           )}
@@ -555,6 +567,7 @@ export default function BookingFlow() {
               </div>
               <h1 className="text-[34px] font-extrabold leading-none" style={{ fontFamily: "var(--font-condensed)" }}>You&apos;re booked.</h1>
               <p className="text-[17px] leading-relaxed">{dayParts(done.date).long} at {done.when}. Total {money(done.total)}, paid after the job.</p>
+              {done.credit > 0 && <p className="rounded-xl p-3 text-[15px] font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }}>Your {money(done.credit)} referral credit came off this booking. Thanks for sending friends our way!</p>}
               <p className="text-[15px] text-[#4a5878]">Need to change it? Call or text <a className="font-bold underline" href={PHONE_TEL}>{PHONE}</a>.</p>
               {account && <p className="rounded-xl bg-[#eef1f6] p-4 text-[15px]">It&apos;s in your account. Next time your cars and address fill in on any phone.</p>}
               {!account && saveState === "ask" && !(saved && saved.cars.some((c) => c.year === year && c.make === make && c.model === model)) && (
@@ -570,7 +583,7 @@ export default function BookingFlow() {
                 className="self-start font-bold underline text-base">Book another car</button>
             </div>
           )}
-        </main>
+        </div>
 
         {/* Computer: your visit, the price and the next button stay in view on the right */}
         {step < 5 && (

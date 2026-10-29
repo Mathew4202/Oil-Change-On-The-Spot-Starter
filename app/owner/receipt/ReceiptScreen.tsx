@@ -62,7 +62,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
         <h1 className="text-[30px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>Receipts</h1>
       </header>
 
-      <main className="flex-1 p-4 flex flex-col gap-4 pb-28">
+      <div className="flex-1 p-4 flex flex-col gap-4 pb-28">
         <input ref={camRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
         <input ref={pickRef} type="file" accept="image/*" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
 
@@ -158,7 +158,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
           ))}
         </section>
         <p className="text-xs text-center text-[#4a5878]">Signed in as {owner}</p>
-      </main>
+      </div>
       <OwnerNav />
     </div>
   );

@@ -56,7 +56,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
   const [otherTime, setOtherTime] = useState("");
   const [payMode, setPayMode] = useState<"after" | "online">("after");
   const [special, setSpecial] = useState("");
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(""); const [referredBy, setReferredBy] = useState("");
   // Price + saving
   const [quote, setQuote] = useState<Quote | null>(null);
   const [pricing, setPricing] = useState(false);
@@ -104,6 +104,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
       const p = new URLSearchParams({ year, make: make.trim(), model: model.trim(), cars: String(cars) });
       if (engine.trim() && engine !== "unsure") p.set("engine", engine.trim());
       p.set("job", job); p.set("date", date);
+      if (customer?.id) p.set("customer", customer.id);   // their referral credit shows in the price
       const sent = job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [];
       if (sent.length) p.set("addons", sent.join(","));
       if ((job === "oil_change" || job === "seasonal") && own) p.set("own", own);
@@ -112,7 +113,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
       setQuote(await r.json()); setPricing(false);
     }, 600);
     return () => clearTimeout(t);
-  }, [year, make, model, engine, addons, own, cars, carReady, job, date, place?.km]);
+  }, [year, make, model, engine, addons, own, cars, carReady, job, date, place?.km, customer?.id]);
 
   const startIso = useMemo(() => {
     if (otherTime) return halifaxIso(date, otherTime);
@@ -133,10 +134,10 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
       body: JSON.stringify({
         firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(), ...(place?.placeId ? { placeId: place.placeId } : {}),
         car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() && engine !== "unsure" ? { engine: engine.trim() } : {}) },
-        job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [], own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined,
+        job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [], own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined, ...(referredBy.trim() ? { referredBy: referredBy.trim().slice(0, 80) } : {}),
         priceOverride: special.trim() ? Number(special) : null,
         ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine && x.engine !== "unsure" ? { engine: x.engine } : {}) }, job: x.job, addons: extraAddons(x),
-          own: null, ...(x.job === "diagnostic" && x.problem.trim() ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
+          own: null, ...(x.vin && x.vin.length === 17 ? { vin: x.vin } : {}), ...(x.job === "diagnostic" && x.problem.trim() ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
         customerId: customer?.id ?? null,
       }),
     });
@@ -295,6 +296,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
                 <button key={k} onClick={() => setPayMode(k)} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(payMode === k)}>{n}</button>
               ))}
             </div>
+            {!customer && <label className={lbl}>Referred by (optional)<input value={referredBy} onChange={(e) => setReferredBy(e.target.value)} placeholder="Their phone number gives them $5 off automatically" className="h-12 rounded-xl border border-[#c8d0e0] px-3 text-base" /></label>}
             <label className={lbl}>Notes (optional)<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Gate code, parks on the street…" className="rounded-xl border border-[#c8d0e0] p-3 text-base" /></label>
           </section>
         </div>

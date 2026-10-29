@@ -8,6 +8,7 @@ import { receiptHtml, receiptText, type ReceiptData } from "@/lib/os/receipt";
 import { sendSms, template, fill, reviewLink } from "@/lib/os/sms";
 import { emailFrom } from "@/lib/os/email-from";
 import { learnFromJob } from "@/lib/os/spec-learn";
+import { rewardReferrer, ensureRefCode, refLink } from "@/lib/os/referrals";
 
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const TZ = "America/Halifax";
@@ -121,6 +122,8 @@ export async function finishJob(input: FinishInput, owner: string) {
 
   await sbPatch("bookings", `id=eq.${ctx.booking.id}`, { status: "done", finished_at: now });
   // what we used becomes this car's (and engine's) spec for next time
+  // their first visit: whoever referred them gets their $5 credit (and a text)
+  if (!fleet && ctx.customer) await rewardReferrer(ctx.customer.id).catch(() => null);
   if (withOil && ctx.vehicle && own !== "both") await learnFromJob(ctx.vehicle, { grade, litres, filter: filterPart, cars: ctx.booking.cars || 1 }).catch(() => null);
   const vin = (input.vin || "").toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "");
   if (ctx.vehicle && (km || vin)) await sbPatch("vehicles", `id=eq.${ctx.vehicle.id}`, { ...(km ? { last_km: km } : {}), ...(vin.length === 17 ? { vin } : {}) });
@@ -203,6 +206,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       receiptUrl: `${siteUrl()}/receipt/${j.receipt_token}`,
       logoUrl: `${siteUrl()}/email-logo.png`,
       reviewUrl: j.review_requested ? await reviewLink() : null,
+      referUrl: j.customer_id ? await ensureRefCode(j.customer_id).then((c) => (c ? refLink(c) : null)).catch(() => null) : null,
     },
   };
 }

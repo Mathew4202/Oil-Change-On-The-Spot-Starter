@@ -4,6 +4,7 @@ import QuickPrice from "@/components/site/QuickPrice";
 import Reviews from "@/components/site/Reviews";
 import ScrollPhotos from "@/components/site/ScrollPhotos";
 import { getReviews } from "@/lib/site/reviews";
+import { ChristmasSection } from "@/components/site/ChristmasDeal";
 import { NAVY, GOLD, MUTED, LIGHT, PHONE, PHONE_TEL } from "@/components/site/brand";
 
 export const revalidate = 3600;
@@ -48,6 +49,8 @@ export default async function Home() {
           </div>
         </div>
       </section>
+
+      <ChristmasSection />
 
       {/* Why us */}
       <section aria-label="Why customers pick us" style={{ background: GOLD }}>

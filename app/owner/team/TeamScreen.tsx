@@ -40,7 +40,7 @@ export default function TeamScreen() {
         <h1 className="text-[30px] leading-none font-extrabold mt-1" style={{ fontFamily: "var(--font-condensed)" }}>Team logins</h1>
         <p className="text-sm text-[#c9d3ea] mt-1">Each person signs in with their own name and password and only sees their part.</p>
       </header>
-      <main className="p-4 flex flex-col gap-3">
+      <div className="p-4 flex flex-col gap-3">
         {!ready && <p className="rounded-xl p-3 text-sm" style={{ background: "#fff6dd" }}>Run migration 0032 in Supabase first, then come back here.</p>}
         {err && <p className="rounded-xl bg-red-50 text-red-800 p-3 text-sm" role="alert">{err}</p>}
 
@@ -108,7 +108,7 @@ export default function TeamScreen() {
         ) : (
           <button onClick={() => setAdding(true)} className="h-12 rounded-xl font-extrabold" style={{ background: GOLD, color: NAVY }}>+ New staff login</button>
         )}
-      </main>
+      </div>
       <OwnerNav />
     </div>
   );

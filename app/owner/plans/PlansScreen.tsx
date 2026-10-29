@@ -38,7 +38,7 @@ export default function PlansScreen() {
         </div>
         {!form && <button onClick={() => setForm({ name: "", phone: "", car: "", visits: "6", perVisit: "", swaps: "0", swapPrice: "" })} className="h-10 px-3 rounded-lg font-bold text-sm" style={{ background: GOLD, color: NAVY }}>+ New plan</button>}
       </header>
-      <main className="flex-1 p-4 flex flex-col gap-4 pb-28">
+      <div className="flex-1 p-4 flex flex-col gap-4 pb-28">
         {msg && <p className="rounded-xl p-3 font-semibold bg-white" role="status">{msg}</p>}
         {!d && <p className="text-center py-10" style={{ color: MUTED }}>Loading…</p>}
 
@@ -122,7 +122,7 @@ export default function PlansScreen() {
             ))}
           </section>
         )}
-      </main>
+      </div>
       <OwnerNav />
     </div>
   );

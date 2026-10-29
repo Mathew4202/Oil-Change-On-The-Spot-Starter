@@ -24,11 +24,20 @@ export async function GET(req: NextRequest) {
       addons: (q.get("addons") || "").split(",").filter(Boolean) as Addon["kind"][],
       own: (q.get("own") as any) || null, km: q.get("km") ? Number(q.get("km")) : null,
       cars: q.get("cars") ? Number(q.get("cars")) : 1,
+      date: /^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date") : halifaxDate(new Date()),
       inSeason: !!seasonFor(/^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date")! : halifaxDate(new Date()), await seasonWindows()),
       job: (["seasonal", "parts", "diagnostic", "tires", "rotation"].includes(q.get("job") || "") ? q.get("job") : "oil_change") as "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires" | "rotation",
     });
     const owner = (q.get("key") && q.get("key") === process.env.ADMIN_SECRET) || !!currentOwner();   // any HQ login: part numbers and notes
     const boss = (q.get("key") && q.get("key") === process.env.ADMIN_SECRET) || isOwner();            // owners only: our cost and profit
+    // HQ booking for a returning customer: their referral credits come off, same as when it's booked
+    const cust = q.get("customer");
+    if (owner && cust && /^[0-9a-f-]{36}$/i.test(cust)) {
+      const { takeCredits } = await import("@/lib/os/referrals");
+      const { addLines } = await import("@/lib/os/deals");
+      const cr = await takeCredits(cust, quote.subtotal).catch(() => null);
+      if (cr?.total) Object.assign(quote, addLines(quote, cr.lines, 0.14));
+    }
     const { cost, profit, raised, needsReview, ...publicQuote } = quote;
     return NextResponse.json({
       vehicle: { year, make, model, class: vehicleClass },

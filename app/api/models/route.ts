@@ -1,3 +1,4 @@
+import { MODEL_BY_MAKE } from "@/data/vehicles";
 import { NextResponse } from "next/server";
 
 const EV_KEYWORDS = [
@@ -38,12 +39,13 @@ export async function GET(req: Request) {
 
   if (!make || !year) return NextResponse.json({ models: [] });
 
-  const url = `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/${encodeURIComponent(
+  const url = `${process.env.VPIC_BASE_URL || "https://vpic.nhtsa.dot.gov"}/api/vehicles/GetModelsForMakeYear/make/${encodeURIComponent(
     make,
   )}/modelyear/${encodeURIComponent(year)}?format=json`;
 
   try {
-    const r = await fetch(url, { cache: "no-store" });
+    // the model list rarely changes: keep it a day, and never wait more than 6 seconds on NHTSA
+    const r = await fetch(url, { next: { revalidate: 86400 }, signal: AbortSignal.timeout(6000) });
     const data: { Results?: { Model_Name?: string }[] } = await r.json();
 
     let models: string[] = Array.from(
@@ -63,8 +65,14 @@ export async function GET(req: Request) {
       models = models.sort((a, b) => a.localeCompare(b));
     }
 
+    if (!models.length) return NextResponse.json({ models: backup(make) });
     return NextResponse.json({ models });
   } catch {
-    return NextResponse.json({ models: [] }, { status: 200 });
+    // NHTSA down or slow: our own list of common models, so nobody gets stuck on an empty dropdown
+    return NextResponse.json({ models: backup(make) }, { status: 200 });
   }
+}
+function backup(make: string) {
+  const key = Object.keys(MODEL_BY_MAKE).find((k) => k.toLowerCase() === make.trim().toLowerCase());
+  return key ? MODEL_BY_MAKE[key].map((m) => m.name).filter((m) => !isEVModel(m)).sort((a, b) => a.localeCompare(b)) : [];
 }

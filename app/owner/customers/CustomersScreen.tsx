@@ -63,7 +63,7 @@ export default function CustomersScreen() {
           aria-label="Search customers" className="mt-3 h-11 w-full rounded-xl px-3 text-[#0d1b3e] bg-white" />
       </header>
 
-      <main className="flex-1 p-4 flex flex-col gap-3 pb-28">
+      <div className="flex-1 p-4 flex flex-col gap-3 pb-28">
         <div className="flex gap-2 overflow-x-auto -mx-4 px-4 pb-1" role="tablist" aria-label="Show">
           {([["all", "Everyone", null], ["due", "Due for oil", counts.due], ["booked", "Booked", counts.booked], ["nophone", "No phone", counts.nophone]] as [Filter, string, number | null][]).map(([k, n, c]) => (
             <button key={k} role="tab" aria-selected={filter === k} onClick={() => setFilter(k)} className="h-9 px-3 rounded-full border text-sm font-bold whitespace-nowrap" style={chip(filter === k)}>
@@ -115,7 +115,7 @@ export default function CustomersScreen() {
             );
           })}
         </ul>
-      </main>
+      </div>
       <OwnerNav />
     </div>
   );

@@ -48,7 +48,7 @@ export default function Manage({ token }: { token: string }) {
           <p className="text-sm font-bold tracking-widest" style={{ color: GOLD }}>OIL CHANGE ON THE SPOT</p>
           <h1 className="text-[28px] font-extrabold leading-tight">Your booking</h1>
         </header>
-        <main className="p-5 flex flex-col gap-4">
+        <div className="p-5 flex flex-col gap-4">
           {err && <p className="rounded-xl bg-red-50 text-red-800 p-3" role="alert">{err}</p>}
           {msg && <p className="rounded-xl p-3 font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }} role="status">{msg}</p>}
           {!b && !err && <p className="text-[#4a5878]">Loading…</p>}
@@ -113,7 +113,7 @@ export default function Manage({ token }: { token: string }) {
 
           {b && b.status === "cancelled" && <a href="/booking" className={`${btn} flex items-center justify-center`} style={{ background: GOLD, color: NAVY }}>Book a new time</a>}
           <p className="text-sm text-[#4a5878] mt-2">Questions? Call or text <a className="font-bold underline" href={PHONE_TEL}>{PHONE}</a>.</p>
-        </main>
+        </div>
       </div>
     </div>
   );

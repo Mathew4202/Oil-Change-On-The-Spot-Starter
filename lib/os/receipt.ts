@@ -16,6 +16,7 @@ export type ReceiptData = {
   paidWith?: string | null; km?: number | null; nextDueKm?: number | null; nextDueDate?: string | null;
   oil?: string | null; filter?: string | null; vin?: string | null;
   reviewUrl?: string | null; receiptUrl?: string | null; logoUrl?: string | null;
+  referUrl?: string | null;   // their own referral link: a friend books with it, they get $5 off
   checks?: { now: string[]; soon: string[]; ok: string[] } | null;   // the OK / Soon / Now taps from the job
 };
 
@@ -70,7 +71,10 @@ export function receiptHtml(r: ReceiptData): string {
    Happy with the service? A quick Google review helps other people in HRM find us and supports our small business.<br>
    <a href="${esc(r.reviewUrl)}" style="display:inline-block;margin-top:10px;background:#f2b01e;color:#0d1b3e;font-weight:700;text-decoration:none;padding:10px 16px;border-radius:8px">Leave a review</a>
   </div>` : ""}
-  <p style="margin:16px 0 0;font-size:14px;line-height:1.5;color:#0d1b3e">Refer a friend or family member and get <strong>$5 off</strong> your next oil change.</p>
+  <div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.5;background:#f4f6fa;color:#0d1b3e">
+   <strong>Refer a friend, get $5 off.</strong> ${r.referUrl ? `Send them your link. When they book with it and we've done their car, $5 comes off your next oil change on its own:<br>
+   <a href="${esc(r.referUrl)}" style="color:#0d1b3e;font-weight:700">${esc(r.referUrl.replace(/^https?:\/\//, ""))}</a>` : "Tell them to mention your name when they book, and $5 comes off your next oil change."}
+  </div>
   <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#4a5878">${esc(BUSINESS.name)} · ${esc(BUSINESS.town)} · ${esc(BUSINESS.phone)} · ${esc(BUSINESS.email)}<br>HST # ${BUSINESS.hst}${r.receiptUrl ? ` · <a href="${esc(r.receiptUrl)}" style="color:#4a5878">View online</a>` : ""}</p>
  </div>
 </div></body></html>`;
@@ -85,6 +89,7 @@ export function receiptText(r: ReceiptData): string {
     r.vin ? `VIN: ${r.vin}` : "", r.km ? `Odometer: ${r.km} km` : "", r.oil ? `Oil: ${r.oil}` : "", r.filter ? `Oil filter: ${r.filter}` : "",
     r.nextDueKm ? `Next oil change: ${r.nextDueKm} km${r.nextDueDate ? ` or ${r.nextDueDate}` : ""}` : "",
     r.checks?.now.length ? `Needs doing now: ${r.checks.now.join(", ")}` : "", r.checks?.soon.length ? `Coming up soon: ${r.checks.soon.join(", ")}` : "",
+    r.referUrl ? `Refer a friend, get $5 off your next oil change: ${r.referUrl}` : "",
     "", `${BUSINESS.name}, HST # ${BUSINESS.hst}, ${BUSINESS.phone}`,
   ].filter((x) => x !== "").join("\n");
 }

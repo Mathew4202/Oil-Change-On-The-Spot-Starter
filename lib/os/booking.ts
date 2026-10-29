@@ -14,6 +14,8 @@ import { seasonFor } from "@/lib/os/seasons";
 import { pushToOwners } from "@/lib/os/push";
 import { newManageToken, sendBookingConfirmation } from "@/lib/os/customer-texts";
 import { halifaxDate, label } from "@/lib/os/slots";
+import { addLines } from "@/lib/os/deals";
+import { findReferrer, setReferredBy, takeCredits, markCreditsUsed } from "@/lib/os/referrals";
 
 export const BookingBody = z.object({
   firstName: z.string().trim().min(1).max(60),
@@ -35,6 +37,8 @@ export const BookingBody = z.object({
   photos: z.array(z.string().regex(/^\d{4}-\d{2}\/[0-9a-f-]{36}\.jpg$/)).max(3).optional(),   // VIN / engine label photo (optional)
   vin: z.string().max(25).optional(),
   holdToken: z.string().max(40).optional(),    // booked from the link we texted while holding the time on a call
+  refCode: z.string().max(20).optional(),      // came from a friend's referral link (/r/CODE)
+  referredBy: z.string().max(80).optional(),   // or typed who sent them (name or phone)
   // more cars on the same visit (each gets its own booking, back to back, one travel fee)
   moreCars: z.array(z.object({
     car: z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1), model: z.string().trim().min(1), engine: z.string().trim().optional() }),
@@ -42,6 +46,7 @@ export const BookingBody = z.object({
     addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires", "coolant", "washer_fluid"])).default([]),
     own: z.enum(["both", "oil", "filter"]).nullable().optional(),
     notes: z.string().max(600).optional(),
+    vin: z.string().max(25).optional(),        // snapped or typed for this car
   })).max(3).optional(),
 });
 export type BookingInput = z.infer<typeof BookingBody>;
@@ -89,7 +94,7 @@ async function createBookingInner(b: BookingInput, opts: Opts): Promise<BookingR
   if (!b.moreCars?.length) return createOne(b, opts);
   const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((x) => [x.key, Number(x.value)]));
   const cars: BookingInput[] = [{ ...b, moreCars: undefined, cars: 1 },
-    ...b.moreCars.map((m) => ({ ...b, car: m.car, job: m.job, addons: m.addons, own: m.own ?? null, notes: m.notes, photos: undefined, vin: undefined, moreCars: undefined, cars: 1 }))];
+    ...b.moreCars.map((m) => ({ ...b, car: m.car, job: m.job, addons: m.addons, own: m.own ?? null, notes: m.notes, photos: undefined, vin: m.vin, moreCars: undefined, cars: 1 }))];
   const clean = (x: BookingInput) => (x.job === "oil_change" ? x.addons : x.job === "seasonal" || x.job === "parts" ? x.addons.filter((a) => a !== "tires") : []);
   const total = cars.reduce((t, x) => t + minutesFor(x.job, rules, clean(x)), 0);
   const start = new Date(b.start);
@@ -152,7 +157,8 @@ async function createOne(b: BookingInput, opts: Opts & {
   // Travel: worked out here from the address, never trusted from the browser. Without a maps key it falls back to what was sent.
   const dist = mapsReady() ? await drivingDistance(b.placeId ? { placeId: b.placeId } : { address: b.address }).catch(() => null) : null;
   const km = opts.noTravel ? null : mapsReady() ? dist?.km ?? null : b.km ?? null;   // travel is charged once per visit
-  const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, km, cars: b.cars, inSeason });
+  const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, km, cars: b.cars, inSeason,
+    date: opts.fleetAccountId ? null : halifaxDate(new Date(b.start)) });   // the Christmas deal goes by the visit date (fleets have their own prices)
   const noDistance = mapsReady() && !dist && !opts.noTravel;
   if (opts.priceOverride != null && opts.priceOverride >= 0) {
     const r2 = (x: number) => Math.round(x * 100) / 100;
@@ -243,6 +249,18 @@ async function createOne(b: BookingInput, opts: Opts & {
     }
   }
 
+  // 4c) Referrals: tie a new customer to whoever sent them, and take any credits off this booking (fleets excluded)
+  let creditIds: string[] = [];
+  if (!opts.fleetAccountId) {
+    if (b.refCode || b.referredBy) await setReferredBy(customer.id, await findReferrer({ code: b.refCode, text: b.referredBy }).catch(() => null)).catch(() => null);
+    const cr = await takeCredits(customer.id, quote.subtotal).catch(() => null);
+    if (cr?.total) {
+      Object.assign(quote, addLines(quote, cr.lines, Number(rules.hst_rate ?? 0.14)));
+      creditIds = cr.ids;
+    }
+  }
+  if (b.referredBy && !b.refCode) b = { ...b, notes: [b.notes, `Referred by: ${b.referredBy}`].filter(Boolean).join(" · ") };
+
   // 5) Book it. The database refuses it if the time overlaps another booking.
   const manageToken = newManageToken();
   const bk = await sbInsert<{ id: string }>("bookings", {
@@ -261,6 +279,8 @@ async function createOne(b: BookingInput, opts: Opts & {
     }
     throw new Error(`booking: ${JSON.stringify(bk.error)}`);
   }
+
+  await markCreditsUsed(creditIds, bk.data!.id);
 
   const carName = `${b.car.year} ${b.car.make} ${b.car.model}`;
   if (opts.silent) return { ok: true, bookingId: bk.data!.id, date, when, total: quote.total, subtotal: quote.subtotal, hst: quote.hst, lines: quote.lines, message: "", end: slotEnd, car: carName };

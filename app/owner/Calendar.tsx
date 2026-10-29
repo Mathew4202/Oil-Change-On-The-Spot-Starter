@@ -153,7 +153,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
         </div>
       </header>
 
-      <main className="flex-1 p-4 flex flex-col gap-3 pb-28">
+      <div className="flex-1 p-4 flex flex-col gap-3 pb-28">
         {can.calls && <CallsPanel key={callsKey} focus={callFocus} onChanged={() => load(date)}
           onPickTime={(c) => { setHoldPreset({ callId: c.id, name: c.extract?.name, phone: c.phone, job: c.extract?.job, cars: c.extract?.cars,
             note: c.extract ? [[c.extract.year, c.extract.make, c.extract.model].filter(Boolean).join(" "), c.extract.notes].filter(Boolean).join(" · ") : null }); setHolding(true); }} />}
@@ -300,7 +300,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
             + Block time on {shortDay(date).wd} {shortDay(date).n}
           </button>
         )}
-      </main>
+      </div>
 
       <OwnerNav />
 

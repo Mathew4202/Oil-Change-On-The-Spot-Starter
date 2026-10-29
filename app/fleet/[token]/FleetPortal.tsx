@@ -79,8 +79,8 @@ export default function FleetPortal({ token }: { token: string }) {
   }
 
   const field = "h-12 rounded-xl border px-3 text-[16px] w-full bg-white";
-  if (err) return <main className="min-h-dvh grid place-items-center p-6 text-center text-[#0d1b3e] bg-[#eef1f6]"><div><h1 className="text-2xl font-extrabold">{err}</h1><p className="mt-2">Call or text <a className="underline font-bold" href={PHONE_TEL}>{PHONE}</a>.</p></div></main>;
-  if (!d) return <main className="min-h-dvh grid place-items-center bg-[#eef1f6] text-[#4a5878]">Loading…</main>;
+  if (err) return <div className="min-h-dvh grid place-items-center p-6 text-center text-[#0d1b3e] bg-[#eef1f6]"><div><h1 className="text-2xl font-extrabold">{err}</h1><p className="mt-2">Call or text <a className="underline font-bold" href={PHONE_TEL}>{PHONE}</a>.</p></div></div>;
+  if (!d) return <div className="min-h-dvh grid place-items-center bg-[#eef1f6] text-[#4a5878]">Loading…</div>;
   const a = d.account;
 
   return (
@@ -96,7 +96,7 @@ export default function FleetPortal({ token }: { token: string }) {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto p-4 flex flex-col gap-4 pb-16">
+      <div className="max-w-3xl mx-auto p-4 flex flex-col gap-4 pb-16">
         {msg && <p className="rounded-xl p-3 font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }} role="status">{msg}</p>}
 
         <section className="grid grid-cols-3 gap-2 text-center">
@@ -155,8 +155,8 @@ export default function FleetPortal({ token }: { token: string }) {
         </section>
 
         <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
-          <div className="flex justify-between items-center gap-2"><h2 className="font-extrabold text-lg">Add vehicles</h2>
-            {!adding && !bulk && <div className="flex gap-2">
+          <div className="flex flex-wrap justify-between items-center gap-2"><h2 className="font-extrabold text-lg">Add vehicles</h2>
+            {!adding && !bulk && <div className="flex gap-2 whitespace-nowrap">
               <button onClick={() => setBulk(true)} className="h-10 px-4 rounded-full font-bold text-white" style={{ background: NAVY }}>+ Many at once</button>
               <button onClick={() => setAdding(true)} className="h-10 px-4 rounded-full border font-bold" style={{ borderColor: NAVY }}>+ One</button>
             </div>}</div>
@@ -199,7 +199,7 @@ export default function FleetPortal({ token }: { token: string }) {
         </section>
 
         <p className="text-center text-sm" style={{ color: MUTED }}>Questions? Call or text <a className="underline font-semibold" href={PHONE_TEL}>{PHONE}</a>. Keep this link private, it works like a key to your account.</p>
-      </main>
+      </div>
     </div>
   );
 }

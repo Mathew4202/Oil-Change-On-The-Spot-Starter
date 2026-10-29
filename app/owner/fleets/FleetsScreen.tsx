@@ -29,7 +29,7 @@ export default function FleetsScreen() {
         </div>
         {!form && <button onClick={() => setForm({})} className="h-10 px-3 rounded-lg font-bold text-sm" style={{ background: "#f2b01e", color: NAVY }}>+ New account</button>}
       </header>
-      <main className="flex-1 p-4 flex flex-col gap-3 pb-28">
+      <div className="flex-1 p-4 flex flex-col gap-3 pb-28">
         {err && <p className="text-red-700" role="alert">{err}</p>}
         {!data && !err && <p className="text-center py-10" style={{ color: MUTED }}>Loading…</p>}
         {form && <AccountForm start={form} onCancel={() => setForm(null)} onDone={(id) => { window.location.href = `/owner/fleets/${id}`; }} />}
@@ -75,7 +75,7 @@ export default function FleetsScreen() {
             ))}
           </section>
         )}
-      </main>
+      </div>
       <OwnerNav />
     </div>
   );

@@ -60,7 +60,7 @@ export default function MoneyScreen() {
         </div>
       </header>
 
-      <main className="flex-1 p-4 flex flex-col gap-4 pb-28">
+      <div className="flex-1 p-4 flex flex-col gap-4 pb-28">
         {err && <p className="rounded-xl p-3 bg-[#fde8e8] text-[#9b1c1c] font-semibold">{err}</p>}
         {!data && !err && <p className="text-center text-[#4a5878] py-8">Loading…</p>}
 
@@ -132,7 +132,7 @@ export default function MoneyScreen() {
             <BankSection status={data.bank} lines={bank.needsLook} recent={bank.recent} reload={() => { loadBank(); load(); }} />
           </>
         )}
-      </main>
+      </div>
       <OwnerNav />
     </div>
   );

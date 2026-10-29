@@ -48,11 +48,14 @@ export type Decoded = { year: number | null; make: string | null; model: string 
 /** Free NHTSA decoder: year, make, model and engine size from a VIN. */
 export async function decodeVin(vin: string): Promise<Decoded | null> {
   if (!vinOk(vin)) return null;
-  const res = await fetch(`https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/${cleanVin(vin)}?format=json`).catch(() => null);
+  const res = await fetch(`${process.env.VPIC_BASE_URL || "https://vpic.nhtsa.dot.gov"}/api/vehicles/DecodeVinValues/${cleanVin(vin)}?format=json`, { signal: AbortSignal.timeout(8000) }).catch(() => null);
   if (!res?.ok) return null;
   const r = (await res.json().catch(() => ({})))?.Results?.[0];
   if (!r) return null;
   const d = Number(r.DisplacementL);
-  return { year: Number(r.ModelYear) || null, make: r.Make || null, model: r.Model || null, engineL: d ? d.toFixed(1) : null,
+  // NHTSA shouts ("HONDA", "MERCEDES-BENZ"): match our lists ("Honda", "Mercedes-Benz")
+  const KEEP = ["BMW", "GMC", "MINI", "FIAT", "RAM"];
+  const make = r.Make ? (KEEP.includes(String(r.Make).toUpperCase()) ? (String(r.Make).toUpperCase() === "RAM" ? "Ram" : String(r.Make).toUpperCase()) : String(r.Make).toLowerCase().replace(/(^|[\s-])\w/g, (c: string) => c.toUpperCase())) : null;
+  return { year: Number(r.ModelYear) || null, make, model: r.Model || null, engineL: d ? d.toFixed(1) : null,
     fuel: r.FuelTypePrimary || null, cylinders: r.EngineCylinders || null };
 }

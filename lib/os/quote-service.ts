@@ -8,6 +8,7 @@ import { euroOilKey, quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUN
 const ADDON_DEFAULTS: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200, coolant: 25, washer_fluid: 10, tires: 0 };
 const addonPrice = (k: string, r: Record<string, number>) => r[`addon_part_${k}`] ?? r[`addon_price_${k}`] ?? ADDON_DEFAULTS[k] ?? 0;
 import { lookupOilSpec } from "@/lib/os/spec-lookup-run";
+import { addLines, christmasLine } from "@/lib/os/deals";
 import { detectClassFromModel } from "@/data/vehicleClass";
 
 export type Spec = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_grade: string;
@@ -29,6 +30,7 @@ export type QuoteRequest = {
   job?: JobType;   // oil_change (default), parts (no oil change), diagnostic or tires
   inSeason?: boolean;   // the visit date falls in a seasonal window (oil + tires gets the bigger discount)
   cars?: number;   // same car, several vehicles (e.g. a fleet visit): everything but travel is per car
+  date?: string | null;   // visit day (Halifax "YYYY-MM-DD"): the Christmas deal applies Dec 1 to Jan 1
 };
 
 const norm = (s: string | null | undefined) => (s || "").toLowerCase().replace(/[^a-z0-9.]/g, "");
@@ -212,6 +214,10 @@ export async function buildQuote(req: QuoteRequest) {
     if (quote.cost != null) quote.cost = r2(quote.cost * n);
     if (quote.profit != null) quote.profit = r2(quote.profit * n);
   }
+
+  // The Christmas deal (Dec 1 to Jan 1, every year): $10 off each oil change
+  const xmas = christmasLine(req.date, req.job ?? "oil_change", n, r);
+  if (xmas) Object.assign(quote, addLines(quote, [xmas], Number(r.hst_rate ?? 0.14)));
 
   // Notes for the job card (not admin work): only when we truly couldn't find the oil.
   quote.needsReview = quote.needsReview.filter((n) => !/^Filter price not on file/.test(n));

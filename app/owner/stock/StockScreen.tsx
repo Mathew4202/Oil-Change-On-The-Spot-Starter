@@ -2,6 +2,7 @@
 // What's on the shelf, what the next 7 days need, and what to buy.
 import { useEffect, useMemo, useState } from "react";
 import OwnerNav from "../OwnerNav";
+import { useRole } from "../RoleContext";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null };
@@ -9,6 +10,7 @@ type Buy = { kind: string; label: string; need: number; have: number; buy: numbe
 const CAT: Record<string, string> = { oil: "Oil", oil_filter: "Oil filters", cabin_filter: "Cabin filters", engine_filter: "Engine air filters", wiper: "Wipers", battery: "Batteries" };
 
 export default function StockScreen() {
+  const { can } = useRole();
   const [parts, setParts] = useState<Part[]>([]); const [toBuy, setToBuy] = useState<Buy[]>([]); const [count, setCount] = useState(0);
   const [q, setQ] = useState(""); const [showEmpty, setShowEmpty] = useState(false); const [loading, setLoading] = useState(true);
   const load = () => fetch("/api/owner/stock", { cache: "no-store" }).then((r) => r.json()).then((d) => { setParts(d.parts || []); setToBuy(d.toBuy || []); setCount(d.bookingsCounted || 0); setLoading(false); });
@@ -25,7 +27,7 @@ export default function StockScreen() {
   }
   const [ai, setAi] = useState<{ paid: { spent: number; left: number; requests: number } | null; free: boolean } | null>(null);
   const [filling, setFilling] = useState(false); const [specErr, setSpecErr] = useState("");
-  useEffect(() => { fetch("/api/owner/specs", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (d.total != null) setSpecs(d); setEngines(d.engines ?? 0); setAi({ paid: d.paid ?? null, free: !!d.free }); }).catch(() => {}); }, []);
+  useEffect(() => { if (!can.settings) return; fetch("/api/owner/specs", { cache: "no-store" }).then((r) => r.json()).then((d) => { if (d.total != null) setSpecs(d); setEngines(d.engines ?? 0); setAi({ paid: d.paid ?? null, free: !!d.free }); }).catch(() => {}); }, [can.settings]);
   async function fillSpecs() {
     setFilling(true); setSpecErr("");
     for (let i = 0; i < 40; i++) {
@@ -58,7 +60,7 @@ export default function StockScreen() {
         <p className="text-sm text-[#c9d3ea] font-semibold">Filters and oil</p>
         <h1 className="text-[30px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>Stock</h1>
       </header>
-      <main className="flex-1 p-4 flex flex-col gap-4 pb-28">
+      <div className="flex-1 p-4 flex flex-col gap-4 pb-28">
         {loading && <p className="text-center text-[#4a5878] py-8">Loading…</p>}
 
         {engines != null && (engines < 1000 || engMsg) && (
@@ -124,7 +126,7 @@ export default function StockScreen() {
           </section>
         ))}
         <p className="text-xs text-[#4a5878] text-center">Stock goes up when you save a receipt and down when you finish a job. Use − / + to fix a count.</p>
-      </main>
+      </div>
       <OwnerNav />
     </div>
   );

@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { NAVY, GOLD, PHONE, PHONE_TEL } from "./brand";
+import { ChristmasStrip } from "./ChristmasDeal";
 
 const LINKS: [string, string][] = [["/services", "Services and prices"], ["/maintenance-plan", "Maintenance plan"], ["/#fleet", "Fleets"], ["/#reviews", "Reviews"],
   ["/#area", "Service area"], ["/faq", "FAQ"], ["/about", "About us"], ["/booking", "Sign in"], ["/fleet-login", "Fleet login"]];
@@ -23,6 +24,7 @@ export default function SiteHeader() {
   }, [open]);
   return (
     <header className="sticky top-0 z-50 text-white" style={{ background: NAVY }}>
+      <ChristmasStrip />
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-2 flex items-center justify-between gap-3">
         <Link href="/" className="flex items-center gap-3 no-underline text-white">
           {/* eslint-disable-next-line @next/next/no-img-element */}
