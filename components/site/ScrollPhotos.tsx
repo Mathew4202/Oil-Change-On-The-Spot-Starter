@@ -19,8 +19,8 @@ const BLOCKS: Block[] = [
     ] },
   { title: "We bring the oil, the filter and the mess kit.", text: "Mats down, old oil taken away, nothing left on your driveway.",
     photos: [
-      { src: "/gallery/work-07.webp", alt: "Oil change on a blue Ford pickup", from: [-40, 80, 6] },
-      { src: "/gallery/work-22.png", alt: "Oil change on a Volkswagen in a driveway", from: [40, 60, -6] },
+      { src: "/gallery/work-26.webp", alt: "Pouring fresh oil into a red Kia Forte in a backyard driveway", from: [-40, 80, 6] },
+      { src: "/gallery/work-28.webp", alt: "Red Kia Forte on ramps, hood up, during an oil change", from: [40, 60, -6] },
     ] },
   { title: "You keep your day. We do the oil change.", cta: true,
     photos: [{ src: "/gallery/work-15.png", alt: "Oil change on a Honda in a driveway", from: [0, 120, 0] }] },

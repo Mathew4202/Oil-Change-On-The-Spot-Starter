@@ -24,7 +24,13 @@ export async function importStatement(p: Parsed, fileName: string, owner: string
     `payments?select=id,paid_at,amount,method&bank_line_id=is.null&method=eq.etransfer&paid_at=gte.${shift(from, -6)}&paid_at=lte.${shift(to, 2)}`))
     .map((x) => ({ id: x.id, date: halifaxDate(new Date(x.paid_at)), amount: Number(x.amount), method: x.method }));
 
-  const results = matchStatement(fresh.map((x) => x.l), exps, pays);
+  // bills we sent that aren't paid yet (an e-transfer for one marks it paid)
+  const owedRows = await sbGet<{ id: string; starts_at: string; customers: { first_name: string | null; last_name: string | null } | null; jobs: { receipt_no: number | null; total: number | null; tip: number | null }[] | null; payments: { amount: number }[] | null }>(
+    `bookings?select=id,starts_at,customers(first_name,last_name),jobs(receipt_no,total,tip),payments(amount)&status=eq.done&paid_at=is.null&pay_mode=neq.fleet_invoice&starts_at=gte.${shift(from, -45)}`).catch(() => []);
+  const owed = owedRows.filter((b) => b.jobs?.[0]?.total != null).map((b) => ({ bookingId: b.id, date: halifaxDate(new Date(b.starts_at)), receiptNo: b.jobs![0].receipt_no,
+    due: Math.round((Number(b.jobs![0].total) - (b.payments ?? []).reduce((t, x) => t + Number(x.amount), 0)) * 100) / 100,
+    name: [b.customers?.first_name, b.customers?.last_name].filter(Boolean).join(" ") || "Customer" })).filter((o) => o.due > 0);
+  const results = matchStatement(fresh.map((x) => x.l), exps, pays, owed);
   const imp = await sbInsert<{ id: string }>("bank_imports", { file_name: fileName.slice(0, 120), account: p.account, from_date: from, to_date: to, lines: fresh.length, added_by: owner });
   if (!imp.ok) return { ok: false as const, error: `Couldn't save the statement: ${JSON.stringify(imp.error).slice(0, 200)}` };
 
@@ -43,6 +49,16 @@ export async function importStatement(p: Parsed, fileName: string, owner: string
   for (const row of rows) {
     if (row.status === "matched" && row.expense_ids.length) await sbPatch("expenses", `id=in.${inList(row.expense_ids)}`, { bank_line_id: row.id, bank_matched_at: now });
     if (row.payment_id) await sbPatch("payments", `id=eq.${enc(row.payment_id)}`, { bank_line_id: row.id });
+  }
+  // e-transfers that pay a bill we sent: record the payment (marks the job paid) and email the paid receipt
+  for (const [i, r] of results.entries()) {
+    if (!r.owedBookingId) continue;
+    const { recordPayment, sendReceipt } = await import("@/lib/os/jobs");
+    await recordPayment(r.owedBookingId, Math.abs(r.amount), "etransfer", `${owner} (bank statement)`).catch(() => null);
+    const [pay] = await sbGet<{ id: string }>(`payments?select=id&booking_id=eq.${r.owedBookingId}&order=paid_at.desc&limit=1`).catch(() => []);
+    if (pay) { await sbPatch("payments", `id=eq.${pay.id}`, { bank_line_id: rows[i].id }).catch(() => null); await sbPatch("bank_lines", `id=eq.${rows[i].id}`, { payment_id: pay.id }).catch(() => null); }
+    const [jb] = await sbGet<{ id: string }>(`jobs?select=id&booking_id=eq.${r.owedBookingId}&limit=1`).catch(() => []);
+    if (jb) await sendReceipt(jb.id, null).catch(() => null);
   }
   const count = (s: Result["status"]) => results.filter((r) => r.status === s).length;
   return { ok: true as const, account: p.account, from, to, added: fresh.length, skipped, matched: count("matched"), auto: count("auto"), needsLook: count("needs_look") };

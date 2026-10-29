@@ -3,6 +3,7 @@
 import VinPhoto, { type VinResult, type Decoded } from "@/components/VinPhoto";
 import { ExtraCarFields, ExtraCarServices, ExtraPricer, newExtra, extraMissing, extraCarMissing, extraName, extraAddons, type Extra } from "@/components/ExtraCar";
 import { matchEngine } from "@/lib/os/vin";
+import { addonsFor, keepAddons } from "@/lib/os/addons";
 import { useEffect, useMemo, useState } from "react";
 import AddressField, { type Place } from "@/components/AddressField";
 import type { Profile } from "@/lib/os/customer-account";
@@ -108,6 +109,12 @@ export default function BookingFlow() {
     if (q.get("phone")) setPhone((p) => p || q.get("phone")!.replace(/[^\d]/g, "").slice(-10));
     if (/^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") && q.get("date")! >= new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax" })) setDate(q.get("date")!);
     if (q.get("engine")) setLinkEngine(q.get("engine")!.slice(0, 40));
+    if (q.get("address")) setAddress((a) => a || q.get("address")!.slice(0, 160));
+    if (q.get("email")) setEmail((e) => e || q.get("email")!.slice(0, 120));
+    if (q.get("problem")) setProblem(q.get("problem")!.slice(0, 600));
+    if (q.get("notes")) setNotes((n) => n || q.get("notes")!.slice(0, 300));
+    const linkAdds = (q.get("addons") || "").split(",").filter((a) => ["tires", ...PARTS_ONLY].includes(a));
+    if (linkAdds.length) setAddons(linkAdds);
     // a friend's referral link (/r/CODE): kept on this phone for a month, so booking later still counts
     try {
       const rc = (q.get("ref") || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
@@ -128,7 +135,13 @@ export default function BookingFlow() {
         setHold({ token: ht, start: h.start, when: h.when, label: h.label, date: h.date, until: h.until });
         if (h.job && ["oil_change", "seasonal", "tires", "rotation", "parts", "diagnostic"].includes(h.job)) setJob(h.job);
         setDate(h.date);
-        if (h.firstName) setName((n) => n || h.firstName);
+        if (h.firstName) setName((n) => n || [h.firstName, h.lastName].filter(Boolean).join(" "));
+        if (h.address) setAddress((a) => a || h.address);
+        if (h.email) setEmail((e) => e || h.email);
+        if (h.engine) setLinkEngine(h.engine);
+        if (h.problem) setProblem(h.problem);
+        if (h.notes) setNotes((n) => n || h.notes);
+        if (Array.isArray(h.addons) && h.addons.length) setAddons(h.addons);
         if (h.phone) setPhone((p) => p || String(h.phone).replace(/^\+1/, ""));
         if (h.car?.year && h.car?.make && !q.get("year")) { setYear(String(h.car.year)); setMake(h.car.make); if (h.car.model) setModel(h.car.model); }
       } else setHoldMsg(h.used ? "That time is already booked for you. Check your texts for the confirmation." : "The time we held for you has run out. Pick any open time and it's yours.");
@@ -192,7 +205,7 @@ export default function BookingFlow() {
       setPricing(true);
       const p = new URLSearchParams({ year, make, model, job, date });
       if (engine && engine !== "unsure") p.set("engine", engine);   // "Not sure" prices the safest engine, no extra lookup
-      const sent = job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [];
+      const sent = keepAddons(job, addons);
       if (sent.length) p.set("addons", sent.join(","));
       if ((job === "oil_change" || job === "seasonal") && own) p.set("own", own);
       if (place?.km != null) p.set("km", String(place.km));
@@ -218,7 +231,7 @@ export default function BookingFlow() {
   const days = useMemo(() => Array.from({ length: 30 }, (_, i) => addDays(today(), i)), []);
 
   const jobsShown = services?.jobs ?? [{ id: "oil_change" as JobId, name: "Oil change", note: "" }];
-  const addonList = job === "parts" ? PARTS_ONLY : job === "oil_change" ? ["tires", ...PARTS_ONLY] : job === "seasonal" ? PARTS_ONLY : [];
+  const addonList = job === "parts" ? PARTS_ONLY : addonsFor(job).filter((a) => a === "tires" || PARTS_ONLY.includes(a));
 
   function next() {
     setErr("");
@@ -249,7 +262,7 @@ export default function BookingFlow() {
       body: JSON.stringify({
         firstName: first, lastName: rest.join(" "), phone, email: email.trim(), address: address.trim(), ...(place?.placeId ? { placeId: place.placeId } : {}),
         car: { year: Number(year), make, model, ...(engine && engine !== "unsure" ? { engine } : {}) },
-        job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [],
+        job, addons: keepAddons(job, addons),
         own: (job === "oil_change" || job === "seasonal") && own ? own : null,
         ...(vinPhoto ? { ...(vinPhoto.photo ? { photos: [vinPhoto.photo] } : {}), ...(vinPhoto.vin ? { vin: vinPhoto.vin } : {}) } : {}),
         ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine && x.engine !== "unsure" ? { engine: x.engine } : {}) },

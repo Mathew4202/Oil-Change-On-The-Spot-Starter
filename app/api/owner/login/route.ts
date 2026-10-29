@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkPassword, sessionCookie, ownerList, passwordMatches } from "@/lib/os/auth";
 import { sbGet, sbPatch, enc } from "@/lib/os/db";
-import { cleanUsername, isRole } from "@/lib/os/roles";
+import { cleanUsername, isRole, type Role } from "@/lib/os/roles";
 
 type StaffRow = { username: string; role: string; pass_hash: string; active: boolean; session_ver: number };
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 const slow = () => new Promise((r) => setTimeout(r, 800));   // slows down guessing
 async function wrong() { await slow(); return NextResponse.json({ error: "Wrong name or password" }, { status: 401 }); }
 
-function signIn(name: string, role: "owner" | "manager" | "front_desk" | "technician", ver: number, remember: unknown) {
+function signIn(name: string, role: Role, ver: number, remember: unknown) {
   const c = sessionCookie(name, remember !== false, role, ver);
   const res = NextResponse.json({ ok: true, owner: name, role });
   res.cookies.set(c.name, c.value, c.options);

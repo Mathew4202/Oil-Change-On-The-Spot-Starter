@@ -168,3 +168,21 @@ test("PDF statement read by the AI is tidied: bad rows dropped, long card number
   assert.deepEqual(p.lines, [{ date: "2026-10-03", amount: -22.6, description: "VERCEL INC" }]);
   assert.ok(cleanStatement({ lines: [] }).error);
 });
+
+test("an e-transfer for a bill we sent marks that job paid; other money in isn't income", () => {
+  const lines = [
+    { date: "2026-11-03", amount: 102.6, description: "INTERAC E-TRANSFER FROM JANE DOE" },
+    { date: "2026-11-04", amount: 96.9, description: "E-TRANSFER AUTODEPOSIT" },
+    { date: "2026-11-05", amount: 500, description: "DEPOSIT" },
+  ];
+  const owed = [
+    { bookingId: "b1", date: "2026-11-01", due: 102.6, receiptNo: 1020, name: "Jane Doe" },
+    { bookingId: "b2", date: "2026-11-01", due: 102.6, receiptNo: 1021, name: "Sam Lee" },
+    { bookingId: "b3", date: "2026-11-02", due: 96.9, receiptNo: 1022, name: "Ali Khan" },
+  ];
+  const r = matchStatement(lines, [], [], owed);
+  assert.equal(r[0].owedBookingId, "b1");          // two bills of $102.60: her name settles it
+  assert.equal(r[1].owedBookingId, "b3");          // only one bill of $96.90
+  assert.equal(r[2].owedBookingId ?? null, null);
+  assert.match(r[2].note || "", /isn't added as income/);
+});

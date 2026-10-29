@@ -12,10 +12,16 @@ export function inChristmas(date: string) {
   return md >= "12-01" || md === "01-01";
 }
 
-/** The Christmas line for this visit, if any: per oil change (several cars on one booking each get it). */
-export function christmasLine(date: string | null | undefined, job: string | undefined, cars: number, rules: Record<string, number>): Line | null {
+/** Another discount already on the visit (seasonal package, oil + tire change). Only one discount per visit: they keep that one.
+ *  A referral credit isn't a discount (it's money they earned), so it still comes off. */
+export const otherDiscount = (lines: Line[] = []) => lines.some((l) => /discount/i.test(l.label) && !/^Christmas discount/.test(l.label));
+
+/** The Christmas line for this visit, if any: per oil change or tire change (several cars on one booking each get it),
+ *  and never on top of another discount. */
+export function christmasLine(date: string | null | undefined, job: string | undefined, cars: number, rules: Record<string, number>, lines: Line[] = []): Line | null {
   if (!date || !inChristmas(date)) return null;
-  if (job && job !== "oil_change" && job !== "seasonal") return null;
+  if (job && !["oil_change", "seasonal", "tires"].includes(job)) return null;
+  if (otherDiscount(lines)) return null;
   const off = Number(rules.christmas_discount ?? 10);
   if (!(off > 0)) return null;
   const n = Math.max(1, Math.floor(cars || 1));
@@ -59,7 +65,7 @@ export function makeRefCode(firstName: string | null | undefined, rand: () => nu
 export function repriceForDate<T extends Priced>(q: T | null | undefined, date: string, job: string | undefined, cars: number, rules: Record<string, number>, hstRate: number): T | null {
   if (!q?.lines?.length) return null;
   const has = q.lines.some((l) => /^Christmas discount/.test(l.label));
-  const want = christmasLine(date, job, cars, rules);
+  const want = christmasLine(date, job, cars, rules, q.lines);
   if (!!want === has) return null;
   if (want) return addLines(q, [want], hstRate);
   const lines = q.lines.filter((l) => !/^Christmas discount/.test(l.label));

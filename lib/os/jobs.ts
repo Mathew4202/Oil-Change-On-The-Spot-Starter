@@ -8,6 +8,7 @@ import { receiptHtml, receiptText, type ReceiptData } from "@/lib/os/receipt";
 import { sendSms, template, fill, reviewLink } from "@/lib/os/sms";
 import { emailFrom } from "@/lib/os/email-from";
 import { learnFromJob } from "@/lib/os/spec-learn";
+import { textCustomer, payLink } from "@/lib/os/customer-texts";
 import { rewardReferrer, ensureRefCode, refLink } from "@/lib/os/referrals";
 
 const r2 = (x: number) => Math.round(x * 100) / 100;
@@ -56,6 +57,7 @@ export type FinishInput = {
   tip?: number | null;                                                          // no HST on tips
   email?: string | null;
   sendReceipt?: boolean;
+  bill?: boolean;   // they'll pay later: receipt with a Pay button by email, pay link by text
 };
 
 export async function finishJob(input: FinishInput, owner: string) {
@@ -167,7 +169,13 @@ export async function finishJob(input: FinishInput, owner: string) {
   // The receipt goes out once they've paid (if not paid yet, it's sent when you mark it paid)
   let receipt: { sent: boolean; reason?: string } = { sent: false, reason: fleet ? "fleet invoice" : paidNow ? "not requested" : "waiting for payment" };
   if (paidNow && input.sendReceipt !== false) receipt = await sendReceipt(job.data!.id, input.email ?? null);
-  return { ok: true as const, jobId: job.data!.id, receiptNo, total, prepaid, refund, receipt, reviewText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
+  let billText: { sent: boolean; status?: string } | null = null;
+  if (!paidNow && !fleet && input.bill) {
+    receipt = await sendReceipt(job.data!.id, input.email ?? null);   // shows what's owed and a Pay button
+    const due = r2(total - prepaid);
+    billText = await textCustomer("pay_request", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(token) }, ctx.booking.id).catch(() => null);
+  }
+  return { ok: true as const, jobId: job.data!.id, receiptNo, total, prepaid, refund, receipt, reviewText, billText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
 }
 
 /** amount = the receipt total (with HST). A tip is added on top: it's income, but it never gets HST. */
@@ -202,6 +210,11 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       oil: j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${spec ? ` (meets ${spec})` : ""}${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
       filter: j.filter_part ? `${fp?.brand || "NAPA ProFormer"} ${j.filter_part}` : null,
       vin: v?.vin ?? null,
+      ...(await (async () => {
+        const paid = j.booking_id ? (await sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${j.booking_id}`).catch(() => [])).reduce((t, p) => t + Number(p.amount), 0) - Number(j.tip ?? 0) : 0;
+        const due = r2(Math.max(0, Number(j.total) - paid));
+        return { due: j.payment_method === "invoice" ? 0 : due, payUrl: due > 0 && j.payment_method !== "invoice" ? payLink(j.receipt_token) : null };
+      })()),
       checks: !j.service || ["oil_change", "seasonal"].includes(j.service) ? checksFrom(j.inspection) : null,
       receiptUrl: `${siteUrl()}/receipt/${j.receipt_token}`,
       logoUrl: `${siteUrl()}/email-logo.png`,
@@ -223,7 +236,7 @@ export async function sendReceipt(jobId: string, emailOverride: string | null): 
     await new Resend(process.env.RESEND_API_KEY).emails.send({
       from: emailFrom(),
       to, replyTo: process.env.NOTIFY_TO || process.env.EMAIL_TO || undefined,
-      subject: `Your receipt from Oil Change On The Spot (#${data.receiptNo})`,
+      subject: data.due && data.due > 0 ? `Your bill from Oil Change On The Spot (#${data.receiptNo}): $${data.due.toFixed(2)} to pay` : `Your receipt from Oil Change On The Spot (#${data.receiptNo})`,
       html: receiptHtml(data), text: receiptText(data),
     });
   } catch (e) { return { sent: false, reason: String(e).slice(0, 120) }; }

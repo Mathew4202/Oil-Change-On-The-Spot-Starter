@@ -12,7 +12,7 @@ import { pickSlot, basicExtract, type CallEvent } from "@/lib/os/call-events";
 import { MAKES } from "@/data/makes";
 import { askAI } from "@/lib/os/ai";
 
-export type Extract = { name: string | null; year: number | null; make: string | null; model: string | null; engine: string | null;
+export type Extract = { name: string | null; lastName?: string | null; address?: string | null; email?: string | null; addons?: string[]; problem?: string | null; year: number | null; make: string | null; model: string | null; engine: string | null;
   job: "oil_change" | "seasonal" | "tires" | "rotation" | "parts" | "diagnostic" | null; cars: number;
   date: string | null; time: string | null; part: "morning" | "afternoon" | "evening" | null; wantsBooking: boolean; notes: string | null };
 
@@ -91,9 +91,10 @@ const PROMPT = (today: string, text: string) => `Today is ${today} (Halifax, Nov
 ${text.slice(0, 12000)}
 ---
 Reply with ONLY this JSON:
-{"name":"caller's first name or null","year":2019,"make":"Honda","model":"Civic","engine":"2.0L or null","job":"oil_change|seasonal|tires|rotation|parts|diagnostic|null",
+{"name":"caller's first name or null","lastName":"last name or null","address":"street address where the car will be, with town, or null","email":"email or null","year":2019,"make":"Honda","model":"Civic","engine":"2.0L or null","job":"oil_change|seasonal|tires|rotation|parts|diagnostic|null",
  "cars":1,"date":"YYYY-MM-DD they want, or null","time":"HH:MM 24h if they named a time, or null","part":"morning|afternoon|evening|null",
- "wantsBooking":true,"notes":"anything useful in one short line (address area, extra work, problem), or null"}
+ "addons":["any of: wipers, cabin_filter, engine_filter, battery, coolant, washer_fluid, tires"],"problem":"for a diagnostic: what's wrong with the car, or null",
+ "wantsBooking":true,"notes":"anything else useful in one short line (gate code, parking), or null"}
 Rules: "tires" = swapping tires already on rims. Work out real dates from words like "Wednesday" or "tomorrow" (the next one after today). If they did not want to book anything (wrong number, spam, a supplier), wantsBooking is false. Use null for anything not said.`;
 
 /** Ask Claude to read the call (same key as the receipt reader). */
@@ -113,11 +114,13 @@ export async function readCall(text: string): Promise<Extract | null> {
 }
 
 const JOBS = ["oil_change", "seasonal", "tires", "rotation", "parts", "diagnostic"];
+const ADDONS = ["wipers", "cabin_filter", "engine_filter", "battery", "coolant", "washer_fluid", "tires"];
 export function cleanExtract(o: Record<string, unknown>): Extract {
   const s = (v: unknown, n = 60) => (typeof v === "string" && v.trim() && v.trim().toLowerCase() !== "null" ? v.trim().slice(0, n) : null);
   const y = Number(o.year);
   return {
-    name: s(o.name, 40), year: y >= 1980 && y <= 2030 ? y : null, make: s(o.make, 40), model: s(o.model), engine: s(o.engine, 40),
+    name: s(o.name, 40), lastName: s(o.lastName, 40), address: s(o.address, 160), email: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(o.email ?? "")) ? String(o.email).trim().slice(0, 120) : null,
+    addons: Array.isArray(o.addons) ? (o.addons as unknown[]).map(String).filter((a) => ADDONS.includes(a)) : [], problem: s(o.problem, 300), year: y >= 1980 && y <= 2030 ? y : null, make: s(o.make, 40), model: s(o.model), engine: s(o.engine, 40),
     job: JOBS.includes(String(o.job)) ? (o.job as Extract["job"]) : null, cars: Math.min(4, Math.max(1, Math.round(Number(o.cars) || 1))),
     date: /^\d{4}-\d{2}-\d{2}$/.test(String(o.date)) ? String(o.date) : null, time: /^\d{1,2}:\d{2}$/.test(String(o.time)) ? String(o.time) : null,
     part: ["morning", "afternoon", "evening"].includes(String(o.part)) ? (o.part as Extract["part"]) : null,
@@ -217,7 +220,12 @@ export async function linkFromCall(id: string) {
   if (x?.job) q.set("job", x.job);
   if (x?.cars && x.cars > 1) q.set("cars", String(x.cars));
   if (x?.date && x.date >= halifaxDate(new Date())) q.set("date", x.date);
-  if (x?.name) q.set("name", x.name);
+  if (x?.name) q.set("name", [x.name, x.lastName].filter(Boolean).join(" "));
+  if (x?.address) q.set("address", x.address);
+  if (x?.email) q.set("email", x.email);
+  if (x?.addons?.length) q.set("addons", x.addons.join(","));
+  if (x?.problem) q.set("problem", x.problem);
+  if (x?.notes) q.set("notes", x.notes);
   q.set("phone", c.phone.replace(/^\+1/, ""));
   const link = `${siteUrl()}/booking${q.toString() ? `?${q}` : ""}`;
   const [t] = await rows(`id=eq.${c.id}`);

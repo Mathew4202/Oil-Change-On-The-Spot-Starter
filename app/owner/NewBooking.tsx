@@ -6,6 +6,7 @@ import { TIRE_CHANGE, ROTATION } from "@/lib/os/pricing-engine";
 import CarPicker from "@/components/CarPicker";
 import HqExtraCar from "@/components/HqExtraCar";
 import { newExtra, extraAddons, extraName, type Extra } from "@/components/ExtraCar";
+import { addonsFor, keepAddons } from "@/lib/os/addons";
 import AddressField, { type Place } from "@/components/AddressField";
 import { useEffect, useMemo, useState } from "react";
 
@@ -105,7 +106,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
       if (engine.trim() && engine !== "unsure") p.set("engine", engine.trim());
       p.set("job", job); p.set("date", date);
       if (customer?.id) p.set("customer", customer.id);   // their referral credit shows in the price
-      const sent = job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [];
+      const sent = keepAddons(job, addons);
       if (sent.length) p.set("addons", sent.join(","));
       if ((job === "oil_change" || job === "seasonal") && own) p.set("own", own);
       if (place?.km != null) p.set("km", String(place.km));
@@ -134,7 +135,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
       body: JSON.stringify({
         firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(), ...(place?.placeId ? { placeId: place.placeId } : {}),
         car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() && engine !== "unsure" ? { engine: engine.trim() } : {}) },
-        job, addons: job === "oil_change" ? addons : job === "seasonal" || job === "parts" ? addons.filter((a) => a !== "tires") : [], own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined, ...(referredBy.trim() ? { referredBy: referredBy.trim().slice(0, 80) } : {}),
+        job, addons: keepAddons(job, addons), own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined, ...(referredBy.trim() ? { referredBy: referredBy.trim().slice(0, 80) } : {}),
         priceOverride: special.trim() ? Number(special) : null,
         ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine && x.engine !== "unsure" ? { engine: x.engine } : {}) }, job: x.job, addons: extraAddons(x),
           own: null, ...(x.vin && x.vin.length === 17 ? { vin: x.vin } : {}), ...(x.job === "diagnostic" && x.problem.trim() ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
@@ -237,11 +238,11 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
             {job === "diagnostic" && <p className="text-sm text-[#4a5878]">$100 to find the problem. Any repair is quoted after.</p>}
             {job === "tires" && <p className="text-sm text-[#4a5878]">Tires already on rims: sedan ${TIRE_CHANGE.Sedan}, SUV ${TIRE_CHANGE["SUV/Crossover"]}, large SUV ${TIRE_CHANGE["Large SUV"]}, truck ${TIRE_CHANGE.Truck}, sports car ${TIRE_CHANGE["Sports Car"]}.</p>}
             {job === "rotation" && <p className="text-sm text-[#4a5878]">Tire rotation: ${ROTATION.Sedan}.</p>}
-            {(job === "oil_change" || job === "seasonal" || job === "parts") && (
+            {(
               <>
                 <p className="text-sm font-semibold">{job === "parts" ? "What do they need? ($50 visit + parts)" : "Add-ons"}</p>
                 <div className="flex flex-wrap gap-2">
-                  {ADDONS.filter(([k]) => job === "oil_change" || k !== "tires").map(([k, n]) => (
+                  {ADDONS.filter(([k]) => addonsFor(job).includes(k)).map(([k, n]) => (
                     <button key={k} onClick={() => setAddons((a) => a.includes(k) ? a.filter((x) => x !== k) : [...a, k])} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(addons.includes(k))}>{n}</button>
                   ))}
                 </div>

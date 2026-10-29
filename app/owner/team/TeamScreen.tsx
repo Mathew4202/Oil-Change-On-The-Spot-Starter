@@ -7,7 +7,7 @@ import OwnerNav from "../OwnerNav";
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878";
 type Staff = { username: string; display_name: string; role: string; active: boolean; phone: string | null; last_login_at: string | null };
 type RoleInfo = { name: string; blurb: string };
-const STAFF_ROLES = ["front_desk", "technician", "manager"] as const;
+const STAFF_ROLES = ["front_desk", "technician", "manager", "accountant", "fleet_sales", "marketing", "trainee"] as const;
 const field = "h-12 rounded-xl border px-3 text-base w-full bg-white";
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "America/Halifax" }) : "never";
 

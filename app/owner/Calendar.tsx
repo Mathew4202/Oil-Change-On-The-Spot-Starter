@@ -24,6 +24,7 @@ type Day = {
   holds?: { id: string; start: string; end: string; expires: string; name: string | null; phone: string | null; job: string; cars: number; note: string | null; by: string | null; link: string }[];
   totals: { jobs: number; booked: number | null; profit: number | null };
   bring: { oil: { grade: string; litres: number }[]; filters: { part: string; qty: number; inStock: number }[] };
+  route?: { link: string | null; stops: number; offers: { booking_id: string; to_start: string; status: string }[] } | null;
 };
 type Alert = { id: string; title: string; body: string | null; created_at: string; read_at: string | null; bookings: { starts_at: string } | null };
 
@@ -169,6 +170,11 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
           </div>
         )}
 
+        {day?.route?.link && day.route.stops > 1 && (
+          <a href={day.route.link} target="_blank" rel="noreferrer" className="rounded-xl p-3 text-[15px] font-bold border bg-white flex items-center justify-between gap-2 no-underline text-[#0d1b3e]" style={{ borderColor: "#c8d0e0" }}>
+            <span>Route for {date === today ? "today" : "this day"}: {day.route.stops} stops in order</span><span className="text-sm underline">Open in Maps</span>
+          </a>
+        )}
         {day && (day.holds ?? []).map((h) => (
           <div key={h.id} className="rounded-xl border-2 border-dashed p-3 flex flex-col gap-2" style={{ borderColor: GOLD, background: "#fffaf0" }}>
             <div className="flex items-center justify-between gap-2">
@@ -236,6 +242,9 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 )}
                 {!j.oil && (j.partNos ?? []).length > 0 && <p className="text-[14px] rounded-lg bg-[#f4f6fa] px-3 py-2"><span className="text-[#4a5878]">Used before </span><span className="font-semibold">{j.partNos!.join(" · ")}</span></p>}
                 {j.address && <p className="text-[15px] text-[#4a5878]">{j.address}</p>}
+                {(() => { const o = day?.route?.offers.find((x) => x.booking_id === j.id); if (!o) return null;
+                  const t = time(o.to_start); const txt = o.status === "sent" ? `Asked to move to ${t} (closer to the other jobs), waiting for their answer` : o.status === "accepted" ? `Moved to ${t} to group the day by area` : o.status === "declined" ? `Asked to move to ${t}: they're keeping their time` : null;
+                  return txt ? <p className="text-[13px] font-semibold rounded-lg px-2 py-1" style={{ background: "#eef1f6", color: "#4a5878" }}>{txt}</p> : null; })()}
                 {j.checks.length > 0 && <p className="text-[13px] font-semibold text-[#8a5a00] bg-[#fff6dd] rounded-lg px-2 py-1">{j.checks.join(" · ")}</p>}
                 {j.vin && <p className="text-[14px]"><span className="font-semibold">VIN</span> <span className="font-mono select-all">{j.vin}</span>{j.vinCar ? <span className="text-[#4a5878]"> · {j.vinCar}</span> : null}</p>}
                 {(j.photos ?? []).length > 0 && (

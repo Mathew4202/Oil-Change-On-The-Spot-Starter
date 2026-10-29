@@ -15,7 +15,7 @@ export type PayTarget = {
   bookingId: string | null; jobId: string | null; invoiceId?: string | null; planBillId?: string | null; token: string;
   title: string; car: string; when: string | null;
   lines: { label: string; amount: number }[]; subtotal: number; hst: number; total: number;
-  paid: number; due: number;
+  paid: number; due: number; ref?: string | null;   // receipt or invoice number, for the e-transfer message
   firstName: string | null; lastName: string | null; email: string | null;
   receiptUrl: string | null;
 };
@@ -32,9 +32,9 @@ async function paidSoFar(bookingId: string) {
 /** A pay link token is either a receipt (pay after the job, or a cancellation fee) or a booking's own link (pay before). */
 export async function payTarget(token: string): Promise<PayTarget | null> {
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
-  const [j] = await sbGet<{ id: string; booking_id: string | null; service: string | null; lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; total: number;
+  const [j] = await sbGet<{ id: string; receipt_no: number | null; booking_id: string | null; service: string | null; lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; total: number;
     tip: number | null; vehicle_text: string | null; imported_from: string | null; customers: Cust }>(
-    `jobs?select=id,booking_id,service,lines,subtotal,hst,total,tip,vehicle_text,imported_from,customers(first_name,last_name,email)&receipt_token=eq.${enc(token)}&limit=1`);
+    `jobs?select=id,receipt_no,booking_id,service,lines,subtotal,hst,total,tip,vehicle_text,imported_from,customers(first_name,last_name,email)&receipt_token=eq.${enc(token)}&limit=1`);
   if (j) {
     if (!j.booking_id || j.imported_from) return null;
     // a tip already paid isn't part of what was owed
@@ -42,7 +42,7 @@ export async function payTarget(token: string): Promise<PayTarget | null> {
     const total = Number(j.total);
     return { kind: "job", bookingId: j.booking_id, jobId: j.id, token, title: j.service === "cancellation_fee" ? "Same-day cancellation fee" : "Your service",
       car: j.vehicle_text || "", when: null, lines: j.lines ?? [], subtotal: Number(j.subtotal), hst: Number(j.hst), total, paid: Math.max(0, paid), due: amountDue(total, paid),
-      firstName: j.customers?.first_name ?? null, lastName: j.customers?.last_name ?? null, email: j.customers?.email ?? null, receiptUrl: `/receipt/${token}` };
+      firstName: j.customers?.first_name ?? null, lastName: j.customers?.last_name ?? null, email: j.customers?.email ?? null, receiptUrl: `/receipt/${token}`, ref: j.receipt_no ? String(j.receipt_no) : null };
   }
   // a maintenance plan monthly payment
   const [pb] = await sbGet<{ id: string; period: string; subtotal: number; hst: number; total: number; status: string; plans: { name: string | null; car: string | null } | null }>(
@@ -66,7 +66,7 @@ export async function payTarget(token: string): Promise<PayTarget | null> {
     const [first, ...rest] = (inv.fleet_accounts?.contact_name || "").split(/\s+/);
     return { kind: "invoice", bookingId: null, jobId: null, invoiceId: inv.id, token, title: `Invoice #${inv.invoice_no}`, car: inv.fleet_accounts?.business_name ?? "", when: null,
       lines: (inv.lines ?? []).map((l) => ({ label: `${l.unit ? `Unit ${l.unit} · ` : ""}${l.vehicle}`, amount: Number(l.amount) })), subtotal: Number(inv.subtotal), hst: Number(inv.hst), total,
-      paid, due: amountDue(total, paid), firstName: first || null, lastName: rest.join(" ") || null, email: inv.fleet_accounts?.invoice_email || inv.fleet_accounts?.email || null, receiptUrl: `/invoice/${token}` };
+      paid, due: amountDue(total, paid), firstName: first || null, lastName: rest.join(" ") || null, email: inv.fleet_accounts?.invoice_email || inv.fleet_accounts?.email || null, receiptUrl: `/invoice/${token}`, ref: String(inv.invoice_no) };
   }
   const [b] = await sbGet<{ id: string; status: string; starts_at: string; quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; subtotal?: number; hst?: number } | null;
     customers: Cust; vehicles: Veh }>(

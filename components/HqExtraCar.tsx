@@ -1,4 +1,5 @@
 "use client";
+import { addonsFor } from "@/lib/os/addons";
 import SpecCard from "@/components/SpecCard";
 import EnginePicker from "@/components/EnginePicker";
 // HQ phone booking: another car on the same visit (its own car, service and add-ons, priced on its own).
@@ -11,7 +12,7 @@ const ADDONS: [string, string][] = [["tires", "Tire change"], ["wipers", "Wipers
 
 export default function HqExtraCar({ n, value: e, onPatch, onRemove, date }: { n: number; value: Extra; onPatch: (p: Partial<Extra>) => void; onRemove: () => void; date: string }) {
   const chip = (on: boolean) => ({ background: on ? NAVY : "#fff", color: on ? "#fff" : NAVY, borderColor: on ? NAVY : LINE });
-  const addons = e.job === "oil_change" ? ADDONS : e.job === "seasonal" || e.job === "parts" ? ADDONS.filter(([k]) => k !== "tires") : [];
+  const addons = ADDONS.filter(([k]) => addonsFor(e.job).includes(k));
   return (
     <div className="rounded-xl border-2 p-3 flex flex-col gap-3" style={{ borderColor: NAVY }}>
       <ExtraPricer value={e} date={date} onPatch={onPatch} />

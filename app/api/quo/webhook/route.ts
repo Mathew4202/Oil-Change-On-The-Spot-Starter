@@ -8,6 +8,7 @@ import { pushToOwners } from "@/lib/os/push";
 import { parseQuoEvent, intentOf, verifyQuo } from "@/lib/os/inbound-sms";
 import { parseCallEvent } from "@/lib/os/call-events";
 import { handleCallEvent, handleTextIn } from "@/lib/os/calls";
+import { handleRouteReply } from "@/lib/os/route";
 import { agreeByText } from "@/lib/os/plans";
 
 export const dynamic = "force-dynamic";
@@ -71,6 +72,8 @@ export async function POST(req: NextRequest) {
   if (intent === "cancel") {
     await alertOwners(`${name} texted "${m.text.trim().slice(0, 40)}"`, "Sounds like they want to cancel a booking. Their texts are still on. Reply from HQ or Quo.", page, `cancel-${from}`);
   }
+  // YES / NO to "can we move you to a closer time?"
+  if (await handleRouteReply(from, m.text).catch(() => false)) return NextResponse.json({ ok: true, action: "route_reply" });
   // Every other text lands in HQ next to the calls: read for what they want, one tap to hold a time, or reply right there
   const r = await handleTextIn({ phone: from, text: m.text, messageId: m.messageId ?? m.eventId }).catch((e) => ({ error: String(e).slice(0, 200) }));
   return NextResponse.json({ ok: true, action: intent === "cancel" ? "alerted" : "to_hq", ...r });

@@ -5,7 +5,7 @@ import { NAVY, GOLD } from "@/components/site/brand";
 
 export const metadata = { title: "Gallery", description: "Real photos from our mobile oil changes in driveways, parking lots and garages around HRM." };
 
-const PHOTOS = ["work-01.webp", "work-02.webp", "work-03.webp", "work-05.webp", "work-06.webp", "work-07.webp", "work-08.webp", "work-09.JPG",
+const PHOTOS = ["work-26.webp", "work-28.webp", "work-25.webp", "work-23.webp", "work-27.webp", "work-24.webp", "work-01.webp", "work-02.webp", "work-03.webp", "work-05.webp", "work-06.webp", "work-07.webp", "work-08.webp", "work-09.JPG",
   "work-11.png", "work-12.png", "work-13.png", "work-14.png", "work-15.png", "work-16.png", "work-17.png", "work-18.png", "work-19.png",
   "work-20.png", "work-21.png", "work-22.png"];
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import OwnerNav from "../OwnerNav";
+import { useRole } from "../RoleContext";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878", GOOD = "#1d6b3a", BAD = "#9b1c1c";
 type Kind = "week" | "month" | "year";
@@ -24,6 +25,7 @@ const KIND_NAME: Record<string, string> = { receipt: "Receipt", napa_account: "N
   transfer: "Transfer", expense_no_receipt: "Added, no receipt", personal: "Not business", money_in: "Money in" };
 
 export default function MoneyScreen() {
+  const { can } = useRole();
   const [kind, setKind] = useState<Kind>("month"); const [offset, setOffset] = useState(0);
   const [data, setData] = useState<Data | null>(null); const [err, setErr] = useState("");
   const [bank, setBank] = useState<{ needsLook: BankLine[]; recent: BankLine[] }>({ needsLook: [], recent: [] });
@@ -45,7 +47,7 @@ export default function MoneyScreen() {
         <p className="text-sm text-[#c9d3ea] font-semibold">Profit, HST and the bank</p>
         <div className="flex items-end justify-between gap-2">
           <h1 className="text-[30px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>Money</h1>
-          <Link href={"/owner/team" as Route} className="h-9 px-3 rounded-lg border border-[#3b4d7a] text-sm font-bold flex items-center no-underline text-white">Team logins</Link>
+          {can.team && <Link href={"/owner/team" as Route} className="h-9 px-3 rounded-lg border border-[#3b4d7a] text-sm font-bold flex items-center no-underline text-white">Team logins</Link>}
         </div>
         <div className="mt-3 grid grid-cols-3 gap-1 bg-white/10 rounded-xl p-1" role="tablist" aria-label="Time period">
           {(["week", "month", "year"] as Kind[]).map((k) => (

@@ -135,11 +135,16 @@ export async function buildQuote(req: QuoteRequest) {
     // No oil change: no need to look up the oil (saves the lookup cost)
     const rules = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value");
     const r = Object.fromEntries(rules.map((x) => [x.key, Number(x.value)]));
-    const items: Addon[] = req.job === "parts" ? (req.addons ?? []).filter((k) => k !== "tires").map((k) => ({ kind: k, partCost: addonPrice(k, r) })) : [];
+    // every service takes the small add-ons (washer fluid is the cheaper with-a-service price unless it's a parts-only visit)
+    const items: Addon[] = (req.addons ?? []).filter((k) => k !== "tires").map((k) => ({ kind: k,
+      partCost: k === "washer_fluid" && req.job !== "parts" ? r.addon_price_washer_fluid_with_oil ?? 5 : addonPrice(k, r) }));
     const vc = (req.vehicleClass || detectClassFromModel(req.model, req.make) || "Sedan") as VehicleClass;
     const quote = quoteVisit({ job: req.job, items, distanceKm: req.km ?? null, vehicleClass: vc,
       rules: { ...DEFAULT_RULES, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30 } });
     const vehicleClass = (req.vehicleClass || detectClassFromModel(req.model, req.make) || "Sedan") as VehicleClass;
+    // tire-only visits get the Christmas deal too
+    const xmasTires = christmasLine(req.date, req.job, 1, r, quote.lines);
+    if (xmasTires) Object.assign(quote, addLines(quote, [xmasTires], Number(r.hst_rate ?? 0.14)));
     return { quote, spec: null as Spec | null, engines: [] as string[], lookedUp: false, vehicleClass, rules: r };
   }
   const [{ rows, lookedUp }, oil, rules] = await Promise.all([
@@ -216,7 +221,7 @@ export async function buildQuote(req: QuoteRequest) {
   }
 
   // The Christmas deal (Dec 1 to Jan 1, every year): $10 off each oil change
-  const xmas = christmasLine(req.date, req.job ?? "oil_change", n, r);
+  const xmas = christmasLine(req.date, req.job ?? "oil_change", n, r, quote.lines);   // never on top of the seasonal or oil + tire discount
   if (xmas) Object.assign(quote, addLines(quote, [xmas], Number(r.hst_rate ?? 0.14)));
 
   // Notes for the job card (not admin work): only when we truly couldn't find the oil.

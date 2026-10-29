@@ -3,6 +3,7 @@
 import { runPlanBilling } from "@/lib/os/plans";
 import { backfillSpecs } from "@/lib/os/spec-backfill";
 import { attachUpcoming } from "@/lib/os/spec-learn";
+import { offerRouteMoves } from "@/lib/os/route";
 import { NextRequest, NextResponse } from "next/server";
 import { sbGet, sbPatch, sbDelete } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
@@ -61,9 +62,11 @@ export async function GET(req: NextRequest) {
   const specs = await backfillSpecs(2).catch(() => ({ filled: 0 }));
   // 4b) Bookings in the next few days still without the oil on file: look them up again and attach it
   const oilAttached = await attachUpcoming(4).catch(() => 0);
+  // 4c) Two evenings before a day: offer closer times to the jobs that zig-zag across town (they say yes or no)
+  const route = await offerRouteMoves(addDays(today, 2)).catch((e) => ({ offered: 0, note: String(e).slice(0, 120) }));
   // 5) What Quo sent us is only kept two weeks
   await sbDelete("webhook_log", `at=lt.${new Date(Date.now() - 14 * 86400000).toISOString()}`).catch(() => null);
-  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached });
+  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached, route });
 }
 
 function addDays(d: string, n: number) { const [y, m, dd] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); }

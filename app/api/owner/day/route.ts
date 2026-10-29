@@ -1,5 +1,6 @@
 // Everything the calendar needs for one day: jobs, totals, what to bring, time off.
 import { activeHolds, holdLink } from "@/lib/os/holds";
+import { dayRoute } from "@/lib/os/route";
 import { bookingPhotoLink } from "@/lib/os/vin-photo";
 import { NextRequest, NextResponse } from "next/server";
 import { currentStaff } from "@/lib/os/auth";
@@ -89,10 +90,11 @@ export async function GET(req: NextRequest) {
     };
   });
 
+  const route = await dayRoute(date).catch(() => null);
   const holds = (await activeHolds(from, to)).map((h) => ({ id: h.id, start: h.starts_at, end: h.ends_at, expires: h.expires_at, name: h.first_name, phone: h.phone,
     job: h.job, cars: h.cars, note: h.note, by: h.created_by, link: holdLink(h.token) }));
   return NextResponse.json({
-    date, jobs, timeOff: off, holds,
+    date, jobs, timeOff: off, holds, route,
     totals: {
       jobs: jobs.length,
       booked: money ? Math.round(jobs.reduce((s, j) => s + (j.total || 0), 0) * 100) / 100 : null,

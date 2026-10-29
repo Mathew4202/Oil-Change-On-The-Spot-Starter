@@ -47,5 +47,14 @@ test("moving a booking into or out of the Christmas window fixes the price", asy
   assert.equal(repriceForDate(inn, "2026-12-20", "oil_change", 1, {}, 0.14), null);   // still in: unchanged
   const out = repriceForDate(inn, "2027-01-05", "oil_change", 1, {}, 0.14)!;
   assert.equal(out.total, 102.6); assert.equal(out.profit, 50);
-  assert.equal(repriceForDate(base, "2026-12-03", "tires", 1, {}, 0.14), null);
+  assert.equal(repriceForDate(base, "2026-12-03", "diagnostic", 1, {}, 0.14), null);
+});
+
+test("one discount per visit; tire-only visits get the Christmas deal", async () => {
+  const { christmasLine } = await import("../deals.ts");
+  assert.equal(christmasLine("2026-12-05", "seasonal", 1, {}, [{ label: "Seasonal package discount", amount: -15 }]), null);
+  assert.equal(christmasLine("2026-12-05", "oil_change", 1, {}, [{ label: "Oil + tire change discount", amount: -10 }]), null);
+  assert.equal(christmasLine("2026-12-05", "tires", 1, {}, [{ label: "Tire change (on rims)", amount: 80 }])?.amount, -10);
+  assert.equal(christmasLine("2026-12-05", "oil_change", 1, {}, [{ label: "Referral credit", amount: -5 }])?.amount, -10);   // a credit isn't a discount
+  assert.equal(christmasLine("2026-12-05", "diagnostic", 1, {}, []), null);
 });

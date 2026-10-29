@@ -18,6 +18,8 @@ export type ReceiptData = {
   reviewUrl?: string | null; receiptUrl?: string | null; logoUrl?: string | null;
   referUrl?: string | null;   // their own referral link: a friend books with it, they get $5 off
   checks?: { now: string[]; soon: string[]; ok: string[] } | null;   // the OK / Soon / Now taps from the job
+  due?: number;              // still to pay (they're paying later)
+  payUrl?: string | null;    // their pay page: card online, or e-transfer details
 };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -51,7 +53,12 @@ export function receiptHtml(r: ReceiptData): string {
    ${row("Total", money(r.total), true)}
    ${r.tip ? row("Tip, thank you!", money(r.tip)) : ""}
    ${r.paidWith ? row(`Paid: ${esc(METHOD_NAMES[r.paidWith] || r.paidWith)}`, money(r.total + (r.tip || 0))) : ""}
+   ${r.due && r.due > 0 ? row("Amount due", money(r.due), true) : ""}
   </table>
+  ${r.due && r.due > 0 && r.payUrl ? `<div style="text-align:center;margin-top:16px">
+   <a href="${esc(r.payUrl)}" style="display:inline-block;background:#f2b01e;color:#0d1b3e;font-weight:800;font-size:17px;text-decoration:none;padding:14px 28px;border-radius:10px">Pay ${money(r.due)}</a>
+   <div style="font-size:13px;color:#4a5878;margin-top:8px">Card online, or Interac e-Transfer to ${esc(BUSINESS.email)} (put #${r.receiptNo} in the message).</div>
+  </div>` : ""}
   ${r.oil || r.km || r.nextDueKm || r.vin || r.filter ? `<div style="background:#eef1f6;border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6">
    <div style="font-weight:700;margin-bottom:4px">Service record</div>
    ${r.vin ? `<div><strong>VIN:</strong> ${esc(r.vin)}</div>` : ""}
@@ -89,6 +96,7 @@ export function receiptText(r: ReceiptData): string {
     r.vin ? `VIN: ${r.vin}` : "", r.km ? `Odometer: ${r.km} km` : "", r.oil ? `Oil: ${r.oil}` : "", r.filter ? `Oil filter: ${r.filter}` : "",
     r.nextDueKm ? `Next oil change: ${r.nextDueKm} km${r.nextDueDate ? ` or ${r.nextDueDate}` : ""}` : "",
     r.checks?.now.length ? `Needs doing now: ${r.checks.now.join(", ")}` : "", r.checks?.soon.length ? `Coming up soon: ${r.checks.soon.join(", ")}` : "",
+    r.due && r.due > 0 ? `Amount due: ${money(r.due)}${r.payUrl ? `. Pay here: ${r.payUrl}` : ""} (or e-transfer to ${BUSINESS.email} with #${r.receiptNo} in the message)` : "",
     r.referUrl ? `Refer a friend, get $5 off your next oil change: ${r.referUrl}` : "",
     "", `${BUSINESS.name}, HST # ${BUSINESS.hst}, ${BUSINESS.phone}`,
   ].filter((x) => x !== "").join("\n");

@@ -2,6 +2,7 @@
 import { payReady, payTarget } from "@/lib/os/payments";
 import { PHONE, PHONE_TEL } from "@/lib/os/business";
 import PayBox from "./PayBox";
+import { BUSINESS } from "@/lib/os/receipt";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Pay online", robots: { index: false, follow: false } };
@@ -44,7 +45,13 @@ export default async function PayPage({ params, searchParams }: { params: { toke
               </div>
               {t.due > 0 && (payReady()
                 ? <PayBox token={t.token} due={t.due} allowTip={t.kind === "job"} />
-                : <p className="rounded-xl p-4 bg-[#fff6dd] text-[15px]">Online payment isn&apos;t switched on yet. {t.kind === "prepay" ? "No problem: pay after the job by card, tap, cash or e-transfer." : <>Pay by card, cash or e-transfer: call or text <a href={PHONE_TEL} className="font-bold underline">{PHONE}</a>.</>}</p>)}
+                : t.kind === "prepay" ? <p className="rounded-xl p-4 bg-[#fff6dd] text-[15px]">Online card payment isn&apos;t switched on yet. No problem: pay after the job by card, tap, cash or e-transfer.</p>
+                : <div className="rounded-xl p-4 bg-[#fff6dd] text-[15px] flex flex-col gap-1">
+                    <p className="font-bold">Pay by Interac e-Transfer</p>
+                    <p>Send <strong>{money(t.due)}</strong> to <strong className="select-all">{BUSINESS.email}</strong></p>
+                    <p>In the message, put <strong>{t.ref ? `#${t.ref}` : "your name"}</strong> so we match it to you.</p>
+                    <p className="text-sm text-[#4a5878] mt-1">Questions? Call or text <a href={PHONE_TEL} className="font-bold underline">{PHONE}</a>.</p>
+                  </div>)}
               {t.receiptUrl && <a href={t.receiptUrl} className="font-bold underline text-center" style={{ color: NAVY }}>{t.kind === "invoice" ? "See the invoice" : "See the receipt"}</a>}
             </section>
             {t.kind === "prepay" && <p className="text-sm text-[#4a5878] text-center">If we add anything on the day (only with your OK), you pay the difference after the job.</p>}

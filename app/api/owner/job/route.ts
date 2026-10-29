@@ -23,6 +23,7 @@ const Finish = z.object({
   payMethod: z.enum(["card_terminal", "cash", "etransfer", "card_online"]).nullable().optional(),
   tip: z.number().min(0).max(1000).nullable().optional(),
   email: z.string().email().nullable().optional().or(z.literal("")), sendReceipt: z.boolean().optional(),
+  bill: z.boolean().optional(),   // not paid on site: email the receipt with a Pay button and text them the pay link
 });
 
 export async function GET(req: NextRequest) {
@@ -68,7 +69,6 @@ export async function POST(req: NextRequest) {
     if (body.action === "paylink") {   // text them a link to pay online
       const ctx = await jobContext(id);
       if (!ctx?.job || !ctx.job.receipt_token) return NextResponse.json({ error: "Finish the job first" }, { status: 400 });
-      if (!payReady()) return NextResponse.json({ error: "Online payment isn't set up yet" }, { status: 400 });
       if (!ctx.customer?.phone) return NextResponse.json({ error: "No phone number on file" }, { status: 400 });
       const due = Math.max(0, Math.round((Number(ctx.job.total) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100);
       if (due <= 0) return NextResponse.json({ error: "Nothing left to pay" }, { status: 400 });

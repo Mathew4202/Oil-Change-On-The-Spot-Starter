@@ -281,6 +281,19 @@ export function quoteVisit(opts: { job: Exclude<JobType, "oil_change" | "seasona
     lines.push({ label: "Tire change (on rims)", amount: TIRE_CHANGE[opts.vehicleClass ?? "Sedan"] });
   } else if (opts.job === "rotation") {
     lines.push({ label: "Tire rotation", amount: ROTATION[opts.vehicleClass ?? "Sedan"] });
+  }
+  // Add-ons on a tire, rotation or diagnostic visit: same price as with an oil change (we're already there)
+  let addonLabour = 0;
+  if (opts.job !== "parts") {
+    for (const a of opts.items ?? []) {
+      if (a.kind === "tires") continue;
+      const retail = a.partRetail ?? a.partCost;
+      const labour = a.kind === "wipers" ? SERVICE_PRICES.addonWipers : a.kind === "battery" ? SERVICE_PRICES.batteryWithOilChange
+        : a.kind === "cabin_filter" || a.kind === "engine_filter" ? SERVICE_PRICES.addonFilter : 0;
+      addonLabour += labour;
+      if (!retail && a.kind !== "coolant" && a.kind !== "washer_fluid") needsReview.push(`${PART_NAMES[a.kind]} price to confirm`);
+      lines.push({ label: PART_NAMES[a.kind], amount: r2(labour + (retail || 0)) });
+    }
   } else {
     lines.push({ label: "Mobile service call", amount: SERVICE_PRICES.standaloneCallout });
     for (const a of opts.items ?? []) {
@@ -296,6 +309,6 @@ export function quoteVisit(opts: { job: Exclude<JobType, "oil_change" | "seasona
   // Profit (on the safe side): the visit fee itself; any margin on parts is extra
   const fee = opts.job === "diagnostic" ? SERVICE_PRICES.diagnostic : opts.job === "tires" ? TIRE_CHANGE[opts.vehicleClass ?? "Sedan"]
     : opts.job === "rotation" ? ROTATION[opts.vehicleClass ?? "Sedan"] : SERVICE_PRICES.standaloneCallout;
-  const partsTotal = r2(lines.filter((l) => !/^Travel|^Mobile service call|^Diagnostic|^Tire change|^Tire rotation/.test(l.label)).reduce((t, l) => t + l.amount, 0));
-  return { lines, subtotal, hst, total: r2(subtotal + hst), cost: partsTotal, profit: fee, raised: false, needsReview };
+  const partsTotal = r2(lines.filter((l) => !/^Travel|^Mobile service call|^Diagnostic|^Tire change|^Tire rotation/.test(l.label)).reduce((t, l) => t + l.amount, 0) - addonLabour);
+  return { lines, subtotal, hst, total: r2(subtotal + hst), cost: partsTotal, profit: r2(fee + addonLabour), raised: false, needsReview };
 }

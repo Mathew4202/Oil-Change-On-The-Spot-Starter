@@ -5,8 +5,10 @@ export type BankLine = { date: string; amount: number; description: string };   
 export type Parsed = { account: string; lines: BankLine[]; error?: string };
 export type Exp = { id: string; date: string; total: number; supplier: string | null; vendor: string | null; paid_with: string | null };
 export type Pay = { id: string; date: string; amount: number; method: string | null };
+export type Owed = { bookingId: string; date: string; due: number; receiptNo: number | null; name: string };   // a finished job not paid yet
 export type Result = BankLine & {
   status: "matched" | "auto" | "needs_look";
+  owedBookingId?: string | null;   // an e-transfer that pays a bill we sent: mark that job paid
   kind: string;
   category: string | null;
   expenseIds: string[];
@@ -158,8 +160,8 @@ export function subsetSum(items: { id: string; cents: number }[], target: number
 }
 
 /** Sort every line and match it to a receipt, a NAPA account bill, or a customer payment. */
-export function matchStatement(lines: BankLine[], expenses: Exp[], payments: Pay[]): Result[] {
-  const usedExp = new Set<string>(), usedPay = new Set<string>();
+export function matchStatement(lines: BankLine[], expenses: Exp[], payments: Pay[], owed: Owed[] = []): Result[] {
+  const usedExp = new Set<string>(), usedPay = new Set<string>(), usedOwed = new Set<string>();
   const out: Result[] = lines.map((l) => ({ ...l, ...sortLine(l), status: "needs_look" as const, expenseIds: [], paymentId: null, note: null }));
 
   // 1) one receipt, same amount, bank posts 0-7 days after the receipt date (3 days before is fine too)
@@ -193,8 +195,16 @@ export function matchStatement(lines: BankLine[], expenses: Exp[], payments: Pay
     const want = cents(r.amount);
     const p = payments.filter((p) => !usedPay.has(p.id) && p.method === "etransfer" && cents(p.amount) === want && days(r.date, p.date) >= -1 && days(r.date, p.date) <= 5)
       .sort((a, b) => Math.abs(days(r.date, a.date)) - Math.abs(days(r.date, b.date)))[0];
-    if (p) { usedPay.add(p.id); Object.assign(r, { status: "matched", kind: "payment", category: "sales", paymentId: p.id }); }
-    else if (r.kind === "payment") r.note = "Looks like a customer e-transfer, but no job was marked paid by e-transfer for this amount.";
+    if (p) { usedPay.add(p.id); Object.assign(r, { status: "matched", kind: "payment", category: "sales", paymentId: p.id }); continue; }
+    // 3b) an e-transfer for a bill we sent (job done, not paid yet): same amount, after the job. Their name settles a tie.
+    if (r.kind === "payment") {
+      const words = r.description.toLowerCase();
+      const cands = owed.filter((o) => !usedOwed.has(o.bookingId) && cents(o.due) === want && days(r.date, o.date) >= 0 && days(r.date, o.date) <= 45);
+      const named = cands.filter((o) => o.name.toLowerCase().split(/\s+/).some((w) => w.length > 2 && words.includes(w)) || (o.receiptNo != null && words.includes(String(o.receiptNo))));
+      const pick = named.length === 1 ? named[0] : cands.length === 1 ? cands[0] : null;
+      if (pick) { usedOwed.add(pick.bookingId); Object.assign(r, { status: "matched", kind: "payment", category: "sales", owedBookingId: pick.bookingId, note: `Pays ${pick.name}'s bill${pick.receiptNo ? ` (receipt #${pick.receiptNo})` : ""}. Marked paid.` }); }
+      else r.note = cands.length > 1 ? `E-transfer matches ${cands.length} unpaid bills (${cands.map((c) => c.name).join(", ")}). Mark the right one paid in Calendar.` : "Looks like a customer e-transfer, but no job was marked paid by e-transfer for this amount.";
+    } else r.note = "Money in that isn't from a job. Sales are counted from your jobs, so this isn't added as income.";
   }
 
   // 4) lines that don't need a receipt

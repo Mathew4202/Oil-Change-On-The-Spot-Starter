@@ -235,3 +235,11 @@ test("Two gas engines in the same truck keep the truck price while profit clears
   assert.equal(a.lines[0].amount, 130); assert.equal(b.lines[0].amount, 130);
   assert.ok(b.profit! < a.profit!);
 });
+
+test("add-ons on a tire change or diagnostic: same price as with an oil change", () => {
+  const q = quoteVisit({ job: "tires", vehicleClass: "Sedan", items: [{ kind: "wipers", partCost: 22 }, { kind: "cabin_filter", partCost: 22 }, { kind: "tires", partCost: 0 }] });
+  assert.deepEqual(q.lines.map((l) => [l.label, l.amount]), [["Tire change (on rims)", 80], ["Wiper blades", 37], ["Cabin air filter", 32]]);
+  assert.equal(q.profit, 80 + 15 + 10);
+  assert.equal(q.cost, 44);
+  assert.equal(quoteVisit({ job: "diagnostic", items: [{ kind: "battery", partCost: 200 }] }).subtotal, 320);
+});

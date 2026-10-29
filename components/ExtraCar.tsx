@@ -3,6 +3,7 @@
 // (any service, add-ons, own oil). Each is priced on its own; travel is only charged once for the visit.
 import { useEffect, useMemo, useState } from "react";
 import VinSnap from "@/components/VinSnap";
+import { addonsFor, keepAddons } from "@/lib/os/addons";
 import { matchEngine } from "@/lib/os/vin";
 
 const NAVY = "#0d1b3e", LINE = "#c8d0e0", GOLD = "#f2b01e";
@@ -19,7 +20,7 @@ export const newExtra = (): Extra => ({ key: Math.random().toString(36).slice(2)
 export const extraName = (e: Extra) => `${e.year} ${e.make} ${e.model}`.trim();
 const PARTS_ONLY = ["wipers", "cabin_filter", "engine_filter", "battery", "coolant", "washer_fluid"];
 /** The add-ons that make sense for the service picked (tire swap only rides along with an oil change). */
-export const extraAddons = (e: Pick<Extra, "job" | "addons">) => e.job === "oil_change" ? e.addons : e.job === "seasonal" || e.job === "parts" ? e.addons.filter((a) => a !== "tires") : [];
+export const extraAddons = (e: Pick<Extra, "job" | "addons">) => keepAddons(e.job, e.addons);
 
 /** Car step: what's still missing (null = fine). */
 export function extraCarMissing(e: Extra): string | null {
@@ -140,7 +141,7 @@ export function ExtraCarServices({ n, value: e, onPatch, jobs, addonNames, addon
   addonNames: Record<string, string>; addonNotes: Record<string, string>; season: boolean;
 }) {
   const set = onPatch;
-  const list = e.job === "parts" ? PARTS_ONLY : e.job === "oil_change" ? ["tires", ...PARTS_ONLY] : e.job === "seasonal" ? PARTS_ONLY : [];
+  const list = e.job === "parts" ? PARTS_ONLY : addonsFor(e.job).filter((a) => a === "tires" || PARTS_ONLY.includes(a));
   const card = (on: boolean) => ({ borderColor: on ? NAVY : LINE, borderWidth: on ? 2 : 1, background: on ? "#fff6dd" : "#fff" });
   const price = (re: RegExp) => e.quote?.lines.find((l) => re.test(l.label))?.amount;
   return (

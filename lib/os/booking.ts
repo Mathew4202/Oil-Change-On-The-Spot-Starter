@@ -15,6 +15,8 @@ import { pushToOwners } from "@/lib/os/push";
 import { newManageToken, sendBookingConfirmation } from "@/lib/os/customer-texts";
 import { halifaxDate, label } from "@/lib/os/slots";
 import { addLines } from "@/lib/os/deals";
+import { keepAddons } from "@/lib/os/addons";
+import { geocode } from "@/lib/os/geo";
 import { findReferrer, setReferredBy, takeCredits, markCreditsUsed } from "@/lib/os/referrals";
 
 export const BookingBody = z.object({
@@ -95,7 +97,7 @@ async function createBookingInner(b: BookingInput, opts: Opts): Promise<BookingR
   const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((x) => [x.key, Number(x.value)]));
   const cars: BookingInput[] = [{ ...b, moreCars: undefined, cars: 1 },
     ...b.moreCars.map((m) => ({ ...b, car: m.car, job: m.job, addons: m.addons, own: m.own ?? null, notes: m.notes, photos: undefined, vin: m.vin, moreCars: undefined, cars: 1 }))];
-  const clean = (x: BookingInput) => (x.job === "oil_change" ? x.addons : x.job === "seasonal" || x.job === "parts" ? x.addons.filter((a) => a !== "tires") : []);
+  const clean = (x: BookingInput) => keepAddons(x.job, x.addons);
   const total = cars.reduce((t, x) => t + minutesFor(x.job, rules, clean(x)), 0);
   const start = new Date(b.start);
   const date = halifaxDate(start);
@@ -146,7 +148,7 @@ async function createOne(b: BookingInput, opts: Opts & {
   customerId?: string | null;    // owners picked an existing customer: update them instead of making a duplicate
 }): Promise<BookingResult> {
   // 1) Price, worked out on the server
-  if (b.job !== "oil_change") b = { ...b, addons: b.addons.filter((a) => a !== "tires") };   // tires only add on to an oil change
+  b = { ...b, addons: keepAddons(b.job, b.addons) };   // every service takes the small add-ons; tires only add on to an oil change
   const inSeason = !!seasonFor(halifaxDate(new Date(b.start)), await seasonWindows());
   if (b.job === "seasonal" && !opts.anyTime && !inSeason) {
     return { ok: false, status: 400, error: "The seasonal package is only offered at the start of winter and summer. Book an oil change or a tire change instead." };
@@ -281,6 +283,8 @@ async function createOne(b: BookingInput, opts: Opts & {
   }
 
   await markCreditsUsed(creditIds, bk.data!.id);
+  // its spot on the map, for grouping the day by area later (free; never holds up the booking more than 2.5 s)
+  await Promise.race([geocode(b.address).catch(() => null), new Promise((r) => setTimeout(r, 2500))]);
 
   const carName = `${b.car.year} ${b.car.make} ${b.car.model}`;
   if (opts.silent) return { ok: true, bookingId: bk.data!.id, date, when, total: quote.total, subtotal: quote.subtotal, hst: quote.hst, lines: quote.lines, message: "", end: slotEnd, car: carName };

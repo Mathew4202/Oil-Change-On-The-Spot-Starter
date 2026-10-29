@@ -30,3 +30,15 @@ test("login names", () => {
   assert.equal(cleanUsername(" Teagan "), "teagan");
   assert.equal(cleanUsername("Mary Jo.Smith"), "maryjosmith");
 });
+
+test("accountant: money and receipts, no customers or jobs; trainee only looks", () => {
+  for (const p of ["/owner/money", "/api/owner/money", "/api/owner/bank", "/owner/receipt", "/api/owner/receipt", "/owner/fleets/x", "/api/owner/fleet"]) assert.equal(allowed("accountant", p), true, p);
+  for (const p of ["/owner/customers", "/api/owner/customers", "/api/owner/job", "/api/owner/book", "/owner/team", "/api/owner/calls"]) assert.equal(allowed("accountant", p), false, p);
+  assert.equal(canOf("accountant").invoices, true);
+  for (const p of ["/owner", "/owner/stock", "/api/owner/day", "/api/owner/stock"]) assert.equal(allowed("trainee", p), true, p);
+  for (const p of ["/api/owner/job", "/api/owner/book", "/owner/customers", "/owner/money"]) assert.equal(allowed("trainee", p), false, p);
+  assert.equal(allowed("fleet_sales", "/owner/fleets"), true);
+  assert.equal(canOf("fleet_sales").invoices, false);
+  assert.equal(allowed("marketing", "/api/owner/book"), false);
+  assert.equal(allowed("marketing", "/owner/customers"), true);
+});
