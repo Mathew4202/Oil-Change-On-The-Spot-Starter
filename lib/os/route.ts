@@ -32,13 +32,14 @@ async function dayRows(date: string) {
 }
 
 /** The day's stops in time order with a Google Maps link through all of them (for the calendar). */
-export async function dayRoute(date: string) {
-  const rows = await dayRows(date).catch(() => [] as DayRow[]);
+export async function dayRoute(date: string, given?: { id: string; status: string; address: string | null; customers: { address: string | null } | null }[]) {
+  // the calendar already has the day's bookings: use them instead of asking again
+  const rows = given ? given.filter((r) => ["requested", "confirmed", "in_progress"].includes(r.status)) : await dayRows(date).catch(() => [] as DayRow[]);
   const addrs: string[] = [];
   for (const r of rows) { const a = r.address || r.customers?.address; if (a && addrs[addrs.length - 1] !== a) addrs.push(a); }   // a multi-car visit is one stop
-  const home = (await bases())[0];
-  const offers = rows.length ? await sbGet<{ booking_id: string; to_start: string; status: string }>(
-    `route_offers?select=booking_id,to_start,status&booking_id=in.(${rows.map((r) => r.id).join(",")})&order=created_at.desc`).catch(() => []) : [];
+  const [b, offers] = await Promise.all([bases(), rows.length ? sbGet<{ booking_id: string; to_start: string; status: string }>(
+    `route_offers?select=booking_id,to_start,status&booking_id=in.(${rows.map((r) => r.id).join(",")})&order=created_at.desc`).catch(() => []) : []]);
+  const home = b[0];
   return { link: routeLink(home, addrs), stops: addrs.length, offers };
 }
 

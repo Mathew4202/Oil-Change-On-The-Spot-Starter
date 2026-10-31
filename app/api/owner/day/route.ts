@@ -33,10 +33,12 @@ export async function GET(req: NextRequest) {
   const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,` +
       `customers(first_name,last_name,phone,address),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,verified,source,confidence${extra}))` +
       `&starts_at=gte.${from}&starts_at=lt.${to}&status=neq.cancelled&order=starts_at`);
-  const [rows, off] = await Promise.all([
+  // everything that only needs the date goes out at once (each trip to the database is a wait, so never one after another)
+  const [rows, off, holdRows] = await Promise.all([
     q(",cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger,filter_note").catch(() => q("")),   // part number columns come with migration 0026
     sbGet<{ id: string; starts_at: string; ends_at: string; reason: string | null }>(
       `time_off?select=id,starts_at,ends_at,reason&starts_at=lt.${to}&ends_at=gt.${from}&order=starts_at`),
+    activeHolds(from, to),
   ]);
 
   // What to bring: litres per oil grade and filters per part number, checked against stock
@@ -48,24 +50,21 @@ export async function GET(req: NextRequest) {
     if (r.services?.own !== "oil") oil[s.oil_grade] = Math.round(((oil[s.oil_grade] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
     if (s.oil_filter_part && r.services?.own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
   }
-  const parts = Object.keys(filters).length
-    ? await sbGet<{ part_number: string; on_hand: number }>(`parts?select=part_number,on_hand&part_number=in.(${Object.keys(filters).join(",")})`)
-    : [];
-  const stock = Object.fromEntries(parts.map((p) => [p.part_number, Number(p.on_hand)]));
-  const filterCosts: Record<string, number> = {};
-  if (Object.keys(filters).length) {
-    const q = await sbGet<{ our_cost: number; parts: { part_number: string } | null }>(`part_quotes?select=our_cost,parts!inner(part_number)&parts.part_number=in.(${Object.keys(filters).join(",")})&order=checked_at.desc`).catch(() => []);
-    for (const x of q) if (x.parts && filterCosts[x.parts.part_number] == null) filterCosts[x.parts.part_number] = Number(x.our_cost);
-  }
-
-  // VIN / engine-label photos customers sent (signed links, good for an hour). Skipped if that column isn't there yet.
+  // then everything that needs the day's jobs, also all at once
+  const fl = Object.keys(filters);
   const photoLinks: Record<string, string[]> = {};
-  if (rows.length) {
-    try {
-      const withPhotos = await sbGet<{ id: string; photo_paths: string[] | null }>(`bookings?select=id,photo_paths&id=in.(${rows.map((r) => r.id).join(",")})&photo_paths=not.is.null`);
-      for (const b of withPhotos) photoLinks[b.id] = (await Promise.all((b.photo_paths ?? []).map((p) => bookingPhotoLink(p)))).filter(Boolean) as string[];
-    } catch { /* migration 0019 not run yet */ }
-  }
+  const filterCosts: Record<string, number> = {};
+  const [parts, , , route] = await Promise.all([
+    fl.length ? sbGet<{ part_number: string; on_hand: number }>(`parts?select=part_number,on_hand&part_number=in.(${fl.join(",")})`) : Promise.resolve([]),
+    fl.length ? sbGet<{ our_cost: number; parts: { part_number: string } | null }>(`part_quotes?select=our_cost,parts!inner(part_number)&parts.part_number=in.(${fl.join(",")})&order=checked_at.desc`)
+      .then((q) => { for (const x of q) if (x.parts && filterCosts[x.parts.part_number] == null) filterCosts[x.parts.part_number] = Number(x.our_cost); }).catch(() => null) : null,
+    // VIN / engine-label photos customers sent (signed links, good for an hour). Skipped if that column isn't there yet.
+    rows.length ? sbGet<{ id: string; photo_paths: string[] | null }>(`bookings?select=id,photo_paths&id=in.(${rows.map((r) => r.id).join(",")})&photo_paths=not.is.null`)
+      .then((w) => Promise.all(w.map(async (b) => { photoLinks[b.id] = (await Promise.all((b.photo_paths ?? []).map((p) => bookingPhotoLink(p)))).filter(Boolean) as string[]; })))
+      .catch(() => null) : null,   // migration 0019 not run yet
+    dayRoute(date, rows).catch(() => null),
+  ]);
+  const stock = Object.fromEntries(parts.map((p) => [p.part_number, Number(p.on_hand)]));
 
   const jobs = rows.map((r) => {
     const s = r.vehicles?.vehicle_specs;
@@ -90,8 +89,7 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  const route = await dayRoute(date).catch(() => null);
-  const holds = (await activeHolds(from, to)).map((h) => ({ id: h.id, start: h.starts_at, end: h.ends_at, expires: h.expires_at, name: h.first_name, phone: h.phone,
+  const holds = holdRows.map((h) => ({ id: h.id, start: h.starts_at, end: h.ends_at, expires: h.expires_at, name: h.first_name, phone: h.phone,
     job: h.job, cars: h.cars, note: h.note, by: h.created_by, link: holdLink(h.token) }));
   return NextResponse.json({
     date, jobs, timeOff: off, holds, route,

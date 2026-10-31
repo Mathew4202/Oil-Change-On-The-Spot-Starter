@@ -31,34 +31,40 @@ const VEH = "id,unit_number,year,make,model,engine,vin,plate,fleet_price,last_km
 
 /** All fleet accounts with what needs attention: vehicles due, jobs not invoiced yet, invoices not paid. */
 export async function listAccounts() {
-  const accounts = await sbGet<Account>(`fleet_accounts?select=${ACC}&order=business_name`);
-  const out = [];
-  for (const a of accounts) {
-    const d = await accountDetail(a.id);
-    out.push({ ...a, vehicles: d?.vehicles.length ?? 0, due: d?.vehicles.filter((v) => v.due.state === "due" || v.due.state === "soon").length ?? 0,
+  // all the fleets at once (one after another was a wait per fleet)
+  const [accounts, requests] = await Promise.all([
+    sbGet<Account>(`fleet_accounts?select=${ACC}&order=business_name`),
+    sbGet<{ id: string; company: string; contact_name: string; phone: string; email: string | null; vehicles: number | null; vehicle_types: string | null;
+      services: string[]; address: string | null; notes: string | null; status: string; created_at: string }>(
+      "fleet_requests?select=id,company,contact_name,phone,email,vehicles,vehicle_types,services,address,notes,status,created_at&status=in.(new,contacted,quoted)&order=created_at.desc").catch(() => []),
+  ]);
+  const out = await Promise.all(accounts.map(async (a) => {
+    const d = await accountDetail(a.id, a);
+    return { ...a, vehicles: d?.vehicles.length ?? 0, due: d?.vehicles.filter((v) => v.due.state === "due" || v.due.state === "soon").length ?? 0,
       unbilled: d?.unbilled.length ?? 0, unbilledTotal: r2((d?.unbilled ?? []).reduce((t, j) => t + j.total, 0)),
-      owing: r2((d?.invoices ?? []).filter((i) => i.status === "open").reduce((t, i) => t + Number(i.total), 0)) });
-  }
-  const requests = await sbGet<{ id: string; company: string; contact_name: string; phone: string; email: string | null; vehicles: number | null; vehicle_types: string | null;
-    services: string[]; address: string | null; notes: string | null; status: string; created_at: string }>(
-    "fleet_requests?select=id,company,contact_name,phone,email,vehicles,vehicle_types,services,address,notes,status,created_at&status=in.(new,contacted,quoted)&order=created_at.desc").catch(() => []);
+      owing: r2((d?.invoices ?? []).filter((i) => i.status === "open").reduce((t, i) => t + Number(i.total), 0)) };
+  }));
   return { accounts: out, requests };
 }
 
 type JobRow = { id: string; done_at: string; km: number | null; service: string | null; inspection?: Record<string, { status?: string }> | null; lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; total: number;
   vehicle_id: string | null; vehicle_text: string | null; booking_id: string | null; invoice_id: string | null; receipt_no: number | null };
 
-export async function accountDetail(id: string) {
-  const [a] = await sbGet<Account>(`fleet_accounts?select=${ACC}&id=eq.${enc(id)}`);
+export async function accountDetail(id: string, known?: Account) {
+  const [[a], vehicles, invoices] = await Promise.all([
+    known ? Promise.resolve([known]) : sbGet<Account>(`fleet_accounts?select=${ACC}&id=eq.${enc(id)}`),
+    sbGet<FleetVehicle>(`vehicles?select=${VEH}&fleet_account_id=eq.${enc(id)}&order=unit_number.asc.nullslast,year.desc`),
+    sbGet<{ id: string; invoice_no: number; token: string; period_start: string | null; period_end: string | null; issued_at: string; due_at: string | null;
+      total: number; status: string; sent_at: string | null; paid_at: string | null; paid_method: string | null }>(
+      `invoices?select=id,invoice_no,token,period_start,period_end,issued_at,due_at,total,status,sent_at,paid_at,paid_method&fleet_account_id=eq.${enc(id)}&order=issued_at.desc&limit=50`).catch(() => []),
+  ]);
   if (!a) return null;
-  const vehicles = await sbGet<FleetVehicle>(`vehicles?select=${VEH}&fleet_account_id=eq.${a.id}&order=unit_number.asc.nullslast,year.desc`);
   const ids = vehicles.map((v) => v.id);
-  const jobs = ids.length ? await sbGet<JobRow>(`jobs?select=id,done_at,km,service,lines,subtotal,hst,total,vehicle_id,vehicle_text,booking_id,invoice_id,receipt_no,inspection&vehicle_id=in.(${ids.join(",")})&order=done_at.desc&limit=500`) : [];
-  const upcoming = ids.length ? await sbGet<{ id: string; starts_at: string; vehicle_id: string; status: string }>(
-    `bookings?select=id,starts_at,vehicle_id,status&vehicle_id=in.(${ids.join(",")})&status=in.(confirmed,requested,in_progress)&starts_at=gte.${new Date(Date.now() - 86400000).toISOString()}&order=starts_at`) : [];
-  const invoices = await sbGet<{ id: string; invoice_no: number; token: string; period_start: string | null; period_end: string | null; issued_at: string; due_at: string | null;
-    total: number; status: string; sent_at: string | null; paid_at: string | null; paid_method: string | null }>(
-    `invoices?select=id,invoice_no,token,period_start,period_end,issued_at,due_at,total,status,sent_at,paid_at,paid_method&fleet_account_id=eq.${a.id}&order=issued_at.desc&limit=50`).catch(() => []);
+  const [jobs, upcoming] = ids.length ? await Promise.all([
+    sbGet<JobRow>(`jobs?select=id,done_at,km,service,lines,subtotal,hst,total,vehicle_id,vehicle_text,booking_id,invoice_id,receipt_no,inspection&vehicle_id=in.(${ids.join(",")})&order=done_at.desc&limit=500`),
+    sbGet<{ id: string; starts_at: string; vehicle_id: string; status: string }>(
+      `bookings?select=id,starts_at,vehicle_id,status&vehicle_id=in.(${ids.join(",")})&status=in.(confirmed,requested,in_progress)&starts_at=gte.${new Date(Date.now() - 86400000).toISOString()}&order=starts_at`),
+  ]) : [[] as JobRow[], [] as { id: string; starts_at: string; vehicle_id: string; status: string }[]];
   const today = halifaxDate(new Date());
   vehicles.sort((x, y) => (x.unit_number ?? "~").localeCompare(y.unit_number ?? "~", undefined, { numeric: true }));
   const withDue = vehicles.map((v) => {

@@ -25,8 +25,19 @@ async function verify(value: string) {
   return { name, role, ver, legacy: parts.length === 3 };
 }
 
-/** Staff logins: still on, same role, not reset since this cookie was made. */
+/**
+ * Staff logins: still on, same role, not reset since this cookie was made. A yes is remembered for a minute so every
+ * tap doesn't wait on the database (turning a login off or changing its role still takes effect within a minute).
+ */
+const okUntil = new Map<string, number>();
 async function stillValid(name: string, role: string, ver: number) {
+  const key = `${name}|${role}|${ver}`;
+  if ((okUntil.get(key) ?? 0) > Date.now()) return true;
+  const ok = await checkStaff(name, role, ver);
+  if (ok) { if (okUntil.size > 200) okUntil.clear(); okUntil.set(key, Date.now() + 60_000); } else okUntil.delete(key);
+  return ok;
+}
+async function checkStaff(name: string, role: string, ver: number) {
   const base = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
   const k = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
   if (!base || !k) return false;

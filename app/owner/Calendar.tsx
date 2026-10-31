@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import NewBooking, { type Customer as BookCustomer } from "./NewBooking";
 import PushToggle from "./PushToggle";
 import JobSheet from "./JobSheet";
@@ -73,13 +73,26 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
   const [jobOpen, setJobOpen] = useState<string | null>(null);
   const [changing, setChanging] = useState<{ id: string; name: string } | null>(null);
 
+  // days already loaded show straight away (then refresh), and the days either side load in the background,
+  // so tapping to the next day doesn't wait on the internet
+  const days = useRef(new Map<string, Day>());
+  const shown = useRef(date); shown.current = date;
+  const fetchDay = useCallback(async (d: string) => {
+    const res = await fetch(`/api/owner/day?date=${d}`, { cache: "no-store" });
+    if (res.status === 401) { window.location.href = "/owner/login"; return null; }
+    if (!res.ok) return null;
+    const j = (await res.json()) as Day;
+    days.current.set(d, j);
+    return j;
+  }, []);
   const load = useCallback(async (d: string) => {
     setError("");
-    const res = await fetch(`/api/owner/day?date=${d}`, { cache: "no-store" });
-    if (res.status === 401) { window.location.href = "/owner/login"; return; }
-    if (!res.ok) { setError("Couldn't load the calendar. Pull down to try again."); return; }
-    setDay(await res.json());
-  }, []);
+    const j = await fetchDay(d);
+    if (shown.current !== d) return;   // they've moved on to another day
+    if (!j) { if (!days.current.has(d)) setError("Couldn't load the calendar. Pull down to try again."); return; }
+    setDay(j);
+    for (const n of [addDays(d, 1), addDays(d, -1)]) if (!days.current.has(n)) fetchDay(n).catch(() => null);
+  }, [fetchDay]);
 
   const loadAlerts = useCallback(async () => {
     const res = await fetch("/api/owner/alerts", { cache: "no-store" });
@@ -88,7 +101,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
     setAlerts(j.alerts); setUnread(j.unread);
   }, []);
 
-  useEffect(() => { setDay(null); load(date); }, [date, load]);
+  useEffect(() => { setDay(days.current.get(date) ?? null); load(date); }, [date, load]);
   useEffect(() => {
     loadAlerts();
     const t = setInterval(() => { loadAlerts(); load(date); }, 30000);   // new bookings show up within 30 s
