@@ -29,7 +29,7 @@ export async function chargeLateBills(now = new Date()) {
     if (!c?.phone || c.sms_opt_out) continue;
     const added = step.kind === "fee" ? `a $${step.lateFee!.toFixed(2)} late fee was added` : `$${step.addInterest!.toFixed(2)} interest was added`;
     const day = new Date(j.done_at).toLocaleDateString("en-CA", { timeZone: "America/Halifax", month: "short", day: "numeric" });
-    const body = (await template("bill_overdue")) || "Hi {first_name}, your Oil Change On The Spot bill from {day} isn't paid yet, so {added}. You now owe {owing}. Pay here (card or e-transfer): {pay_link}\nIf you've already paid, just let us know!\n- Mathew";
+    const body = (await template("bill_overdue")) || "Hi {first_name}, your Oil Change On The Spot bill from {day} isn't paid yet, so {added}. You now owe {owing}. Pay here (card or e-transfer): {pay_link}\nIf you've already paid, just let us know!\n- {signer}";
     await sendSms(c.phone, fill(body, { first_name: c.first_name?.trim() || "there", day, added, owing: `$${owing(next).toFixed(2)}`, pay_link: payLink(j.receipt_token) }),
       { kind: "bill_overdue", customerId: c.id, bookingId: j.booking_id }).catch(() => null);
   }

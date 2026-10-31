@@ -9,7 +9,7 @@ test("codes are 6 digits and only the hash is kept", () => {
   assert.ok(!sameHash(h, hashCode("s3cret", "+19025551234", "042918")));
   assert.ok(!sameHash(h, hashCode("s3cret", "+19025559999", "042917")));   // same code, other phone
   assert.ok(!h.includes("042917"));
-  assert.match(codeText("042917"), /042917.*10 minutes.*- Mathew$/);
+  assert.match(codeText("042917"), /042917.*10 minutes.*- \{signer\}$/);
 });
 
 test("customer cookie: valid, tampered, expired, and not usable as an owner cookie", () => {

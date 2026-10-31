@@ -8,6 +8,7 @@ import { halifaxDate } from "@/lib/os/slots";
 import { sendSms, template, fill } from "@/lib/os/sms";
 import { Resend } from "resend";
 import { emailFrom } from "@/lib/os/email-from";
+import { signed } from "@/lib/os/signer";
 import { siteUrl, when as whenText } from "@/lib/os/customer-texts";
 import { pushToOwners } from "@/lib/os/push";
 
@@ -41,7 +42,7 @@ export async function textPortal(accountId: string) {
   const to = (a.email || a.invoice_email || "").trim();
   if (!a.phone && !to) return { ok: false as const, error: "Add the contact's mobile number or email first" };
   const sms = a.phone
-    ? await sendSms(a.phone, fill((await template("fleet_portal")) || "Hi {first_name}, here is your {business} page with Oil Change On The Spot: {link}\n- Mathew, Oil Change On The Spot", { first_name: first, business: a.business_name, link }), { kind: "fleet_portal" })
+    ? await sendSms(a.phone, fill((await template("fleet_portal")) || "Hi {first_name}, here is your {business} page with Oil Change On The Spot: {link}\n- {signer}, Oil Change On The Spot", { first_name: first, business: a.business_name, link }), { kind: "fleet_portal" })
     : null;
   const email = to ? await emailPortal(to, first, a.business_name, link) : { sent: false, reason: "no email on the account" };
   await sbPatch("fleet_accounts", `id=eq.${enc(accountId)}`, { portal_sent_at: new Date().toISOString() }).catch(() => null);
@@ -51,7 +52,7 @@ export async function textPortal(accountId: string) {
 async function emailPortal(to: string, first: string, business: string, link: string): Promise<{ sent: boolean; reason?: string }> {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return { sent: false, reason: "email doesn't look right" };
   if (!process.env.RESEND_API_KEY) return { sent: false, reason: "email service not set up" };
-  const text = fill((await template("fleet_portal_email")) || "Hi {first_name},\n\nHere is the {business} page with Oil Change On The Spot: {link}\n\nMathew\nOil Change On The Spot", { first_name: first, business, link });
+  const text = await signed(fill((await template("fleet_portal_email")) || "Hi {first_name},\n\nHere is the {business} page with Oil Change On The Spot: {link}\n\n{signer}\nOil Change On The Spot", { first_name: first, business, link }));
   const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:16px;line-height:1.5;color:#0d1b3e;max-width:560px">
     ${esc(text).split(link).join(`</p><p><a href="${link}" style="display:inline-block;background:#f2b01e;color:#0d1b3e;font-weight:800;padding:12px 20px;border-radius:10px;text-decoration:none">Open your fleet page</a></p><p>`).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>").replace(/^/, "<p>")}</p></div>`;
@@ -104,7 +105,7 @@ export async function portalBook(accountId: string, vehicleIds: string[], startI
   if (!r.ok) return r;
   const d = await accountDetail(accountId);
   if (d?.account.phone) {
-    const body = (await template("fleet_booked")) || "Hi {first_name}, your yard visit is booked for {when} at {address}: {count}.\n- Mathew, Oil Change On The Spot";
+    const body = (await template("fleet_booked")) || "Hi {first_name}, your yard visit is booked for {when} at {address}: {count}.\n- {signer}, Oil Change On The Spot";
     await sendSms(d.account.phone, fill(body, { first_name: (d.account.contact_name || "there").split(/\s+/)[0], when: whenText(start.toISOString()), address: d.account.address || "your yard",
       count: `${vehicleIds.length} vehicle${vehicleIds.length > 1 ? "s" : ""}` }), { kind: "fleet_booked", bookingId: r.bookings[0] }).catch(() => null);
   }

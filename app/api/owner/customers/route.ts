@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     const code = await ensureRefCode(b.id);
     if (!c?.phone || !code) return NextResponse.json({ ok: false, error: c?.phone ? "Run migration 0033 first" : "No phone number on file" }, { status: 400 });
     if (c.sms_opt_out) return NextResponse.json({ ok: false, error: "They turned texts off" }, { status: 400 });
-    const r = await sendSms(c.phone, `Hi ${c.first_name?.trim() || "there"}, here's your link to share with friends and family: ${refLink(code)}\nWhen someone books with it, you get $5 off your next oil change.\n- Mathew, Oil Change On The Spot`, { kind: "referral_link", customerId: b.id });
+    const r = await sendSms(c.phone, `Hi ${c.first_name?.trim() || "there"}, here's your link to share with friends and family: ${refLink(code)}\nWhen someone books with it, you get $5 off your next oil change.\n- {signer}, Oil Change On The Spot`, { kind: "referral_link", customerId: b.id });
     return NextResponse.json({ ok: r.sent, error: r.sent ? undefined : r.error || "The text didn't go out" });
   }
   if (b.action !== "merge" || !UUID.test(String(b.from || "")) || !UUID.test(String(b.into || ""))) return NextResponse.json({ error: "Bad request" }, { status: 400 });

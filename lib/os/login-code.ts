@@ -6,7 +6,7 @@ export const CODE_MINUTES = 10, MAX_TRIES = 5, MAX_CODES_PER_HOUR = 3, CUSTOMER_
 export const newCode = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
 export const hashCode = (secret: string, phone: string, code: string) => crypto.createHmac("sha256", secret).update(`login:${phone}:${code}`).digest("hex");
 export const sameHash = (a: string, b: string) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
-export const codeText = (code: string) => `Your Oil Change On The Spot code is ${code}. It works for ${CODE_MINUTES} minutes. If you didn't ask for it, ignore this text. - Mathew`;
+export const codeText = (code: string) => `Your Oil Change On The Spot code is ${code}. It works for ${CODE_MINUTES} minutes. If you didn't ask for it, ignore this text. - {signer}`;
 
 /** Customer session cookie value: <customerId>.<expiry>.<signature>. Signed differently from the owner cookie. */
 export function signCustomer(secret: string, id: string, now = Date.now()) {

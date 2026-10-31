@@ -1,6 +1,7 @@
 "use client";
 // Calls waiting on us: what they want (read from the call) and one tap to hold the time + text the link.
 import { useEffect, useState } from "react";
+import { useRole } from "./RoleContext";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type X = { name: string | null; year: number | null; make: string | null; model: string | null; job: string | null; cars: number; notes: string | null; wantsBooking: boolean } | null;
@@ -8,15 +9,17 @@ export type Call = { id: string; phone: string | null; status: string | null; at
   channel?: string; texts?: { at: string; from: "them" | "us"; body: string; by?: string | null }[] };
 // quick replies, signed like every customer text
 const QUICK = [
-  ["On a job", "Hi, thanks for your message! We're on a job right now, we'll get back to you shortly.\n- Mathew, Oil Change On The Spot"],
-  ["Call me", "Hi, thanks for reaching out! Is it okay if I give you a quick call?\n- Mathew, Oil Change On The Spot"],
-  ["Which car?", "Hi! What's the year, make and model of the car? I'll get you a price right away.\n- Mathew, Oil Change On The Spot"],
+  ["On a job", "Hi, thanks for your message! We're on a job right now, we'll get back to you shortly.\n- {signer}, Oil Change On The Spot"],
+  ["Call me", "Hi, thanks for reaching out! Is it okay if I give you a quick call?\n- {signer}, Oil Change On The Spot"],
+  ["Which car?", "Hi! What's the year, make and model of the car? I'll get you a price right away.\n- {signer}, Oil Change On The Spot"],
 ] as const;
 const JOB: Record<string, string> = { oil_change: "Oil change", seasonal: "Seasonal package", tires: "Tire change", rotation: "Tire rotation", parts: "Parts", diagnostic: "Diagnostic" };
 const fmt = (p: string | null) => p?.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3") ?? "Unknown number";
 const time = (iso: string) => new Date(iso).toLocaleTimeString("en-CA", { timeZone: "America/Halifax", hour: "numeric", minute: "2-digit" }).replace(/\./g, "");
 
 export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: string | null; onChanged: () => void; onPickTime: (c: Call) => void }) {
+  const { name } = useRole();
+  const me = name ? name.charAt(0).toUpperCase() + name.slice(1) : "Mathew";   // quick replies are signed by whoever is signed in
   const [calls, setCalls] = useState<Call[]>([]); const [busy, setBusy] = useState<string | null>(null); const [msg, setMsg] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState<Record<string, string>>({});
   const load = () => fetch("/api/owner/calls", { cache: "no-store" }).then((r) => r.json()).then((d) => setCalls(d.calls || [])).catch(() => {});
@@ -72,7 +75,7 @@ export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: s
             </div>
             {c.phone && (
               <div className="flex flex-col gap-2 pt-1">
-                <div className="flex flex-wrap gap-1.5">{QUICK.map(([k, v]) => <button key={k} type="button" onClick={() => setDraft((d) => ({ ...d, [c.id]: v }))} className="h-8 px-3 rounded-full border text-[13px] font-semibold bg-white" style={{ borderColor: LINE }}>{k}</button>)}</div>
+                <div className="flex flex-wrap gap-1.5">{QUICK.map(([k, v]) => <button key={k} type="button" onClick={() => setDraft((d) => ({ ...d, [c.id]: v.replace("{signer}", me) }))} className="h-8 px-3 rounded-full border text-[13px] font-semibold bg-white" style={{ borderColor: LINE }}>{k}</button>)}</div>
                 <div className="flex gap-2">
                   <textarea value={draft[c.id] ?? ""} onChange={(e) => setDraft((d) => ({ ...d, [c.id]: e.target.value }))} rows={(draft[c.id] ?? "").length > 60 ? 3 : 1}
                     placeholder={c.channel === "text" ? "Reply…" : "Text them…"} className="flex-1 rounded-xl border px-3 py-2.5 text-[15px] resize-none" style={{ borderColor: LINE }} />

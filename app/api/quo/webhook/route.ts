@@ -13,8 +13,8 @@ import { agreeByText } from "@/lib/os/plans";
 
 export const dynamic = "force-dynamic";
 
-const STOP_REPLY = "You won't get any more texts from Oil Change On The Spot. Reply START to turn them back on. - Mathew";
-const START_REPLY = "Texts from Oil Change On The Spot are back on. Reply STOP anytime to turn them off. - Mathew";
+const STOP_REPLY = "You won't get any more texts from Oil Change On The Spot. Reply START to turn them back on. - {signer}";
+const START_REPLY = "Texts from Oil Change On The Spot are back on. Reply STOP anytime to turn them off. - {signer}";
 
 async function alertOwners(title: string, body: string, url: string, tag: string) {
   try { await sbInsert("notifications", { kind: "text_reply", title, body }); } catch { /* best effort */ }

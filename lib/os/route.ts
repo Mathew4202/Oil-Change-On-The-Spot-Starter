@@ -74,7 +74,7 @@ export async function offerRouteMoves(date: string) {
   const traded = new Set(swaps.flatMap((w) => [w.a, w.b]));
   const offers = planOffers(stops.map((x) => (traded.has(x.id) ? { ...x, movable: false } : x)), (id) => open.get(id) ?? [], home, { max: max - swaps.length * 2 });
   let sent = 0;
-  const body = (await template("route_offer")) || "Hi {first_name}, it's Mathew from Oil Change On The Spot. To keep our route tight on {day}, could we move your appointment from {old_time} to {new_time}? Reply YES to move it or NO to keep {old_time}. Either is totally fine!";
+  const body = (await template("route_offer")) || "Hi {first_name}, it's {signer} from Oil Change On The Spot. To keep our route tight on {day}, could we move your appointment from {old_time} to {new_time}? Reply YES to move it or NO to keep {old_time}. Either is totally fine!";
   const ask = async (r: DayRow, toIso: string, row: Record<string, unknown>) => {
     const ins = await sbInsert<{ id: string }>("route_offers", { booking_id: r.id, from_start: r.starts_at, to_start: toIso, status: "sent", ...row });
     if (!ins.ok) return false;
@@ -107,7 +107,7 @@ type Offer = { id: string; booking_id: string; from_start: string; to_start: str
 const OFFER = "id,booking_id,from_start,to_start,status,pair_id,bookings!inner(customer_id,status,customers(id,first_name,phone))";
 const say = (o: Offer, text: string) => o.bookings?.customers?.phone
   ? sendSms(o.bookings.customers.phone, text, { kind: "route_reply", customerId: o.bookings.customers.id, bookingId: o.booking_id }).catch(() => null) : Promise.resolve(null);
-const keep = (o: Offer, why: string) => say(o, `${why} you keep ${timeOnly(o.from_start)}. See you then! - Mathew`);
+const keep = (o: Offer, why: string) => say(o, `${why} you keep ${timeOnly(o.from_start)}. See you then! - {signer}`);
 
 /** A text came in: is it a YES or NO to one of our offers? Returns true when handled (so it doesn't also land in HQ as a new text). */
 export async function handleRouteReply(phone: string, text: string): Promise<boolean> {
@@ -126,7 +126,7 @@ export async function handleRouteReply(phone: string, text: string): Promise<boo
     const [other] = await sbGet<Offer>(`route_offers?select=${OFFER}&pair_id=eq.${o.pair_id}&id=neq.${o.id}`).catch(() => []);
     if (answer === "no") {
       await sbPatch("route_offers", `id=eq.${o.id}`, { status: "declined", answered_at: now });
-      await say(o, `No problem at all, we'll see you at ${timeOnly(o.from_start)} as planned. - Mathew`);
+      await say(o, `No problem at all, we'll see you at ${timeOnly(o.from_start)} as planned. - {signer}`);
       if (other?.status === "yes_waiting") { await sbPatch("route_offers", `id=eq.${other.id}`, { status: "expired", answered_at: now }); await keep(other, "Thanks for saying yes! The switch didn't work out on the other end, so"); }
       else if (other?.status === "sent") await sbPatch("route_offers", `id=eq.${other.id}`, { status: "withdrawn" });
       return true;
@@ -134,7 +134,7 @@ export async function handleRouteReply(phone: string, text: string): Promise<boo
     if (other?.status !== "yes_waiting") {
       if (other?.status === "sent") {
         await sbPatch("route_offers", `id=eq.${o.id}`, { status: "yes_waiting", answered_at: now });
-        await say(o, `Thanks! We're just confirming with one other customer and we'll text you back. Until then you're still booked for ${timeOnly(o.from_start)}. - Mathew`);
+        await say(o, `Thanks! We're just confirming with one other customer and we'll text you back. Until then you're still booked for ${timeOnly(o.from_start)}. - {signer}`);
       } else { await sbPatch("route_offers", `id=eq.${o.id}`, { status: "expired", answered_at: now }); await keep(o, "Thanks! Plans changed, so"); }
       return true;
     }
@@ -142,7 +142,7 @@ export async function handleRouteReply(phone: string, text: string): Promise<boo
     const ok = await sbRpc<boolean>("swap_booking_times", { a: o.booking_id, b: other.booking_id }).catch(() => false);
     for (const x of [o, other]) await sbPatch("route_offers", `id=eq.${x.id}`, { status: ok ? "accepted" : "taken", answered_at: now });
     if (!ok) { await keep(o, "Thanks! Something changed on our side, so"); await keep(other, "Thanks for saying yes! Something changed on our side, so"); return true; }
-    for (const x of [o, other]) await say(x, `You're all set: your appointment is now ${when(x.to_start)}. Thanks for helping us out! - Mathew`);
+    for (const x of [o, other]) await say(x, `You're all set: your appointment is now ${when(x.to_start)}. Thanks for helping us out! - {signer}`);
     const date = halifaxDate(new Date(o.to_start));
     await Promise.race([pushToOwners({ title: `Route: ${o.bookings?.customers?.first_name || "A customer"} and ${other.bookings?.customers?.first_name || "a customer"} switched times`, body: "Both said yes, so the day is grouped by area.", url: `/owner?date=${date}`, tag: `route-${o.pair_id}` }).catch(() => null), sleep(3000)]);
     return true;
@@ -150,7 +150,7 @@ export async function handleRouteReply(phone: string, text: string): Promise<boo
 
   if (answer === "no") {
     await sbPatch("route_offers", `id=eq.${o.id}`, { status: "declined", answered_at: now });
-    await say(o, `No problem at all, we'll see you at ${timeOnly(o.from_start)} as planned. - Mathew`);
+    await say(o, `No problem at all, we'll see you at ${timeOnly(o.from_start)} as planned. - {signer}`);
     return true;
   }
   // YES to an open time: only if it's still open

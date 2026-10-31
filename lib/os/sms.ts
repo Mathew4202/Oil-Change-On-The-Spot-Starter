@@ -2,6 +2,7 @@
 import { sbGet, sbInsert, enc } from "@/lib/os/db";
 import { e164 } from "@/lib/os/booking";
 export { fill, segments } from "@/lib/os/text";
+import { signed } from "@/lib/os/signer";
 
 export const DEFAULT_REVIEW_LINK = "https://g.page/r/Cc5AP8M9qC4MEAE/review";
 
@@ -18,8 +19,9 @@ export async function template(key: string): Promise<string | null> {
 }
 
 /** force = the one reply confirming STOP/START; everything else respects "texts off". */
-export async function sendSms(to: string, content: string, meta: { kind: string; customerId?: string | null; bookingId?: string | null; force?: boolean }) {
+export async function sendSms(to: string, contentIn: string, meta: { kind: string; customerId?: string | null; bookingId?: string | null; force?: boolean }) {
   const phone = e164(to);
+  const content = await signed(contentIn);   // signed by whoever is signed in to HQ (automatic texts: Mathew)
   const key = process.env.QUO_API_KEY, from = process.env.QUO_FROM_NUMBER;
   let status = "sent", error: string | null = null, providerId: string | null = null;
   // Anyone who replied STOP (or was switched off in HQ) never gets an automatic text. Checked here so no path can skip it.
