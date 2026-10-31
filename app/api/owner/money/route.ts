@@ -4,6 +4,10 @@ import { currentOwner } from "@/lib/os/auth";
 import { sbGet } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
 import { periodFor, summarize, byMonth, type JobRow, type ExpRow, type Period } from "@/lib/os/money";
+import { moneyPerHour, type HourJob } from "@/lib/os/money-hour";
+import { cachedPoints, geoKey, geocode } from "@/lib/os/geo";
+import { km } from "@/lib/os/route-plan";
+import { bases } from "@/lib/os/maps";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +16,25 @@ const EXP_COLS = "spent_at,total,hst,subtotal,category,description";
 const nextDay = (d: string) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
 const jobsBetween = (from: string, to: string) =>
   sbGet<JobRow>(`jobs?select=${JOB_COLS}&done_at=gte.${halifaxToDate(from, 0).toISOString()}&done_at=lt.${halifaxToDate(nextDay(to), 0).toISOString()}`);
+type HourRow = Omit<HourJob, "address" | "minutes" | "driveKm"> & { booking_id: string | null;
+  bookings: { starts_at: string; ends_at: string; address: string | null } | null; customers: { address: string | null } | null };
+/** Profit per hour by area, service and add-on for the period (map points only from the cache: no new lookups here). */
+async function perHour(from: string, to: string) {
+  const [rows, home] = await Promise.all([
+    sbGet<HourRow>(`jobs?select=revenue,cost_oil,cost_parts,cost_other,service,lines,booking_id,bookings(starts_at,ends_at,address),customers(address)` +
+      `&done_at=gte.${halifaxToDate(from, 0).toISOString()}&done_at=lt.${halifaxToDate(nextDay(to), 0).toISOString()}`),
+    bases().then((b) => geocode(b[0])).catch(() => null),
+  ]);
+  const perBooking = new Map<string, number>();
+  for (const r of rows) if (r.booking_id) perBooking.set(r.booking_id, (perBooking.get(r.booking_id) ?? 0) + 1);
+  const addr = (r: HourRow) => r.bookings?.address || r.customers?.address || null;
+  const pts = home ? await cachedPoints(rows.map(addr)) : new Map();
+  return moneyPerHour(rows.map((r) => {
+    const a = addr(r), pt = a ? pts.get(geoKey(a)) : undefined;
+    const mins = r.bookings ? (new Date(r.bookings.ends_at).getTime() - new Date(r.bookings.starts_at).getTime()) / 60000 / (perBooking.get(r.booking_id!) ?? 1) : null;
+    return { ...r, address: a, minutes: mins, driveKm: home && pt ? km(home, pt) / (perBooking.get(r.booking_id ?? "") ?? 1) : null };
+  }));
+}
 const expBetween = (from: string, to: string) => sbGet<ExpRow>(`expenses?select=${EXP_COLS}&spent_at=gte.${from}&spent_at=lte.${to}`);
 
 export async function GET(req: NextRequest) {
@@ -22,7 +45,7 @@ export async function GET(req: NextRequest) {
   const p = periodFor(kind, offset, today);
   const year = +p.from.slice(0, 4);
 
-  const [jobs, exps, yJobs, yExps, unpaid, needs, lastImport] = await Promise.all([
+  const [jobs, exps, yJobs, yExps, unpaid, needs, lastImport, hourly] = await Promise.all([
     jobsBetween(p.from, p.to), expBetween(p.from, p.to),
     kind === "year" ? Promise.resolve(null) : jobsBetween(`${year}-01-01`, `${year}-12-31`),
     kind === "year" ? Promise.resolve(null) : expBetween(`${year}-01-01`, `${year}-12-31`),
@@ -34,6 +57,7 @@ export async function GET(req: NextRequest) {
         "bookings?select=id,starts_at,status,quoted_total,customer:customers(first_name,last_name),jobs(total)&status=eq.done&paid_at=is.null&or=(source.is.null,source.neq.square_import)&order=starts_at.desc&limit=30")),
     sbGet<{ id: string }>("bank_lines?select=id&status=eq.needs_look").catch(() => []),
     sbGet<{ to_date: string; account: string }>("bank_imports?select=to_date,account&order=to_date.desc&limit=1").catch(() => []),
+    perHour(p.from, p.to).catch(() => null),
   ]);
 
   return NextResponse.json({
@@ -42,6 +66,7 @@ export async function GET(req: NextRequest) {
     months: byMonth(year, yJobs ?? jobs, yExps ?? exps, (ts) => halifaxDate(new Date(ts))),
     unpaid: unpaid.map((b) => ({ id: b.id, date: halifaxDate(new Date(b.starts_at)), name: [b.customer?.first_name, b.customer?.last_name].filter(Boolean).join(" ") || "Customer",
       amount: Number(b.jobs?.[0]?.total ?? b.quoted_total ?? 0), fee: b.status === "cancelled" })),
+    hourly,
     bank: { needsLook: needs.length, lastStatement: lastImport[0]?.to_date ?? null, today },
   });
 }

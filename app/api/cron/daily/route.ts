@@ -4,6 +4,7 @@ import { runPlanBilling } from "@/lib/os/plans";
 import { backfillSpecs } from "@/lib/os/spec-backfill";
 import { attachUpcoming } from "@/lib/os/spec-learn";
 import { offerRouteMoves, closeRouteOffers } from "@/lib/os/route";
+import { fillSlowDay } from "@/lib/os/fill-ins";
 import { chargeLateBills } from "@/lib/os/bills";
 import { NextRequest, NextResponse } from "next/server";
 import { sbGet, sbPatch, sbDelete } from "@/lib/os/db";
@@ -72,9 +73,11 @@ export async function GET(req: NextRequest) {
     tomorrow: await offerRouteMoves(tomorrow).catch((e) => ({ offered: 0, note: String(e).slice(0, 120) })),
     dayAfter: await offerRouteMoves(addDays(today, 2)).catch((e) => ({ offered: 0, note: String(e).slice(0, 120) })),
   };
+  // 4e) Two days out with open times: text a few customers coming due who live near the jobs already booked
+  const fillIns = await fillSlowDay(addDays(today, 2), today).catch((e) => ({ texted: 0, note: String(e).slice(0, 120) }));
   // 5) What Quo sent us is only kept two weeks
   await sbDelete("webhook_log", `at=lt.${new Date(Date.now() - 14 * 86400000).toISOString()}`).catch(() => null);
-  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached, route, late });
+  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached, route, late, fillIns });
 }
 
 function addDays(d: string, n: number) { const [y, m, dd] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); }

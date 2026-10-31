@@ -12,7 +12,10 @@ type Summary = { jobs: number; sales: number; hstCollected: number; spending: nu
   spendingByGroup: { group: string; name: string; amount: number }[]; doneBy: Record<string, number>; tips: number; jobsNoHst: number; expensesNoHst: number };
 type Month = { month: string; sales: number; spending: number; profit: number };
 type Data = { period: { kind: Kind; label: string; from: string; to: string; offset: number }; summary: Summary; months: Month[];
-  unpaid: { id: string; date: string; name: string; amount: number; fee?: boolean }[]; bank: { needsLook: number; lastStatement: string | null; today: string } };
+  unpaid: { id: string; date: string; name: string; amount: number; fee?: boolean }[]; bank: { needsLook: number; lastStatement: string | null; today: string };
+  hourly: Hourly | null };
+type Bucket = { name: string; jobs: number; revenue: number; profit: number; hours: number | null; perHour: number | null };
+type Hourly = { all: Bucket | null; areas: Bucket[]; services: Bucket[]; addons: { name: string; count: number; revenue: number }[]; untimed: number };
 type BankLine = { id: string; account?: string; posted_on: string; amount: number; description: string; kind: string | null; category: string | null; note: string | null; status?: string; decided_by?: string | null };
 type Upload = { ok: boolean; error?: string; account?: string; from?: string; to?: string; added?: number; skipped?: number; matched?: number; auto?: number; needsLook?: number };
 
@@ -23,6 +26,40 @@ const CATS: [string, string][] = [["fuel", "Gas"], ["parts", "Filters and parts"
   ["insurance", "Insurance"], ["fees", "Bank and card fees"], ["marketing", "Marketing"], ["other", "Other"]];
 const KIND_NAME: Record<string, string> = { receipt: "Receipt", napa_account: "NAPA account", payment: "Customer e-transfer", card_payout: "Card sales payout", bank_fee: "Bank fee",
   transfer: "Transfer", expense_no_receipt: "Added, no receipt", personal: "Not business", money_in: "Money in" };
+
+/** Where the money comes from: profit per hour (time at the stop plus the drive out) by area and service, and add-ons sold. */
+function PerHour({ h }: { h: Hourly }) {
+  const [tab, setTab] = useState<"areas" | "services" | "addons">("areas");
+  const list = tab === "addons" ? [] : h[tab];
+  const best = Math.max(1, ...list.map((b) => b.perHour ?? 0));
+  return (
+    <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
+      <div>
+        <h2 className="font-extrabold text-lg">Money per hour</h2>
+        <p className="text-sm" style={{ color: MUTED }}>{h.all?.perHour != null ? <>Overall <strong className="text-[#0d1b3e]">{money(h.all.perHour, false)}</strong> profit per hour, counting the drive out to each job.</> : "Shows once jobs are finished in HQ."}</p>
+      </div>
+      <div className="grid grid-cols-3 gap-1 bg-[#eef1f6] rounded-xl p-1" role="tablist" aria-label="Group by">
+        {([["areas", "Area"], ["services", "Service"], ["addons", "Add-ons"]] as const).map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className="h-9 rounded-lg text-sm font-bold"
+            style={tab === k ? { background: NAVY, color: "#fff" } : { color: NAVY }}>{l}</button>
+        ))}
+      </div>
+      {tab !== "addons" ? list.map((b) => (
+        <div key={b.name} className="flex flex-col gap-1">
+          <div className="flex justify-between gap-2 text-[15px]">
+            <span className="font-semibold min-w-0 truncate">{b.name} <span className="font-normal text-sm" style={{ color: MUTED }}>· {b.jobs} job{b.jobs === 1 ? "" : "s"}</span></span>
+            <span className="font-bold shrink-0">{b.perHour != null ? `${money(b.perHour, false)}/h` : "no times"}</span>
+          </div>
+          {b.perHour != null && <div className="h-2 rounded-full bg-[#eef1f6]"><div className="h-2 rounded-full" style={{ width: `${Math.max(2, (b.perHour / best) * 100)}%`, background: b.perHour < best * 0.6 ? GOLD : NAVY }} /></div>}
+          <p className="text-xs" style={{ color: MUTED }}>{money(b.profit, false)} profit{b.hours != null ? ` over ${b.hours} h` : ""}</p>
+        </div>
+      )) : h.addons.length ? h.addons.map((a) => (
+        <div key={a.name} className="flex justify-between text-[15px]"><span className="font-semibold">{a.name}</span><span><strong>{a.count}</strong> sold{a.revenue ? ` · ${money(a.revenue, false)}` : ""}</span></div>
+      )) : <p className="text-sm" style={{ color: MUTED }}>No add-ons sold in this period.</p>}
+      <p className="text-xs" style={{ color: MUTED }}>Hours are the booked time plus an estimate of the drive from home. {h.untimed ? `${h.untimed} older job${h.untimed === 1 ? "" : "s"} from the trackers had no booked time, so they count in profit but not per hour.` : ""}</p>
+    </section>
+  );
+}
 
 export default function MoneyScreen() {
   const { can } = useRole();
@@ -87,6 +124,8 @@ export default function MoneyScreen() {
             </section>
 
             <MonthChart months={data.months} year={data.period.from.slice(0, 4)} pick={pick} setPick={setPick} />
+
+            {data.hourly?.all && <PerHour h={data.hourly} />}
 
             {s.spendingByGroup.length > 0 && (
               <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">

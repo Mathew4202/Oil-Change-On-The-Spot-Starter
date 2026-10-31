@@ -26,3 +26,16 @@ export async function geocode(address: string | null | undefined): Promise<Pt | 
   return pt;
 }
 
+
+/** Map points already in the cache (no new lookups), for many addresses at once. */
+export async function cachedPoints(addresses: (string | null | undefined)[]): Promise<Map<string, Pt>> {
+  const keys = [...new Set(addresses.filter((a): a is string => !!a && a.trim().length >= 6).map((a) => norm(a.trim())))];
+  const out = new Map<string, Pt>();
+  for (let i = 0; i < keys.length; i += 80) {
+    const part = keys.slice(i, i + 80).map((k) => `"${k.replace(/"/g, "")}"`).join(",");
+    const rows = await sbGet<{ key: string; lat: number | null; lng: number | null }>(`geo_cache?select=key,lat,lng&key=in.(${encodeURIComponent(part)})`).catch(() => []);
+    for (const r of rows) if (r.lat != null && r.lng != null) out.set(r.key, { lat: Number(r.lat), lng: Number(r.lng) });
+  }
+  return out;
+}
+export const geoKey = (a: string) => norm(a.trim());

@@ -81,3 +81,18 @@ test("a big empty stretch: 9:00 and 5:00 only → the 5:00 is asked to come righ
   // a gap that only closes a little isn't worth asking about
   assert.deepEqual(planCompact([s("a", DART, 540), s("b", DART, 1020)], () => [960], home), []);
 });
+
+test("slow-day fill-ins: nearest to a booked job first, nobody far away, times next to the booked jobs", async () => {
+  const { pickFillIns, pickTimes } = await import("../fill-ins-pick.ts");
+  const booked = [DART];
+  const c = [
+    { customerId: "far", pt: { lat: 44.85, lng: -63.7 }, due: "2026-11-01" },   // Sackville-ish, too far from a Dartmouth day
+    { customerId: "near-later", pt: { lat: 44.672, lng: -63.572 }, due: "2026-11-20" },
+    { customerId: "near-sooner", pt: { lat: 44.671, lng: -63.571 }, due: "2026-11-05" },
+    { customerId: "no-address", pt: null, due: "2026-11-01" },
+  ];
+  assert.deepEqual(pickFillIns(c, booked, { max: 3 }), ["near-sooner", "near-later"]);
+  assert.deepEqual(pickFillIns(c, booked, { max: 1 }), ["near-sooner"]);
+  assert.deepEqual(pickTimes([540, 600, 690, 780, 900, 1020], [630], 3), [540, 600, 690]);
+  assert.deepEqual(pickTimes([450, 480, 720], [540, 630], 3), [480, 720]);   // 7:30 and 8:00 are too close: one of them
+});
