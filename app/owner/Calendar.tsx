@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import NewBooking, { type Customer as BookCustomer } from "./NewBooking";
 import PushToggle from "./PushToggle";
+import Tour from "./Tour";
 import JobSheet from "./JobSheet";
 import ChangeBooking from "./ChangeBooking";
 import HoldTime, { type HoldPreset } from "./HoldTime";
@@ -120,6 +121,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
 
   return (
     <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl mx-auto">
+      <Tour ready={!!day} />
       {/* Header */}
       <header className="sticky top-0 z-20 text-white px-4 pt-[max(14px,env(safe-area-inset-top))] pb-4 flex flex-col gap-3" style={{ background: NAVY }}>
         <div className="flex items-center justify-between gap-3">
@@ -133,7 +135,9 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
             {date !== today && (
               <button onClick={() => setDate(today)} className="h-10 px-3 rounded-lg border border-[#3b4d7a] text-sm font-bold">Today</button>
             )}
-            <button onClick={openAlerts} aria-label={`Alerts${unread ? `, ${unread} new` : ""}`} className="relative w-11 h-11 rounded-lg border border-[#3b4d7a] flex items-center justify-center">
+            <button onClick={() => window.dispatchEvent(new Event("ocots-tour"))} aria-label="Show me around" title="Show me around"
+              className="w-11 h-11 rounded-lg border border-[#3b4d7a] flex items-center justify-center text-lg font-extrabold">?</button>
+            <button data-tour="alerts" onClick={openAlerts} aria-label={`Alerts${unread ? `, ${unread} new` : ""}`} className="relative w-11 h-11 rounded-lg border border-[#3b4d7a] flex items-center justify-center">
               <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8" /><path d="M10 20a2 2 0 0 0 4 0" /></svg>
               {unread > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full text-[12px] font-extrabold flex items-center justify-center" style={{ background: GOLD, color: NAVY }}>{unread}</span>}
             </button>
@@ -141,7 +145,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
         </div>
 
         {/* Week strip */}
-        <div className="flex items-center gap-1">
+        <div data-tour="week" className="flex items-center gap-1">
           <button onClick={() => setDate(addDays(date, -7))} aria-label="Previous week" className="w-8 h-12 flex items-center justify-center text-[#c9d3ea]">‹</button>
           <div className="grid grid-cols-7 gap-1 flex-1">
             {week.map((d) => {
@@ -184,7 +188,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
         )}
 
         {day?.route?.link && day.route.stops > 1 && (
-          <a href={day.route.link} target="_blank" rel="noreferrer" className="rounded-xl p-3 text-[15px] font-bold border bg-white flex items-center justify-between gap-2 no-underline text-[#0d1b3e]" style={{ borderColor: "#c8d0e0" }}>
+          <a data-tour="route" href={day.route.link} target="_blank" rel="noreferrer" className="rounded-xl p-3 text-[15px] font-bold border bg-white flex items-center justify-between gap-2 no-underline text-[#0d1b3e]" style={{ borderColor: "#c8d0e0" }}>
             <span>Route for {date === today ? "today" : "this day"}: {day.route.stops} stops in order</span><span className="text-sm underline">Open in Maps</span>
           </a>
         )}
@@ -289,7 +293,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 </div>
               )}
 
-              <div className="grid grid-cols-3 gap-2">
+              <div data-tour="job-buttons" className="grid grid-cols-3 gap-2">
                 <a href={j.address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}` : undefined}
                   className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.address}>Directions</a>
                 <a href={j.phone ? `tel:${j.phone}` : undefined} className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.phone}>Call</a>
@@ -297,7 +301,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
               </div>
               {can.jobs && (
                 j.status === "confirmed" || j.status === "requested" ? (
-                  <button onClick={async () => { await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", bookingId: j.id }) }); setJobOpen(j.id); load(date); }}
+                  <button data-tour="start-job" onClick={async () => { await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", bookingId: j.id }) }); setJobOpen(j.id); load(date); }}
                     className="h-12 rounded-xl font-extrabold text-base" style={{ background: GOLD, color: NAVY }}>Start job</button>
                 ) : j.status === "in_progress" ? (
                   <button onClick={() => setJobOpen(j.id)} className="h-12 rounded-xl font-extrabold text-base" style={{ background: GOLD, color: NAVY }}>Finish job</button>
@@ -354,7 +358,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
 
       {/* New booking (phone customers) */}
       {can.book && !booking && !showAlerts && !blocking && !holding && !jobOpen && !changing && (
-        <button onClick={() => setBooking(true)} aria-label="New booking"
+        <button data-tour="new-booking" onClick={() => setBooking(true)} aria-label="New booking"
           className="fixed z-20 right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] h-14 px-5 rounded-full shadow-lg font-extrabold text-base flex items-center gap-2"
           style={{ background: GOLD, color: NAVY }}>
           <span className="text-2xl leading-none" aria-hidden>+</span> New booking

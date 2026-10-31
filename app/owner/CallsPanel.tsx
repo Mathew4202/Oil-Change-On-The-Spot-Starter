@@ -39,7 +39,7 @@ export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: s
 
   if (!calls.length) return null;
   return (
-    <section className="flex flex-col gap-2" aria-label="Calls to follow up">
+    <section data-tour="calls" className="flex flex-col gap-2" aria-label="Calls to follow up">
       <h2 className="font-extrabold text-lg">{calls.some((c) => c.channel === "text") ? "Calls and texts to follow up" : "Calls to follow up"}</h2>
       {calls.map((c) => {
         const x = c.extract; const car = x ? [x.year, x.make, x.model].filter(Boolean).join(" ") : "";

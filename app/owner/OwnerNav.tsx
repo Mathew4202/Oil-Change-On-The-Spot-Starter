@@ -39,7 +39,7 @@ export default function OwnerNav() {
           const cls = "flex flex-col items-center gap-0.5 py-1 text-[12px]";
           const style = { color: active ? NAVY : href ? "#4a5878" : "#b5bfd3", fontWeight: active ? 800 : 600 };
           return href
-            ? <Link key={label} href={href as Route} className={cls} style={style} aria-current={active ? "page" : undefined}>{inner}</Link>
+            ? <Link key={label} data-tour={`nav-${label.toLowerCase()}`} href={href as Route} className={cls} style={style} aria-current={active ? "page" : undefined}>{inner}</Link>
             : <span key={label} className={cls} style={style}>{inner}</span>;
         })}
       </div>
