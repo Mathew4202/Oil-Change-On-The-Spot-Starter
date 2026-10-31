@@ -36,7 +36,7 @@ function PerHour({ h }: { h: Hourly }) {
     <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
       <div>
         <h2 className="font-extrabold text-lg">Money per hour</h2>
-        <p className="text-sm" style={{ color: MUTED }}>{h.all?.perHour != null ? <>Overall <strong className="text-[#0d1b3e]">{money(h.all.perHour, false)}</strong> profit per hour, counting the drive out to each job.</> : "Shows once jobs are finished in HQ."}</p>
+        <p className="text-sm" style={{ color: MUTED }}>{h.all?.perHour != null ? <>Overall <strong className="text-[#0d1b3e]">{money(h.all.perHour, false)}</strong> profit per hour, counting all the driving.</> : "Shows once jobs are finished in HQ."}</p>
       </div>
       <div className="grid grid-cols-3 gap-1 bg-[#eef1f6] rounded-xl p-1" role="tablist" aria-label="Group by">
         {([["areas", "Area"], ["services", "Service"], ["addons", "Add-ons"]] as const).map(([k, l]) => (
@@ -56,7 +56,7 @@ function PerHour({ h }: { h: Hourly }) {
       )) : h.addons.length ? h.addons.map((a) => (
         <div key={a.name} className="flex justify-between text-[15px]"><span className="font-semibold">{a.name}</span><span><strong>{a.count}</strong> sold{a.revenue ? ` · ${money(a.revenue, false)}` : ""}</span></div>
       )) : <p className="text-sm" style={{ color: MUTED }}>No add-ons sold in this period.</p>}
-      <p className="text-xs" style={{ color: MUTED }}>Hours are the booked time plus an estimate of the drive from home. {h.untimed ? `${h.untimed} older job${h.untimed === 1 ? "" : "s"} from the trackers had no booked time, so they count in profit but not per hour.` : ""}</p>
+      <p className="text-xs" style={{ color: MUTED }}>Hours are the booked time plus each day&apos;s driving: out to the first job, between jobs and back home, slower from 3 to 6 pm. The drive to a job counts toward that job, and the drive home toward the last one. {h.untimed ? `${h.untimed} older job${h.untimed === 1 ? "" : "s"} from the trackers had no booked time, so they count in profit but not per hour.` : ""}</p>
     </section>
   );
 }
