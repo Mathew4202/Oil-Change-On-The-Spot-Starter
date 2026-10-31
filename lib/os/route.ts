@@ -1,12 +1,12 @@
 // Grouping each day's jobs by area (free: OpenStreetMap for map points, Google Maps links for directions).
-//  - Two evenings before a day, we look at its jobs. A job that sends us across town and back gets a text offering
+//  - Two evenings before a day, and again the evening before (for jobs booked since), we look at its jobs. A job that sends us across town and back gets a text offering
 //    an open time next to the jobs near it. YES moves it, NO (or no answer) keeps their time.
 //  - HQ shows the day's stops in order with one link that opens the whole route in Google Maps.
 import { sbGet, sbInsert, sbPatch, sbRpc, enc } from "@/lib/os/db";
 import { dayAvailability } from "@/lib/os/calendar";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
 import { bases } from "@/lib/os/maps";
-import { planOffers, planSwaps, replyIs, routeLink, type Stop } from "@/lib/os/route-plan";
+import { planOffers, planSwaps, planCompact, replyIs, routeLink, type Stop } from "@/lib/os/route-plan";
 import crypto from "crypto";
 import { sendSms, template, fill } from "@/lib/os/sms";
 import { timeOnly, when } from "@/lib/os/customer-texts";
@@ -17,7 +17,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type DayRow = { id: string; starts_at: string; ends_at: string; address: string | null; status: string; pay_mode: string; group_id: string | null;
   customers: { id: string; first_name: string | null; phone: string | null; sms_opt_out: boolean | null; address: string | null } | null };
-const minutes = (iso: string, date: string) => Math.round((new Date(iso).getTime() - halifaxToDate(date, 0).getTime()) / 60000);
+// clock time in Halifax (minutes after midnight), so the day the clocks change still lines up with halifaxToDate
+const minutes = (iso: string, date: string) => {
+  const p = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso));
+  const g = (t: string) => p.find((x) => x.type === t)?.value ?? "0";
+  const day = `${g("year")}-${g("month")}-${g("day")}`;
+  return (day > date ? 1440 : day < date ? -1440 : 0) + Number(g("hour")) * 60 + Number(g("minute"));
+};
 
 async function dayRows(date: string) {
   const from = halifaxToDate(date, 0).toISOString(), to = halifaxToDate(date, 24 * 60).toISOString();
@@ -42,7 +48,7 @@ export async function offerRouteMoves(date: string) {
   const max = rule ? Number(rule.value) : 3;
   if (!(max > 0)) return { offered: 0, note: "turned off" };
   const rows = await dayRows(date);
-  if (rows.length < 3) return { offered: 0, note: "fewer than 3 jobs" };
+  if (rows.length < 2) return { offered: 0, note: "fewer than 2 jobs" };
   const already = await sbGet<{ booking_id: string }>(`route_offers?select=booking_id&booking_id=in.(${rows.map((r) => r.id).join(",")})`).catch(() => null);
   if (already === null) return { offered: 0, note: "run migration 0034" };
   const home = await geocode((await bases())[0]);
@@ -72,7 +78,22 @@ export async function offerRouteMoves(date: string) {
   // 1) trades: two customers swap times (works on a full day); 2) moves into an open time near the others
   const swaps = max >= 2 ? planSwaps(stops, home, { max: Math.floor(max / 2) }) : [];
   const traded = new Set(swaps.flatMap((w) => [w.a, w.b]));
-  const offers = planOffers(stops.map((x) => (traded.has(x.id) ? { ...x, movable: false } : x)), (id) => open.get(id) ?? [], home, { max: max - swaps.length * 2 });
+  // plan the rest as if the trades say yes (otherwise a move could undo a trade)
+  const afterTrades = stops.map((x) => {
+    const w = swaps.find((y) => y.a === x.id || y.b === x.id);
+    if (!w) return x;
+    const t = w.a === x.id ? w.bStart : w.aStart;
+    return { ...x, start: t, end: t + (x.end - x.start), movable: false };
+  });
+  const offers = planOffers(afterTrades, (id) => open.get(id) ?? [], home, { max: max - swaps.length * 2 });
+  // 3) a big empty stretch (9:00 and 5:00 only): ask the later ones to come right after the morning job
+  const asked = new Set([...traded, ...offers.map((o) => o.id)]);
+  const busy = offers.map((o) => { const st = stops.find((x) => x.id === o.id)!; return { start: o.to, end: o.to + st.end - st.start }; });
+  const left = max - swaps.length * 2 - offers.length;
+  const afterMoves = afterTrades.map((x) => { const o = offers.find((y) => y.id === x.id); return o ? { ...x, start: o.to, end: o.to + (x.end - x.start), movable: false } : x; });
+  const pulls = left > 0 ? planCompact(afterMoves.map((x) => (asked.has(x.id) ? { ...x, movable: false } : x)),
+    (id) => { const st = stops.find((x) => x.id === id)!; const len = st.end - st.start; return (open.get(id) ?? []).filter((t) => !busy.some((b) => t < b.end && t + len > b.start)); },
+    home, { max: left }) : [];
   let sent = 0;
   const body = (await template("route_offer")) || "Hi {first_name}, it's {signer} from Oil Change On The Spot. To keep our route tight on {day}, could we move your appointment from {old_time} to {new_time}? Reply YES to move it or NO to keep {old_time}. Either is totally fine!";
   const ask = async (r: DayRow, toIso: string, row: Record<string, unknown>) => {
@@ -85,12 +106,18 @@ export async function offerRouteMoves(date: string) {
     return x.sent;
   };
   // a trade has to be settled by noon the day before, so both know their time before the reminder goes out
-  const noonBefore = halifaxToDate(addDays(date, -1), 12 * 60).toISOString();
+  // (checked only the evening before: they get until 8 am, and never later than 3 hours before the earlier of the two)
+  const noon = halifaxToDate(addDays(date, -1), 12 * 60).getTime();
+  const tradeBy = (a: DayRow, b: DayRow) => {
+    const by = noon > Date.now() + 3 * 3600000 ? noon : halifaxToDate(date, 8 * 60).getTime();
+    return new Date(Math.min(by, Math.min(new Date(a.starts_at).getTime(), new Date(b.starts_at).getTime()) - 3 * 3600000)).toISOString();
+  };
   for (const w of swaps) {
     const a = byId.get(w.a)!, b = byId.get(w.b)!;
     const pair = crypto.randomUUID();
-    const okA = await ask(a, b.starts_at, { pair_id: pair, saved_km: w.savedKm, expires_at: noonBefore });
-    const okB = await ask(b, a.starts_at, { pair_id: pair, saved_km: w.savedKm, expires_at: noonBefore });
+    const until = tradeBy(a, b);
+    const okA = await ask(a, b.starts_at, { pair_id: pair, saved_km: w.savedKm, expires_at: until });
+    const okB = await ask(b, a.starts_at, { pair_id: pair, saved_km: w.savedKm, expires_at: until });
     sent += Number(okA) + Number(okB);
     if (!okA || !okB) await sbPatch("route_offers", `pair_id=eq.${pair}&status=eq.sent`, { status: "withdrawn" }).catch(() => null);   // one text failed: the other just keeps their time
   }
@@ -98,7 +125,11 @@ export async function offerRouteMoves(date: string) {
     const r = byId.get(o.id)!;
     if (await ask(r, halifaxToDate(date, o.to).toISOString(), { saved_km: o.savedKm, expires_at: new Date(new Date(r.starts_at).getTime() - 3 * 3600000).toISOString() })) sent++;
   }
-  return { offered: sent, trades: swaps.length, moves: offers.length };
+  for (const p of pulls) {
+    const r = byId.get(p.id)!;
+    if (await ask(r, halifaxToDate(date, p.to).toISOString(), { saved_km: 0, expires_at: new Date(new Date(r.starts_at).getTime() - 3 * 3600000).toISOString() })) sent++;
+  }
+  return { offered: sent, trades: swaps.length, moves: offers.length, pulls: pulls.length };
 }
 
 const addDays = (d: string, n: number) => { const [y, m, dd] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); };

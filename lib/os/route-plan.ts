@@ -23,19 +23,27 @@ export function dayKm(stops: Stop[], home: Pt) {
   return t;
 }
 
-/** Extra km this job adds where it is now (vs going straight from the one before to the one after). */
-function detour(stops: Stop[], i: number, home: Pt) {
-  const prev = i > 0 ? stops[i - 1] : home, next = stops[i + 1];
-  const me = stops[i];
-  return next ? km(prev, me) + km(me, next) - km(prev, next) : km(prev, me);
-}
+// Rush hour (3 to 6 pm): driving then is slower and burns more gas, and the bridges back to Dartmouth back up.
+// A km driven in rush hour counts as RUSH km, so the plan does the far jobs earlier and ends near home.
+export const RUSH_FROM = 15 * 60, RUSH_TO = 18 * 60, RUSH = 1.6;
+const rushAt = (t: number) => (t >= RUSH_FROM && t < RUSH_TO ? RUSH : 1);
 
-/** Extra km if this job happened at time `t` instead (the others stay where they are). */
-function insertCost(others: Stop[], me: Pt, t: number, home: Pt) {
-  const before = others.filter((x) => x.start < t), after = others.filter((x) => x.start >= t);
-  const prev = before.length ? before[before.length - 1] : home, next = after[0];
-  return next ? km(prev, me) + km(me, next) - km(prev, next) : km(prev, me);
+/**
+ * What the day costs to drive: each leg in km (rush-hour legs count extra), from home and back home at the end.
+ * A job during rush hour also costs extra the further it is from home: we want to be on our side (Dartmouth) by then.
+ */
+export function dayCost(stops: Stop[], home: Pt) {
+  const s = [...stops].sort((a, b) => a.start - b.start);
+  let t = 0, at: Pt = home;
+  for (const x of s) {
+    t += km(at, x) * rushAt(Math.max(0, x.start - 20));   // we drive in the 20 min before the job
+    if (x.start < RUSH_TO && x.end > RUSH_FROM) t += km(x, home) * (RUSH - 1);
+    at = x;
+  }
+  if (s.length) t += km(at, home) * rushAt(s[s.length - 1].end);
+  return t;
 }
+const moveTo = (stops: Stop[], id: string, t: number) => stops.map((x) => (x.id === id ? { ...x, start: t, end: t + (x.end - x.start) } : x));
 
 /**
  * Which customers to ask, and the time to offer each. `open(id)` gives the start times (minutes) that job could move to
@@ -49,15 +57,14 @@ export function planOffers(stopsIn: Stop[], open: (id: string) => number[], home
   const taken: { start: number; end: number }[] = [];
   for (let round = 0; round < max; round++) {
     let best: (Offer & { score: number; len: number }) | null = null;
-    stops.forEach((me, i) => {
+    stops.forEach((me) => {
       if (!me.movable || offers.some((o) => o.id === me.id)) return;
-      const now = detour(stops, i, home);
-      const others = stops.filter((x) => x.id !== me.id);
+      const now = dayCost(stops, home);
       const len = me.end - me.start;
       for (const t of open(me.id)) {
         if (Math.abs(t - me.start) < 30 || Math.abs(t - me.start) > maxShift) continue;
         if (taken.some((x) => t < x.end && t + len > x.start)) continue;   // already offered to someone else
-        const saved = now - insertCost(others, me, t, home);
+        const saved = now - dayCost(moveTo(stops, me.id, t), home);
         const score = saved - (Math.abs(t - me.start) / 60) * 2;
         if (saved >= minKm && (!best || score > best.score)) best = { id: me.id, from: me.start, to: t, savedKm: Math.round(saved * 10) / 10, score, len };
       }
@@ -86,7 +93,7 @@ export function planSwaps(stopsIn: Stop[], home: Pt, opts: { minKm?: number; max
   const out: Swap[] = [];
   const used = new Set<string>();
   for (let round = 0; round < max; round++) {
-    const base = dayKm(stops, home);
+    const base = dayCost(stops, home);
     let best: (Swap & { score: number }) | null = null;
     for (let i = 0; i < stops.length; i++) for (let j = i + 1; j < stops.length; j++) {
       const a = stops[i], b = stops[j];
@@ -94,7 +101,7 @@ export function planSwaps(stopsIn: Stop[], home: Pt, opts: { minKm?: number; max
       if (a.end - a.start !== b.end - b.start || Math.abs(a.start - b.start) > maxShift) continue;
       if (km(a, b) < 2) continue;   // same area: trading changes nothing
       const traded = stops.map((x) => (x.id === a.id ? { ...x, start: b.start, end: b.end } : x.id === b.id ? { ...x, start: a.start, end: a.end } : x));
-      const saved = base - dayKm(traded, home);
+      const saved = base - dayCost(traded, home);
       const score = saved - (Math.abs(a.start - b.start) / 60) * 2 * 2;   // two people's times change
       if (saved >= minKm && (!best || score > best.score)) best = { a: a.id, b: b.id, aStart: a.start, bStart: b.start, savedKm: Math.round(saved * 10) / 10, score };
     }
@@ -104,6 +111,37 @@ export function planSwaps(stopsIn: Stop[], home: Pt, opts: { minKm?: number; max
     used.add(w.a); used.add(w.b);
     stops = stops.map((x) => (x.id === w.a ? { ...x, start: w.bStart, end: w.bStart + (x.end - x.start) } : x.id === w.b ? { ...x, start: w.aStart, end: w.aStart + (x.end - x.start) } : x))
       .sort((p, q) => p.start - q.start);
+  }
+  return out;
+}
+
+export type Pull = { id: string; from: number; to: number; gapClosed: number };
+
+/**
+ * Closing a big empty stretch: 9:00 and 5:00 are the only jobs, so the 5:00 is asked to come to 10:15 and we do the
+ * day in one go. Jobs after the biggest gap are offered the first open times right after the job before them (one after
+ * the other, in the same order). Only if it closes at least `minClose` minutes and doesn't add much driving.
+ */
+export function planCompact(stopsIn: Stop[], open: (id: string) => number[], home: Pt, opts: { minGap?: number; minClose?: number; max?: number; maxExtra?: number } = {}): Pull[] {
+  const minGap = opts.minGap ?? 150, minClose = opts.minClose ?? 90, max = opts.max ?? 2, maxExtra = opts.maxExtra ?? 8;
+  let stops = [...stopsIn].sort((a, b) => a.start - b.start);
+  const out: Pull[] = [];
+  // the biggest gap
+  let gi = -1, gap = 0;
+  for (let i = 1; i < stops.length; i++) { const g = stops[i].start - stops[i - 1].end; if (g > gap) { gap = g; gi = i; } }
+  if (gi < 0 || gap < minGap) return out;
+  const base = dayCost(stops, home);
+  let after = stops[gi - 1].end;
+  for (let i = gi; i < stops.length && out.length < max; i++) {
+    const me = stops[i];
+    if (!me.movable) break;   // keep the order: if this one can't move, the ones after it can't close the gap either
+    const len = me.end - me.start;
+    const t = open(me.id).filter((x) => x >= after && x < me.start && !stops.some((o) => o.id !== me.id && x < o.end && x + len > o.start)).sort((a, b) => a - b)[0];
+    if (t === undefined || me.start - t < minClose) break;
+    const next = moveTo(stops, me.id, t).sort((a, b) => a.start - b.start);
+    if (dayCost(next, home) - base > maxExtra) break;
+    out.push({ id: me.id, from: me.start, to: t, gapClosed: me.start - t });
+    stops = next; after = t + len;
   }
   return out;
 }

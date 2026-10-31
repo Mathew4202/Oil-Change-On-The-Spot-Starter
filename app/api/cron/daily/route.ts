@@ -63,11 +63,15 @@ export async function GET(req: NextRequest) {
   const specs = await backfillSpecs(2).catch(() => ({ filled: 0 }));
   // 4b) Bookings in the next few days still without the oil on file: look them up again and attach it
   const oilAttached = await attachUpcoming(4).catch(() => 0);
-  // 4c) Two evenings before a day: offer closer times to the jobs that zig-zag across town (they say yes or no)
+  // 4c) Two evenings before a day, and again the evening before (jobs booked since): offer better times to jobs that
+  //     zig-zag across town, sit in rush hour far from home, or leave a big empty stretch (they say yes or no)
   await closeRouteOffers().catch(() => 0);
   // 4d) pay-later bills past due: the late fee once, then interest every 30 days (and a text with the new amount)
   const late = await chargeLateBills().catch((e) => ({ charged: 0, note: String(e).slice(0, 120) }));   // trades nobody finished answering: whoever said yes keeps their time
-  const route = await offerRouteMoves(addDays(today, 2)).catch((e) => ({ offered: 0, note: String(e).slice(0, 120) }));
+  const route = {
+    tomorrow: await offerRouteMoves(tomorrow).catch((e) => ({ offered: 0, note: String(e).slice(0, 120) })),
+    dayAfter: await offerRouteMoves(addDays(today, 2)).catch((e) => ({ offered: 0, note: String(e).slice(0, 120) })),
+  };
   // 5) What Quo sent us is only kept two weeks
   await sbDelete("webhook_log", `at=lt.${new Date(Date.now() - 14 * 86400000).toISOString()}`).catch(() => null);
   return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached, route, late });
