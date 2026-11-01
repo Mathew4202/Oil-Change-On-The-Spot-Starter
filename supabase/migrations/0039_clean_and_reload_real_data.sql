@@ -367,7 +367,7 @@ insert into expenses (spent_at, description, category, total, subtotal, hst, sou
 ('2026-07-28'::date,'Oil bought for jobs in July (from Job Tracker)','oil',37.79,33.15,4.64,'job_tracker_costs'),
 ('2026-07-28'::date,'Parts bought for jobs in July (from Job Tracker)','parts',93.99,82.45,11.54,'job_tracker_costs'),
 ('2026-08-28'::date,'Filters bought for jobs in August (from Job Tracker)','filters',116.65,102.32,14.33,'job_tracker_costs'),
-('2026-08-28'::date,'Oil bought for jobs in August (from Job Tracker)','oil',79.78,69.98,9.8,'job_tracker_costs'),
+('2026-08-28'::date,'Oil bought for jobs in August (from Job Tracker)','oil',205.16,179.96,25.2,'job_tracker_costs'),
 ('2026-08-28'::date,'Parts bought for jobs in August (from Job Tracker)','parts',20.51,17.99,2.52,'job_tracker_costs'),
 ('2026-09-30'::date,'Filters bought for jobs in September (from Job Tracker)','filters',115.16,101.02,14.14,'job_tracker_costs'),
 ('2026-09-30'::date,'Parts bought for jobs in September (from Job Tracker)','parts',15.13,13.27,1.86,'job_tracker_costs'),

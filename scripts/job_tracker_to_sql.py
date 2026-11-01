@@ -135,7 +135,8 @@ def hst_in(e):
 # How they were used (Mathew, Nov 1):
 #  - Oil: bulk oil is in the Expense Tracker from July 2. Oil on a job after that is oil bought just for that car
 #    (European 0W-30 / 5W-40 and the like), so every oil cost on a job counts, on top of the bulk oil.
-#    Only an exact same amount in the Expense Tracker is taken as the same purchase entered twice (counted once).
+#    May/June job oil came from oil we had before registering the business; it still counts as what those jobs cost.
+#    An exact same amount in the Expense Tracker is still counted twice (they were separate buys), just flagged.
 #  - Filters: entered per job until FILTER_SWITCH; from then on they're bought and entered in the Expense Tracker.
 #  - Gas share and other parts on a job: always their own cost (gas went to the Expense Tracker from July).
 import calendar as _cal
@@ -147,14 +148,14 @@ last_day = {}
 for x in rows:
     m = x['date'][:7]; last_day[m] = max(last_day.get(m, ''), x['date'])
     oil = x['oil'] or 0
-    if oil and round(oil, 2) in oil_exp_amounts:
-        oil_exp_amounts.remove(round(oil, 2)); dupes.append(f"{x['date']} {x['name']}: oil ${oil:.2f} is also in the Expense Tracker, counted once"); oil = 0
+    if oil and round(oil, 2) in oil_exp_amounts:   # same amount in the Expense Tracker: Mathew says these are separate buys, so both count
+        oil_exp_amounts.remove(round(oil, 2)); dupes.append(f"{x['date']} {x['name']}: oil ${oil:.2f} has the same amount in the Expense Tracker (both counted)")
     for t, v in (('oil', oil), ('filters', (x['filt'] or 0) if x['date'] < FILTER_SWITCH else 0), ('gas', x['gas_cost'] or 0), ('parts', x['other_cost'] or 0)):
         if v: per[(m, t)] = per.get((m, t), 0) + v
 NAMES = {'oil': ('Oil', 'oil'), 'filters': ('Filters', 'filters'), 'gas': ('Gas', 'gas'), 'parts': ('Parts', 'parts')}
 catchup = [dict(date=last_day[m], item=f"{NAMES[t][0]} bought for jobs in {_cal.month_name[int(m[5:])]} (from Job Tracker)", cat=NAMES[t][1], amt=round(v, 2))
            for (m, t), v in sorted(per.items()) if round(v, 2) >= 0.01]
-for d in dupes: print('DUPLICATE?', d, file=sys.stderr)
+for d in dupes: print('note:', d, file=sys.stderr)
 
 # ---- Card payments on the Taliup terminal that weren't in the sheet (Mathew sent the receipts, Nov 1) ----
 # (date, start of the name in the sheet): (HST, tip). The sheet price is before the tip, so the tip is added on top.
