@@ -73,11 +73,15 @@ def method(n):
     if 'transfer' in n: return 'etransfer'
     return None
 
+import datetime as _dtm
+_today = _dtm.datetime.now(_dtm.timezone(_dtm.timedelta(hours=-4))).date()   # Halifax
 rows = []
 ws = wb['Job Tracker']
 for r in ws.iter_rows(min_row=2, values_only=True):
     if not any(c not in (None,'') for c in r[:5]): continue
     date, name, veh, svc, price, oil, filt, gas, other, tcost, profit, notes, split = (list(r)+[None]*13)[:13]
+    if hasattr(date, 'date') and date.date() > _today:   # typed in ahead of time: not done yet, so not income yet
+        print('skipped (dated in the future):', date.date(), name, file=sys.stderr); continue
     v = parse_vehicle(veh)
     rows.append(dict(date=date.strftime('%Y-%m-%d'), name=' '.join(str(name or '').split()), raw=' '.join(str(veh or '').split()) or None,
         service=' '.join(str(svc or '').split()), price=num(price), oil=num(oil), filt=num(filt),
@@ -175,7 +179,8 @@ alter table vehicles add column if not exists source text;
 
 -- clear an earlier run of this import
 delete from jobs where imported_from = 'job_tracker';
-delete from vehicles where source = 'job_tracker' and id not in (select vehicle_id from jobs where vehicle_id is not null);
+delete from vehicles where source = 'job_tracker' and id not in (select vehicle_id from jobs where vehicle_id is not null)
+  and id not in (select vehicle_id from bookings where vehicle_id is not null) and id not in (select vehicle_id from plans where vehicle_id is not null);
 delete from expenses where source in ('expense_tracker', 'job_tracker_costs');
 
 create temp table jt (n int, d date, name text, raw text, service text, price numeric, oil numeric, filt numeric, other numeric,
