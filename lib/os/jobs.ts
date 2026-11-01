@@ -84,7 +84,9 @@ export async function finishJob(input: FinishInput, owner: string) {
   const withOil = !ctx.booking.services?.job || ["oil_change", "seasonal"].includes(ctx.booking.services.job);
   const grade = input.oilGrade || spec?.oil_grade || null;
   const litres = input.oilLitres ?? (spec ? Number(spec.capacity_l) * (ctx.booking.cars || 1) : null);
-  const filterPart = input.filterPart ?? spec?.oil_filter_part ?? null;
+  // typed the way receipts save it: "ppf 2100290 " → "2100290"
+  const cleanPart = (x: string | null | undefined) => (x ? x.toUpperCase().trim().replace(/^(PPF|NAPA|PFG)\s*/, "").replace(/\s+/g, "") || null : null);
+  const filterPart = cleanPart(input.filterPart) ?? spec?.oil_filter_part ?? null;
   let costOil = 0, costParts = 0;
   if (withOil && grade && litres && own !== "both" && own !== "oil") {
     const prices = Object.fromEntries((await sbGet<{ grade: string; cost_per_l: number }>("oil_prices?select=grade,cost_per_l")).map((o) => [o.grade, Number(o.cost_per_l)]));
