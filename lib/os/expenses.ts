@@ -1,6 +1,6 @@
 // Save a scanned receipt: photo, expense, stock, and the latest prices we paid.
 import crypto from "crypto";
-import { sbGet, sbInsert, sbPatch, sbHeaders, enc } from "@/lib/os/db";
+import { sbGet, sbInsert, sbPatch, sbDelete, sbHeaders, enc } from "@/lib/os/db";
 import type { Scan } from "@/lib/os/receipt-scan";
 import { linkReceiptToBank } from "@/lib/os/bank-import";
 
@@ -29,11 +29,26 @@ const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "bat
 const defaultBrand = (s: Scan, cat: string) =>
   s.supplier === "napa" && cat === "oil_filter" ? "NAPA ProFormer" : s.supplier === "napa" ? "NAPA" : s.supplier === "partsource" ? "PartSource" : s.vendor;
 
-export async function saveExpense(scan: Scan, photoPath: string | null, owner: string) {
+/** A US-dollar receipt in Canadian dollars at that day's Bank of Canada rate (null when the rate can't be fetched). */
+export async function inCad(scan: Scan): Promise<Scan | null> {
+  const { usdToCad } = await import("@/lib/os/fx");
+  const rate = await usdToCad(scan.date || new Date().toISOString().slice(0, 10));
+  if (!rate) return null;
+  const c = (n: number | null) => (n == null ? null : r2(n * rate));
+  return { ...scan, currency: "CAD", subtotal: c(scan.subtotal), hst: c(scan.hst), total: r2(scan.total * rate),
+    items: scan.items.map((i) => ({ ...i, unitPrice: r2(i.unitPrice * rate), lineTotal: r2(i.lineTotal * rate) })),
+    warnings: [...scan.warnings, `Converted from US$${scan.total.toFixed(2)} at ${rate.toFixed(4)} (Bank of Canada)`] };
+}
+
+export async function saveExpense(scanIn: Scan, photoPath: string | null, owner: string) {
+  // US dollars (Quo, software, online orders): saved in Canadian dollars so the books and HST are right
+  const usd = scanIn.currency === "USD" ? scanIn.total : null;
+  const scan = usd != null ? (await inCad(scanIn)) ?? scanIn : scanIn;
   const exp = await sbInsert<{ id: string }>("expenses", {
     vendor: scan.vendor, supplier: scan.supplier, spent_at: scan.date || new Date().toISOString().slice(0, 10),
     subtotal: scan.subtotal, hst: scan.hst, total: scan.total, category: scan.category, paid_with: scan.paidWith,
-    invoice_no: scan.invoiceNo, receipt_url: photoPath, parsed: scan, description: scan.items.map((i) => i.description).join(", ").slice(0, 300),
+    invoice_no: scan.invoiceNo, receipt_url: photoPath, parsed: { ...scan, ...(usd != null ? { usd_total: usd } : {}) },
+    description: (scan.items.map((i) => i.description).join(", ") + (usd != null && scan !== scanIn ? ` (US$${usd.toFixed(2)})` : "")).slice(0, 300),
     source: "receipt_scan", added_by: owner,
   });
   if (!exp.ok) return { ok: false as const, error: `Couldn't save: ${JSON.stringify(exp.error).slice(0, 200)}` };
@@ -69,5 +84,38 @@ export async function saveExpense(scan: Scan, photoPath: string | null, owner: s
   }
   // if this month's bank statement is already uploaded, tick off its line
   const banked = await linkReceiptToBank(exp.data!.id, scan.total, scan.date || new Date().toISOString().slice(0, 10), scan.paidWith).catch(() => null);
-  return { ok: true as const, expenseId: exp.data!.id, stock, prices, banked: !!banked };
+  return { ok: true as const, expenseId: exp.data!.id, stock, prices, banked: !!banked, converted: usd != null && scan !== scanIn ? { usd, cad: scan.total } : null };
+}
+
+/** Fix a saved expense: amount, HST, date, what it was, category, how it was paid. */
+export async function editExpense(id: string, f: { vendor?: string | null; description?: string | null; total?: number; hst?: number | null; spent_at?: string; category?: string; paid_with?: string }) {
+  const patch: Record<string, unknown> = {};
+  if (f.vendor !== undefined) patch.vendor = f.vendor ? String(f.vendor).slice(0, 120) : null;
+  if (f.description !== undefined) patch.description = f.description ? String(f.description).slice(0, 300) : null;
+  if (f.spent_at && /^\d{4}-\d{2}-\d{2}$/.test(f.spent_at)) patch.spent_at = f.spent_at;
+  if (f.category) patch.category = String(f.category).slice(0, 40);
+  if (f.paid_with) patch.paid_with = String(f.paid_with).slice(0, 20);
+  if (f.total != null) {
+    const total = r2(Number(f.total)), hst = f.hst == null ? 0 : r2(Number(f.hst));
+    if (!(total >= 0 && total < 100000) || !(hst >= 0 && hst <= total)) return { ok: false as const, error: "Check the amounts" };
+    Object.assign(patch, { total, hst, subtotal: r2(total - hst) });
+  }
+  if (!Object.keys(patch).length) return { ok: false as const, error: "Nothing to change" };
+  const r = await sbPatch("expenses", `id=eq.${enc(id)}`, patch);
+  return r ? { ok: true as const } : { ok: false as const, error: "Couldn't save" };
+}
+
+/** Delete a saved expense, taking back the stock it added. */
+export async function deleteExpense(id: string) {
+  const moves = await sbGet<{ id: string; part_id: string; qty: number }>(`stock_moves?select=id,part_id,qty&expense_id=eq.${enc(id)}`).catch(() => []);
+  for (const m of moves) {
+    const [p] = await sbGet<{ on_hand: number }>(`parts?select=on_hand&id=eq.${m.part_id}`);
+    if (p) await sbPatch("parts", `id=eq.${m.part_id}`, { on_hand: r2(Number(p.on_hand) - Number(m.qty)) });
+  }
+  if (moves.length) await sbDelete("stock_moves", `expense_id=eq.${enc(id)}`);
+  // a bank statement line it was ticked off against goes back to "needs a look"
+  const [e] = await sbGet<{ bank_line_id: string | null }>(`expenses?select=bank_line_id&id=eq.${enc(id)}`).catch(() => []);
+  if (e?.bank_line_id) await sbPatch("bank_lines", `id=eq.${e.bank_line_id}`, { status: "needs_look" }).catch(() => null);
+  await sbDelete("expenses", `id=eq.${enc(id)}`);
+  return { ok: true as const };
 }

@@ -36,12 +36,14 @@ export const GROUPS: [string, string, RegExp][] = [
   ["insurance", "Insurance", /insur/],
   ["fees", "Bank and card fees", /fee/],
   ["marketing", "Marketing", /market|ads?$|advert|print|flyer/],
+  ["truck", "Truck and repairs", /truck|repair|vehicle/],
 ];
 // Old Expense Tracker rows are often just "other", so the description decides ("Google ad" → Marketing)
 const FROM_TEXT: [RegExp, string][] = [
   [/\bads?\b|advert|flyer|sponsor|marketing|promo/i, "marketing"], [/\bfees?\b|charge\b|elavon|square pay/i, "fees"],
   [/insur/i, "insurance"], [/\bgas\b|fuel|irving|esso|petro|shell/i, "fuel"], [/\boil\b/i, "oil"], [/filter|wiper|battery|part/i, "parts"],
   [/tool|socket|sckt|wrench|jack|ramp|drain|funnel|organi[sz]er|arranger/i, "supplies"], [/phone|software|app\b|website|domain|subscri/i, "software"],
+  [/truck|repair|mechanic/i, "truck"],
 ];
 export const groupOf = (category: string | null, description?: string | null) => {
   const c = (category || "").toLowerCase();

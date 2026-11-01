@@ -6,7 +6,10 @@ import OwnerNav from "../OwnerNav";
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type Item = { description: string; partNumber: string | null; brand: string | null; qty: number; unitPrice: number; lineTotal: number; category: string; litresPerUnit: number | null; oilGrade: string | null };
 type Scan = { vendor: string; supplier: string; date: string | null; invoiceNo: string | null; subtotal: number | null; hst: number | null; total: number; paidWith: string; category: string; items: Item[]; warnings: string[] };
-type Exp = { id: string; vendor: string | null; description: string | null; total: number; spent_at: string; category: string | null; paid_with: string | null; added_by: string | null };
+type Exp = { id: string; vendor: string | null; description: string | null; total: number; hst: number | null; spent_at: string; category: string | null; paid_with: string | null; added_by: string | null };
+// what an expense counts as on the Money page
+const EXP_CATS: [string, string][] = [["oil", "Oil"], ["parts", "Filters and parts"], ["fuel", "Gas"], ["supplies", "Supplies and tools"], ["software", "Phone and software"],
+  ["insurance", "Insurance"], ["fees", "Bank and card fees"], ["marketing", "Marketing"], ["truck", "Truck repairs"], ["other", "Other"]];
 const CATS: [string, string][] = [["oil_filter", "Oil filter"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine filter"], ["wiper", "Wipers"], ["battery", "Battery"], ["oil", "Oil"], ["fluid", "Fluid"], ["supply", "Supplies"], ["tool", "Tool"], ["fuel", "Gas"], ["other", "Other"]];
 const PAID: [string, string][] = [["card", "Card"], ["cash", "Cash"], ["on_account", "On account"], ["etransfer", "E-transfer"], ["unknown", "Not sure"]];
 const money = (n: number | null | undefined) => n == null ? "" : `$${Number(n).toFixed(2)}`;
@@ -24,8 +27,9 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
   const camRef = useRef<HTMLInputElement>(null); const pickRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<"idle" | "reading" | "review" | "saving" | "done">("idle");
   const [preview, setPreview] = useState(""); const [scan, setScan] = useState<Scan | null>(null); const [photoPath, setPhotoPath] = useState<string | null>(null);
-  const [err, setErr] = useState(""); const [result, setResult] = useState<{ stock: string[]; prices: string[]; banked?: boolean } | null>(null);
+  const [err, setErr] = useState(""); const [result, setResult] = useState<{ stock: string[]; prices: string[]; banked?: boolean; converted?: { usd: number; cad: number } | null } | null>(null);
   const [recent, setRecent] = useState<Exp[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
 
   const loadRecent = () => fetch("/api/owner/receipt").then((r) => r.json()).then((d) => setRecent(d.expenses || [])).catch(() => {});
   useEffect(() => { loadRecent(); }, []);
@@ -48,7 +52,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
     const r = await fetch("/api/owner/receipt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save", scan, photoPath }) });
     const j = await r.json();
     if (!r.ok) { setErr(j.error || "Couldn't save"); setStage("review"); return; }
-    setResult({ stock: j.stock, prices: j.prices, banked: j.banked }); setStage("done"); loadRecent();
+    setResult({ stock: j.stock, prices: j.prices, banked: j.banked, converted: j.converted }); setStage("done"); loadRecent();
   }
 
   const upd = (p: Partial<Scan>) => setScan((s) => s ? { ...s, ...p } : s);
@@ -91,6 +95,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
             {result.stock.length > 0 && <p className="text-sm">Stock: {result.stock.join(", ")}</p>}
             {result.prices.length > 0 && <p className="text-sm">Prices updated: {result.prices.join(", ")}</p>}
             {result.banked && <p className="text-sm">Matched to its line on the bank statement.</p>}
+            {result.converted && <p className="text-sm">It was in US dollars: saved as ${result.converted.cad.toFixed(2)} CAD (US${"$"}{result.converted.usd.toFixed(2)} at the Bank of Canada rate).</p>}
           </div>
         )}
 
@@ -150,16 +155,69 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
         <section className="flex flex-col gap-2">
           <h2 className="font-extrabold text-lg mt-2">Recent</h2>
           {recent.length === 0 && <p className="text-sm text-[#4a5878]">No receipts yet.</p>}
-          {recent.map((e) => (
-            <div key={e.id} className="bg-white rounded-xl p-3 flex justify-between gap-3">
+          {recent.length > 0 && <p className="text-sm text-[#4a5878]">Tap one to fix it (amount, US dollars, date, category) or delete it.</p>}
+          {recent.map((e) => editing === e.id ? (
+            <EditExpense key={e.id} e={e} onDone={() => { setEditing(null); loadRecent(); }} />
+          ) : (
+            <button key={e.id} onClick={() => setEditing(e.id)} className="bg-white rounded-xl p-3 flex justify-between gap-3 text-left w-full">
               <div className="min-w-0"><p className="font-bold truncate">{e.vendor || e.description || "Expense"}</p><p className="text-sm text-[#4a5878]">{e.spent_at} · {e.category || "other"}{e.paid_with === "on_account" ? " · on account" : ""}{e.added_by ? ` · ${e.added_by}` : ""}</p></div>
               <p className="font-bold whitespace-nowrap">{money(e.total)}</p>
-            </div>
+            </button>
           ))}
         </section>
         <p className="text-xs text-center text-[#4a5878]">Signed in as {owner}</p>
       </div>
       <OwnerNav />
+    </div>
+  );
+}
+
+/** Fix a saved receipt. "It was in US dollars" turns the amounts into Canadian dollars at that day's Bank of Canada rate. */
+function EditExpense({ e, onDone }: { e: Exp; onDone: () => void }) {
+  const [f, setF] = useState({ vendor: e.vendor ?? "", description: e.description ?? "", spent_at: e.spent_at, total: Number(e.total) as number | null, hst: (e.hst == null ? 0 : Number(e.hst)) as number | null,
+    category: EXP_CATS.some(([k]) => k === e.category) ? e.category! : (e.category === "gas" ? "fuel" : e.category === "tools" ? "supplies" : "other"), paid_with: e.paid_with ?? "unknown" });
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(""); const [sure, setSure] = useState(false);
+  const [converted, setConverted] = useState(false);
+  const set = (p: Partial<typeof f>) => setF((x) => ({ ...x, ...p }));
+  const field = "h-11 rounded-lg border px-2 text-[15px] w-full bg-white";
+  async function post(body: object) {
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/owner/receipt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({})); setBusy(false);
+    if (!r.ok || j.ok === false || j.error) { setMsg(j.error || "Something went wrong"); return null; }
+    return j;
+  }
+  async function usd() {
+    const j = await post({ action: "usd", date: f.spent_at });
+    if (!j?.rate) return;
+    setConverted(true);
+    const r = (n: number | null) => (n == null ? null : Math.round(n * j.rate * 100) / 100);
+    setMsg(`US$${(f.total ?? 0).toFixed(2)} = $${r(f.total)?.toFixed(2)} CAD at ${Number(j.rate).toFixed(4)} (Bank of Canada, ${f.spent_at}). Check it, then save.`);
+    set({ total: r(f.total), hst: r(f.hst), description: f.description.includes("US$") ? f.description : `${f.description}${f.description ? " " : ""}(US$${(f.total ?? 0).toFixed(2)})` });
+  }
+  return (
+    <div className="bg-white rounded-xl p-3 flex flex-col gap-2 border-2" style={{ borderColor: NAVY }}>
+      <label className="text-xs font-semibold flex flex-col gap-0.5">From<input value={f.vendor} onChange={(x) => set({ vendor: x.target.value })} className={field} style={{ borderColor: LINE }} /></label>
+      <label className="text-xs font-semibold flex flex-col gap-0.5">What it was<input value={f.description} onChange={(x) => set({ description: x.target.value })} className={field} style={{ borderColor: LINE }} /></label>
+      <div className="grid grid-cols-3 gap-2">
+        <label className="text-xs font-semibold flex flex-col gap-0.5">Date<input type="date" value={f.spent_at} onChange={(x) => set({ spent_at: x.target.value })} className={field} style={{ borderColor: LINE }} /></label>
+        <label className="text-xs font-semibold flex flex-col gap-0.5">Total (CAD)<DecimalInput value={f.total} onChange={(n) => set({ total: n })} className={field} style={{ borderColor: LINE }} /></label>
+        <label className="text-xs font-semibold flex flex-col gap-0.5">HST in it<DecimalInput value={f.hst} onChange={(n) => set({ hst: n })} className={field} style={{ borderColor: LINE }} /></label>
+      </div>
+      <button type="button" onClick={usd} disabled={busy || converted} className="h-10 rounded-lg border font-bold text-sm disabled:opacity-60" style={{ borderColor: LINE }}>{converted ? "Converted to CAD" : "It was in US dollars: convert to CAD"}</button>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-xs font-semibold flex flex-col gap-0.5">Counts as<select value={f.category} onChange={(x) => set({ category: x.target.value })} className={field} style={{ borderColor: LINE }}>{EXP_CATS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+        <label className="text-xs font-semibold flex flex-col gap-0.5">Paid with<select value={f.paid_with} onChange={(x) => set({ paid_with: x.target.value })} className={field} style={{ borderColor: LINE }}>{PAID.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+      </div>
+      <p className="text-xs text-[#4a5878]">US companies (Quo, software) usually don&apos;t charge HST: leave it at 0 unless the invoice shows it.</p>
+      {msg && <p className="text-sm font-semibold" role="status">{msg}</p>}
+      <div className="grid grid-cols-3 gap-2">
+        <button type="button" onClick={onDone} className="h-11 rounded-lg border font-bold" style={{ borderColor: LINE }}>Cancel</button>
+        <button type="button" disabled={busy} onClick={async () => { if (!sure) { setSure(true); return; } if (await post({ action: "delete", id: e.id })) onDone(); }}
+          className="h-11 rounded-lg border font-bold text-[#9b1c1c] disabled:opacity-60" style={{ borderColor: sure ? "#9b1c1c" : LINE }}>{sure ? "Tap again" : "Delete"}</button>
+        <button type="button" disabled={busy || f.total == null} onClick={async () => { if (await post({ action: "edit", id: e.id, ...f })) onDone(); }}
+          className="h-11 rounded-lg font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "…" : "Save"}</button>
+      </div>
     </div>
   );
 }

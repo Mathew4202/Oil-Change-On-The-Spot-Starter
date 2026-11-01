@@ -8,7 +8,7 @@ export type Scan = {
   vendor: string; supplier: "napa" | "partsource" | "westpier" | "eastcoast" | "other";
   date: string | null; invoiceNo: string | null; subtotal: number | null; hst: number | null; total: number;
   paidWith: "card" | "cash" | "on_account" | "etransfer" | "unknown"; category: string; items: ScanItem[];
-  warnings: string[];
+  warnings: string[]; currency?: "CAD" | "USD";
 };
 
 const CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "tool", "supply", "fuel", "other"] as const;
@@ -59,18 +59,18 @@ export function cleanScan(raw: unknown): Scan | null {
   return {
     vendor, supplier: supplierOf(vendor), date, invoiceNo: o.invoice_no ? String(o.invoice_no).slice(0, 40) : null,
     subtotal, hst, total, paidWith: (["card", "cash", "on_account", "etransfer"].includes(pw) ? pw : "unknown") as Scan["paidWith"],
-    category: main, items, warnings,
+    category: main, items, warnings, currency: /^usd$|us\s*\$|^us$/i.test(String(o.currency ?? "")) ? "USD" : "CAD",
   };
 }
 
 export const SCAN_PROMPT = `This is a photo of a receipt or invoice from a business buying supplies for a mobile oil change company in Nova Scotia (HST 14%).
 Read it carefully. Reply with ONLY this JSON (no other text):
-{"vendor":"store name","date":"YYYY-MM-DD","invoice_no":"string or null","subtotal":0,"hst":0,"total":0,
+{"vendor":"store name","date":"YYYY-MM-DD","invoice_no":"string or null","subtotal":0,"hst":0,"total":0,"currency":"CAD|USD",
  "paid_with":"card|cash|on_account|etransfer|unknown",
  "items":[{"description":"","part_number":"string or null","brand":"string or null","qty":1,"unit_price":0,"line_total":0,
    "category":"oil_filter|cabin_filter|engine_filter|wiper|battery|oil|fluid|tool|supply|fuel|other",
    "litres_per_unit":null,"oil_grade":null}]}
-Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". If something is unreadable use null.`;
+Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". If something is unreadable use null.`;
 
 export async function scanReceipt(imageBase64: string, mediaType: string): Promise<{ scan: Scan | null; error?: string }> {
   const { askAI, aiLastError } = await import("@/lib/os/ai");   // loaded here so this file stays testable on its own

@@ -4,7 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
 import { scanReceipt, cleanScan } from "@/lib/os/receipt-scan";
-import { storePhoto, saveExpense, photoLink } from "@/lib/os/expenses";
+import { storePhoto, saveExpense, photoLink, editExpense, deleteExpense } from "@/lib/os/expenses";
+import { usdToCad } from "@/lib/os/fx";
 import { sbGet } from "@/lib/os/db";
 
 export const dynamic = "force-dynamic";
@@ -12,8 +13,8 @@ export const maxDuration = 60;
 
 export async function GET() {
   if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
-  const rows = await sbGet<{ id: string; vendor: string | null; description: string | null; total: number; spent_at: string; category: string | null; paid_with: string | null; receipt_url: string | null; added_by: string | null }>(
-    "expenses?select=id,vendor,description,total,spent_at,category,paid_with,receipt_url,added_by&order=spent_at.desc,created_at.desc&limit=15");
+  const rows = await sbGet<{ id: string; vendor: string | null; description: string | null; total: number; hst: number | null; spent_at: string; category: string | null; paid_with: string | null; receipt_url: string | null; added_by: string | null }>(
+    "expenses?select=id,vendor,description,total,hst,spent_at,category,paid_with,receipt_url,added_by&order=spent_at.desc,created_at.desc&limit=25");
   return NextResponse.json({ expenses: rows });
 }
 
@@ -37,6 +38,21 @@ export async function POST(req: NextRequest) {
     if (!scan) return NextResponse.json({ error: "Nothing to save" }, { status: 400 });
     const r = await saveExpense(scan, typeof body.photoPath === "string" ? body.photoPath : null, owner);
     return NextResponse.json(r, { status: r.ok ? 200 : 500 });
+  }
+  const UUID = /^[0-9a-f-]{36}$/i;
+  if (body.action === "edit") {
+    if (!UUID.test(String(body.id || ""))) return NextResponse.json({ error: "bad id" }, { status: 400 });
+    const r = await editExpense(String(body.id), { vendor: body.vendor, description: body.description, total: body.total == null ? undefined : Number(body.total),
+      hst: body.hst == null || body.hst === "" ? null : Number(body.hst), spent_at: body.spent_at, category: body.category, paid_with: body.paid_with });
+    return NextResponse.json(r, { status: r.ok ? 200 : 400 });
+  }
+  if (body.action === "delete") {
+    if (!UUID.test(String(body.id || ""))) return NextResponse.json({ error: "bad id" }, { status: 400 });
+    return NextResponse.json(await deleteExpense(String(body.id)));
+  }
+  if (body.action === "usd") {   // what US$X is in Canadian dollars that day (Bank of Canada rate)
+    const rate = await usdToCad(String(body.date || ""));
+    return rate ? NextResponse.json({ rate }) : NextResponse.json({ error: "Couldn't get the exchange rate. Type the Canadian amount from your bank or card statement." }, { status: 502 });
   }
   if (body.action === "photo") {
     const link = await photoLink(String(body.path || "").replace(/[^A-Za-z0-9/._-]/g, ""));
