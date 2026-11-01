@@ -1,4 +1,4 @@
-// GET → shelf + what the next 7 days need. POST {partId, delta, note} → manual count fix.
+// GET → shelf + what the next 7 days need. POST {partId, delta | setTo} → manual count fix. POST {action:"add", ...} → add stock by hand.
 import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
 import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
@@ -34,10 +34,43 @@ export async function GET() {
   return NextResponse.json({ parts, toBuy, bookingsCounted: upcoming.length });
 }
 
+const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "other"];
+
+/** Stock already on the shelf (or bought without a receipt): adds to the part if HQ knows it, otherwise adds the part. */
+async function addStock(b: Record<string, unknown>) {
+  const category = STOCK_CATS.includes(String(b.category)) ? String(b.category) : "other";
+  const isOil = category === "oil";
+  const grade = isOil ? String(b.oilGrade || "").toUpperCase().replace(/\s+/g, "").replace(/^(\d+)W(\d+)$/, "$1W-$2") : null;
+  if (isOil && !/^\d+W-\d+$/.test(grade || "")) return { ok: false, error: "Type the oil grade, like 0W-20" };
+  const partNumber = isOil ? `OIL-${grade}` : String(b.partNumber || "").trim().toUpperCase().replace(/^PPF\s*/, "").replace(/\s+/g, " ").slice(0, 30);
+  if (!partNumber) return { ok: false, error: "Type the part number" };
+  const qty = Math.round(Number(b.qty) * 100) / 100;
+  if (!(qty > 0 && qty <= 1000)) return { ok: false, error: isOil ? "How many litres?" : "How many?" };
+  const cost = b.unitCost == null || b.unitCost === "" ? null : Math.round(Number(b.unitCost) * 100) / 100;
+  let [p] = await sbGet<Part>(`parts?select=id,on_hand&part_number=eq.${enc(partNumber)}&order=on_hand.desc&limit=1`);
+  if (!p) {
+    const made = await sbInsert<Part>("parts", { part_number: partNumber, brand: String(b.brand || "").slice(0, 60) || (isOil ? null : "NAPA ProFormer"),
+      description: String(b.description || "").slice(0, 120) || (isOil ? `${grade} oil` : null), category, unit: isOil ? "L" : "each", oil_grade: grade, on_hand: 0 });
+    if (!made.ok || !made.data) return { ok: false, error: "Couldn't add that part" };
+    p = made.data;
+  }
+  const next = Math.round((Number(p.on_hand) + qty) * 100) / 100;
+  await sbPatch("parts", `id=eq.${p.id}`, { on_hand: next });
+  await sbInsert("stock_moves", { part_id: p.id, qty, reason: "added", ...(cost != null ? { unit_cost: cost } : {}) });
+  // what it cost (after HST): the pricing and the profit estimates use it
+  if (cost != null && cost > 0) {
+    if (isOil) await sbInsert("oil_prices", { grade, cost_per_l: cost, supplier: String(b.brand || "on hand").slice(0, 60), updated_at: new Date().toISOString() }, { upsertOn: "grade" });
+    else await sbInsert("part_quotes", { part_id: p.id, supplier: "other", our_cost: cost });
+  }
+  return { ok: true, partNumber, onHand: next };
+}
+
 export async function POST(req: NextRequest) {
   const owner = currentOwner();
   if (!owner) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
-  const { partId, delta, setTo, reorderAt } = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => ({}));
+  if (body.action === "add") { const r = await addStock(body); return NextResponse.json(r, { status: r.ok ? 200 : 400 }); }
+  const { partId, delta, setTo, reorderAt } = body;
   if (!/^[0-9a-f-]{36}$/i.test(String(partId || ""))) return NextResponse.json({ error: "bad id" }, { status: 400 });
   const [p] = await sbGet<Part>(`parts?select=id,on_hand&id=eq.${enc(partId)}`);
   if (!p) return NextResponse.json({ error: "Not found" }, { status: 404 });

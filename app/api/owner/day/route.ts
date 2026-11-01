@@ -34,12 +34,16 @@ export async function GET(req: NextRequest) {
       `customers(first_name,last_name,phone,address),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,verified,source,confidence${extra}))` +
       `&starts_at=gte.${from}&starts_at=lt.${to}&status=neq.cancelled&order=starts_at`);
   // everything that only needs the date goes out at once (each trip to the database is a wait, so never one after another)
-  const [rows, off, holdRows] = await Promise.all([
+  const [rows, off, holdRows, oilPrices, rulesRows] = await Promise.all([
     q(",cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger,filter_note").catch(() => q("")),   // part number columns come with migration 0026
     sbGet<{ id: string; starts_at: string; ends_at: string; reason: string | null }>(
       `time_off?select=id,starts_at,ends_at,reason&starts_at=lt.${to}&ends_at=gt.${from}&order=starts_at`),
     activeHolds(from, to),
+    sbGet<{ grade: string; cost_per_l: number }>("oil_prices?select=grade,cost_per_l&active=is.true").catch(() => []),
+    sbGet<{ key: string; value: number }>("pricing_rules?select=key,value&key=in.(consumables,filter_estimate)").catch(() => []),
   ]);
+  const oilPerL = Object.fromEntries(oilPrices.map((o) => [o.grade, Number(o.cost_per_l)]));
+  const rr = Object.fromEntries(rulesRows.map((x) => [x.key, Number(x.value)]));
 
   // What to bring: litres per oil grade and filters per part number, checked against stock
   const oil: Record<string, number> = {};
@@ -66,6 +70,19 @@ export async function GET(req: NextRequest) {
   ]);
   const stock = Object.fromEntries(parts.map((p) => [p.part_number, Number(p.on_hand)]));
 
+  // No profit on the booking yet (priced before the oil was looked up, a Square job, a price typed in): estimate it
+  // from the price and what the oil and filter on file cost us.
+  const estimate = (r: Row, s: NonNullable<NonNullable<Row["vehicles"]>["vehicle_specs"]> | null | undefined) => {
+    const job = r.services?.job ?? "oil_change";
+    if (!s || !["oil_change", "seasonal"].includes(job) || r.services?.own) return null;
+    const lines = r.quote_breakdown?.lines ?? [];
+    const subtotal = lines.reduce((t, l) => t + Number(l.amount), 0) || (r.quoted_total != null ? Number(r.quoted_total) / 1.14 : 0);
+    const perL = oilPerL[s.oil_grade];
+    if (!subtotal || perL == null) return null;
+    const cars = r.cars || 1;
+    const filter = (s.oil_filter_part ? filterCosts[s.oil_filter_part] : undefined) ?? rr.filter_estimate ?? 6.5;
+    return Math.round((subtotal - cars * (Number(s.capacity_l) * perL + filter + (rr.consumables ?? 1))) * 100) / 100;
+  };
   const jobs = rows.map((r) => {
     const s = r.vehicles?.vehicle_specs;
     const name = [r.customers?.first_name, r.customers?.last_name].filter(Boolean).join(" ") || "Customer";
@@ -84,7 +101,7 @@ export async function GET(req: NextRequest) {
       partNos: s ? [s.cabin_filter_part ? `Cabin filter ${s.cabin_filter_part}` : null, s.air_filter_part ? `Engine air filter ${s.air_filter_part}` : null,
         s.wiper_driver || s.wiper_passenger ? `Wipers ${[s.wiper_driver && `driver ${s.wiper_driver}`, s.wiper_passenger && `passenger ${s.wiper_passenger}`].filter(Boolean).join(", ")}` : null].filter(Boolean) as string[] : [],
       lines: r.quote_breakdown?.lines ?? [], total: r.quoted_total != null ? Number(r.quoted_total) : null,
-      profit: money ? r.quote_breakdown?.profit ?? null : null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
+      profit: money ? r.quote_breakdown?.profit ?? estimate(r, s) : null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       vin: (r.services as { vin?: string } | null)?.vin ?? null, vinCar: (r.services as { vinCar?: string } | null)?.vinCar ?? null,
     };
   });

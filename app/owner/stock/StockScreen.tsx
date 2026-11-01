@@ -41,6 +41,12 @@ export default function StockScreen() {
     setFilling(false);
   }
 
+  async function setCountTo(p: Part) {
+    const v = window.prompt(`How many ${p.unit === "L" ? `litres of ${p.oil_grade}` : p.part_number} do you have?`, String(Number(p.on_hand)));
+    if (v == null || v.trim() === "" || !Number.isFinite(Number(v)) || Number(v) < 0) return;
+    await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partId: p.id, setTo: Number(v) }) });
+    load();
+  }
   async function adjust(p: Part, delta: number) {
     setParts((ps) => ps.map((x) => x.id === p.id ? { ...x, on_hand: Math.max(0, Number(x.on_hand) + delta) } : x));
     await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partId: p.id, delta }) });
@@ -97,12 +103,14 @@ export default function StockScreen() {
           </section>
         )}
 
+        <AddStock onAdded={load} />
+
         <div className="flex gap-2">
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search part # or oil" className="h-11 flex-1 rounded-xl border px-3 bg-white" style={{ borderColor: LINE }} />
           <button onClick={() => setShowEmpty((s) => !s)} className="h-11 px-3 rounded-xl border bg-white text-sm font-bold" style={{ borderColor: LINE }}>{showEmpty ? "Hide empty" : "Show empty"}</button>
         </div>
 
-        {!loading && groups.length === 0 && <p className="text-sm text-[#4a5878]">Nothing on the shelf yet. Snap your parts receipts and they&apos;ll show up here.</p>}
+        {!loading && groups.length === 0 && <p className="text-sm text-[#4a5878]">Nothing on the shelf yet. Add what you have with the button above, or snap your parts receipts.</p>}
         {groups.map(([cat, ps]) => (
           <section key={cat} className="bg-white rounded-2xl p-3 flex flex-col gap-1">
             <h2 className="font-extrabold px-1">{CAT[cat] || "Other"}</h2>
@@ -117,7 +125,7 @@ export default function StockScreen() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => adjust(p, -step)} aria-label={`One less ${p.part_number}`} className="w-10 h-10 rounded-lg border font-bold text-lg" style={{ borderColor: LINE }}>−</button>
-                    <span className="w-16 text-center font-extrabold" style={{ color: low ? "#9b1c1c" : NAVY }}>{Number(p.on_hand)}{p.unit === "L" ? " L" : ""}</span>
+                    <button onClick={() => setCountTo(p)} aria-label={`Type the count for ${p.part_number}`} className="w-16 text-center font-extrabold underline decoration-dotted" style={{ color: low ? "#9b1c1c" : NAVY }}>{Number(p.on_hand)}{p.unit === "L" ? " L" : ""}</button>
                     <button onClick={() => adjust(p, step)} aria-label={`One more ${p.part_number}`} className="w-10 h-10 rounded-lg border font-bold text-lg" style={{ borderColor: LINE }}>+</button>
                   </div>
                 </div>
@@ -125,9 +133,53 @@ export default function StockScreen() {
             })}
           </section>
         ))}
-        <p className="text-xs text-[#4a5878] text-center">Stock goes up when you save a receipt and down when you finish a job. Use − / + to fix a count.</p>
+        <p className="text-xs text-[#4a5878] text-center">Stock goes up when you save a receipt and down when you finish a job. Use − / + to fix a count, or tap a count to type it.</p>
       </div>
       <OwnerNav />
     </div>
+  );
+}
+
+/** Add stock by hand: what's already on the shelf, or bought without a receipt to snap. */
+function AddStock({ onAdded }: { onAdded: () => void }) {
+  const KINDS: [string, string][] = [["oil_filter", "Oil filter"], ["oil", "Oil"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["wiper", "Wiper"], ["battery", "Battery"], ["other", "Other"]];
+  const [open, setOpen] = useState(false); const [kind, setKind] = useState("oil_filter");
+  const [pn, setPn] = useState(""); const [grade, setGrade] = useState(""); const [brand, setBrand] = useState(""); const [qty, setQty] = useState(""); const [cost, setCost] = useState("");
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(""); const [ok, setOk] = useState(true);
+  const field = "h-11 rounded-lg border px-2 text-base w-full bg-white";
+  const oil = kind === "oil";
+  if (!open) return <button onClick={() => { setOpen(true); setMsg(""); }} className="h-12 rounded-xl font-extrabold" style={{ background: GOLD, color: NAVY }}>+ Add stock</button>;
+  async function save() {
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "add", category: kind, partNumber: pn, oilGrade: grade, brand, qty: Number(qty), unitCost: cost === "" ? null : Number(cost) }) });
+    const j = await r.json().catch(() => ({})); setBusy(false); setOk(!!j.ok);
+    if (!j.ok) { setMsg(j.error || "Couldn't add it"); return; }
+    setMsg(`Added. ${oil ? `${j.partNumber.replace("OIL-", "")} oil` : j.partNumber}: ${j.onHand}${oil ? " L" : ""} on hand now.`);
+    setPn(""); setQty(""); setCost(""); onAdded();
+  }
+  return (
+    <section className="bg-white rounded-2xl p-3 flex flex-col gap-2 border-2" style={{ borderColor: NAVY }}>
+      <h2 className="font-extrabold text-lg">Add stock</h2>
+      <label className="text-sm font-semibold flex flex-col gap-1">What
+        <select value={kind} onChange={(e) => setKind(e.target.value)} className={field} style={{ borderColor: LINE }}>{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+      {oil ? (
+        <label className="text-sm font-semibold flex flex-col gap-1">Oil grade<input value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="0W-20" autoCapitalize="characters" className={field} style={{ borderColor: LINE }} /></label>
+      ) : (
+        <label className="text-sm font-semibold flex flex-col gap-1">Part number<input value={pn} onChange={(e) => setPn(e.target.value)} placeholder="e.g. 27356" autoCapitalize="characters" className={field} style={{ borderColor: LINE }} /></label>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-sm font-semibold flex flex-col gap-1">{oil ? "Litres" : "How many"}<input value={qty} onChange={(e) => setQty(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder={oil ? "e.g. 18.9" : "e.g. 6"} className={field} style={{ borderColor: LINE }} /></label>
+        <label className="text-sm font-semibold flex flex-col gap-1">{oil ? "Cost per litre" : "Cost each"} <span className="font-normal text-[#4a5878] text-xs">with HST, if you know</span>
+          <input value={cost} onChange={(e) => setCost(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="optional" className={field} style={{ borderColor: LINE }} /></label>
+      </div>
+      <label className="text-sm font-semibold flex flex-col gap-1">Brand <span className="font-normal text-[#4a5878] text-xs">optional</span><input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder={oil ? "e.g. East Coast Lubricants" : "NAPA ProFormer"} className={field} style={{ borderColor: LINE }} /></label>
+      {msg && <p className="text-sm font-semibold" style={{ color: ok ? "#1d6b3a" : "#9b1c1c" }} role="status">{msg}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={() => setOpen(false)} className="h-11 rounded-lg border font-bold" style={{ borderColor: LINE }}>Done</button>
+        <button onClick={save} disabled={busy || !qty || (oil ? !grade : !pn)} className="h-11 rounded-lg font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Adding…" : "Add"}</button>
+      </div>
+      <p className="text-xs text-[#4a5878]">Add one thing at a time; the form stays open for the next one. A cost you enter updates the prices HQ uses for quotes and profit.</p>
+    </section>
   );
 }
