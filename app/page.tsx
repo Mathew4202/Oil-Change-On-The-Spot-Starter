@@ -55,7 +55,7 @@ export default async function Home() {
       {/* Why us */}
       <section aria-label="Why customers pick us" style={{ background: GOLD }}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-3 text-center font-extrabold text-[17px]">
-          <p>{badge}</p><p>Full synthetic every time</p><p>Free travel within 30 km</p><p>Pay online or after</p>
+          <p>{badge}</p><p>Full synthetic every time</p><p>Free travel within 30 km</p><p>Pay after the job</p>
         </div>
       </section>
 
@@ -70,7 +70,7 @@ export default async function Home() {
             {[
               ["Pick your car", "Year, make and model. Not sure of the engine? Pick \"Not sure\" and we check when we arrive."],
               ["See your price, pick a time", "Your exact price shows before you book, travel included. Choose any open slot and it's yours right away."],
-              ["We come to you", "Oil, filter and a quick check of fluids, filters and wipers. Pay online when you book, or by card, tap, cash or e-transfer when we're done."],
+              ["We come to you", "Oil, filter and a quick check of fluids, filters and wipers. Pay by card, tap, cash or e-transfer when we're done."],
             ].map(([t, d], i) => (
               <li key={t} className="bg-white rounded-2xl p-5 flex flex-col gap-2">
                 <p className="w-10 h-10 rounded-full flex items-center justify-center font-extrabold text-[18px]" style={{ background: GOLD }}>{i + 1}</p>

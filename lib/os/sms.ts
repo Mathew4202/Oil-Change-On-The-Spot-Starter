@@ -1,5 +1,6 @@
 // Texts through Quo (api.quo.com). Every text is logged in `messages`, sent or not.
 import { sbGet, sbInsert, enc } from "@/lib/os/db";
+import { convergeEnv } from "@/lib/os/converge";
 import { e164 } from "@/lib/os/booking";
 export { fill, segments } from "@/lib/os/text";
 import { signed } from "@/lib/os/signer";
@@ -18,10 +19,14 @@ export async function template(key: string): Promise<string | null> {
   return t && t.active ? t.body : null;
 }
 
+const payWording = (t: string) => (convergeEnv() ? t : t.replace(/\(card or e-transfer\)/g, "(by e-transfer)"));
+
 /** force = the one reply confirming STOP/START; everything else respects "texts off". */
 export async function sendSms(to: string, contentIn: string, meta: { kind: string; customerId?: string | null; bookingId?: string | null; force?: boolean }) {
   const phone = e164(to);
-  const content = await signed(contentIn);   // signed by whoever is signed in to HQ (automatic texts: Mathew)
+  // signed by whoever is signed in to HQ (automatic texts: Mathew); until online card payments are set up (Converge),
+  // pay links only offer e-transfer, so the text doesn't promise card
+  const content = payWording(await signed(contentIn));
   const key = process.env.QUO_API_KEY, from = process.env.QUO_FROM_NUMBER;
   let status = "sent", error: string | null = null, providerId: string | null = null;
   // Anyone who replied STOP (or was switched off in HQ) never gets an automatic text. Checked here so no path can skip it.

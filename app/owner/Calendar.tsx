@@ -23,7 +23,7 @@ type Job = {
 type Day = {
   date: string; jobs: Job[]; timeOff: { id: string; starts_at: string; ends_at: string; reason: string | null }[];
   holds?: { id: string; start: string; end: string; expires: string; name: string | null; phone: string | null; job: string; cars: number; note: string | null; by: string | null; link: string }[];
-  totals: { jobs: number; booked: number | null; profit: number | null };
+  totals: { jobs: number; booked: number | null; profit: number | null }; gasPerJob?: number | null;
   bring: { oil: { grade: string; litres: number }[]; filters: { part: string; qty: number; inStock: number }[] };
   route?: { link: string | null; stops: number; offers: { booking_id: string; to_start: string; status: string }[] } | null;
 };
@@ -285,6 +285,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   {j.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>{money(l.amount)}</span></div>)}
                   {j.total != null && <div className="flex justify-between font-bold"><span>Total with HST</span><span>{money(j.total)}</span></div>}
                   {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>Est. profit</span><span>{money(j.profit)}</span></div>}
+                  {j.profit != null && <p className="text-xs text-[#4a5878]">After the oil and filter at what we last paid, ${"$"}1 of supplies{day?.gasPerJob ? ` and about ${money(day.gasPerJob)} of gas (from the last 60 days of gas receipts)` : ""}.</p>}
                   {j.notes && <p className="text-[#4a5878] mt-1">Note: {j.notes}</p>}
                   {j.imported && <p className="text-xs text-[#4a5878] mt-1">Imported from Square</p>}
                   {["confirmed", "requested", "in_progress"].includes(j.status) && can.book && (

@@ -2,6 +2,7 @@
 // in one visit at the yard, and invoices (one a month, or one per job for fleets that come through BBL).
 import crypto from "crypto";
 import { Resend } from "resend";
+import { convergeEnv } from "@/lib/os/converge";
 import { sbGet, sbInsert, sbPatch, sbRpc, enc } from "@/lib/os/db";
 import { buildQuote } from "@/lib/os/quote-service";
 import { createBooking, e164 } from "@/lib/os/booking";
@@ -236,7 +237,7 @@ export async function sendInvoice(invoiceId: string, to?: string | null) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { sent: false, reason: "no email on the account" };
   if (!process.env.RESEND_API_KEY) return { sent: false, reason: "email isn't set up yet" };
   const link = `${siteUrl()}/invoice/${inv.token}`;
-  const text = await signed(`Hi${a?.contact_name ? ` ${a.contact_name.split(" ")[0]}` : ""},\n\nHere is invoice #${inv.invoice_no} from Oil Change On The Spot for $${Number(inv.total).toFixed(2)} (HST included)${inv.due_at ? `, due ${inv.due_at}` : ""}.\n\nView, print or pay it by card here: ${link}\nOr pay by e-transfer to ${process.env.ETRANSFER_EMAIL || "oilchangeonthespot@gmail.com"} with the invoice number in the message.\n\nThank you,\n{signer}\nOil Change On The Spot`);
+  const text = await signed(`Hi${a?.contact_name ? ` ${a.contact_name.split(" ")[0]}` : ""},\n\nHere is invoice #${inv.invoice_no} from Oil Change On The Spot for $${Number(inv.total).toFixed(2)} (HST included)${inv.due_at ? `, due ${inv.due_at}` : ""}.\n\n${!!convergeEnv() ? "View, print or pay it by card here" : "View or print it here"}: ${link}\n${!!convergeEnv() ? "Or pay" : "Pay"} by e-transfer to ${process.env.ETRANSFER_EMAIL || "oilchangeonthespot@gmail.com"} with the invoice number in the message.\n\nThank you,\n{signer}\nOil Change On The Spot`);
   try {
     await new Resend(process.env.RESEND_API_KEY).emails.send({ from: emailFrom(), to: email,
       replyTo: process.env.NOTIFY_TO || process.env.EMAIL_TO || undefined, subject: `Invoice #${inv.invoice_no} from Oil Change On The Spot`, text });

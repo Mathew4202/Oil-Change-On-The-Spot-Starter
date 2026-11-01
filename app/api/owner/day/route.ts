@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentStaff } from "@/lib/os/auth";
 import { canOf } from "@/lib/os/roles";
 import { sbGet } from "@/lib/os/db";
+import { gasPerJob } from "@/lib/os/gas";
 import { halifaxToDate, halifaxDate } from "@/lib/os/slots";
 
 export const dynamic = "force-dynamic";
@@ -34,13 +35,14 @@ export async function GET(req: NextRequest) {
       `customers(first_name,last_name,phone,address),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,verified,source,confidence${extra}))` +
       `&starts_at=gte.${from}&starts_at=lt.${to}&status=neq.cancelled&order=starts_at`);
   // everything that only needs the date goes out at once (each trip to the database is a wait, so never one after another)
-  const [rows, off, holdRows, oilPrices, rulesRows] = await Promise.all([
+  const [rows, off, holdRows, oilPrices, rulesRows, gas] = await Promise.all([
     q(",cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger,filter_note").catch(() => q("")),   // part number columns come with migration 0026
     sbGet<{ id: string; starts_at: string; ends_at: string; reason: string | null }>(
       `time_off?select=id,starts_at,ends_at,reason&starts_at=lt.${to}&ends_at=gt.${from}&order=starts_at`),
     activeHolds(from, to),
     sbGet<{ grade: string; cost_per_l: number }>("oil_prices?select=grade,cost_per_l&active=is.true").catch(() => []),
     sbGet<{ key: string; value: number }>("pricing_rules?select=key,value&key=in.(consumables,filter_estimate)").catch(() => []),
+    money ? gasPerJob().catch(() => null) : Promise.resolve(null),
   ]);
   const oilPerL = Object.fromEntries(oilPrices.map((o) => [o.grade, Number(o.cost_per_l)]));
   const rr = Object.fromEntries(rulesRows.map((x) => [x.key, Number(x.value)]));
@@ -83,6 +85,8 @@ export async function GET(req: NextRequest) {
     const filter = (s.oil_filter_part ? filterCosts[s.oil_filter_part] : undefined) ?? rr.filter_estimate ?? 6.5;
     return Math.round((subtotal - cars * (Number(s.capacity_l) * perL + filter + (rr.consumables ?? 1))) * 100) / 100;
   };
+  // ...and the gas to get there (each job's share of the last 60 days of gas receipts)
+  const afterGas = (p: number | null, r: Row) => (p == null || !gas ? p : Math.round((p - gas.perJob * (r.cars || 1)) * 100) / 100);
   const jobs = rows.map((r) => {
     const s = r.vehicles?.vehicle_specs;
     const name = [r.customers?.first_name, r.customers?.last_name].filter(Boolean).join(" ") || "Customer";
@@ -101,7 +105,7 @@ export async function GET(req: NextRequest) {
       partNos: s ? [s.cabin_filter_part ? `Cabin filter ${s.cabin_filter_part}` : null, s.air_filter_part ? `Engine air filter ${s.air_filter_part}` : null,
         s.wiper_driver || s.wiper_passenger ? `Wipers ${[s.wiper_driver && `driver ${s.wiper_driver}`, s.wiper_passenger && `passenger ${s.wiper_passenger}`].filter(Boolean).join(", ")}` : null].filter(Boolean) as string[] : [],
       lines: r.quote_breakdown?.lines ?? [], total: r.quoted_total != null ? Number(r.quoted_total) : null,
-      profit: money ? r.quote_breakdown?.profit ?? estimate(r, s) : null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
+      profit: money ? afterGas(r.quote_breakdown?.profit ?? estimate(r, s), r) : null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       vin: (r.services as { vin?: string } | null)?.vin ?? null, vinCar: (r.services as { vinCar?: string } | null)?.vinCar ?? null,
     };
   });
@@ -109,7 +113,7 @@ export async function GET(req: NextRequest) {
   const holds = holdRows.map((h) => ({ id: h.id, start: h.starts_at, end: h.ends_at, expires: h.expires_at, name: h.first_name, phone: h.phone,
     job: h.job, cars: h.cars, note: h.note, by: h.created_by, link: holdLink(h.token) }));
   return NextResponse.json({
-    date, jobs, timeOff: off, holds, route,
+    date, jobs, timeOff: off, holds, route, gasPerJob: money ? gas?.perJob ?? null : null,
     totals: {
       jobs: jobs.length,
       booked: money ? Math.round(jobs.reduce((s, j) => s + (j.total || 0), 0) * 100) / 100 : null,
