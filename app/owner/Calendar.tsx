@@ -287,6 +287,9 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>Est. profit</span><span>{money(j.profit)}</span></div>}
                   {j.notes && <p className="text-[#4a5878] mt-1">Note: {j.notes}</p>}
                   {j.imported && <p className="text-xs text-[#4a5878] mt-1">Imported from Square</p>}
+                  {["confirmed", "requested", "in_progress"].includes(j.status) && can.book && (
+                    <EditPrice id={j.id} subtotal={Math.round(j.lines.reduce((t, l) => t + Number(l.amount), 0) * 100) / 100} onSaved={() => load(date)} />
+                  )}
                   {(j.status === "confirmed" || j.status === "requested") && can.book && (
                     <button onClick={() => setChanging({ id: j.id, name: j.name.split(" ")[0] })} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Move or cancel</button>
                   )}
@@ -401,6 +404,31 @@ function BlockTime({ date, onClose }: { date: string; onClose: (saved: boolean) 
           <button onClick={() => onClose(false)} className="h-12 rounded-xl border border-[#c8d0e0] font-bold">Cancel</button>
           <button onClick={save} className="h-12 rounded-xl font-extrabold" style={{ background: GOLD, color: NAVY }}>Save</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Change a job's price (before HST) when the quote wasn't right: the difference shows as its own line and moves the profit. */
+function EditPrice({ id, subtotal, onSaved }: { id: string; subtotal: number; onSaved: () => void }) {
+  const [open, setOpen] = useState(false); const [val, setVal] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  if (!open) return <button onClick={() => { setVal(subtotal ? subtotal.toFixed(2) : ""); setOpen(true); }} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Edit price</button>;
+  const n = Number(val.replace(/[^\d.]/g, ""));
+  return (
+    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-[#c8d0e0] p-2">
+      <label className="text-sm font-semibold flex flex-col gap-1">Price before HST
+        <input value={val} onChange={(e) => setVal(e.target.value)} inputMode="decimal" autoFocus className="h-11 rounded-lg border border-[#c8d0e0] px-2 text-base" /></label>
+      {val && Number.isFinite(n) && <p className="text-sm text-[#4a5878]">${(n * 1.14).toFixed(2)} with HST{subtotal ? ` (was $${(subtotal * 1.14).toFixed(2)})` : ""}</p>}
+      {err && <p className="text-sm font-semibold text-[#9b1c1c]">{err}</p>}
+      <div className="flex gap-2">
+        <button onClick={() => setOpen(false)} className="h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Cancel</button>
+        <button disabled={busy || !val || !Number.isFinite(n)} onClick={async () => {
+          setBusy(true); setErr("");
+          const r = await fetch("/api/owner/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId: id, action: "price", price: n }) });
+          const j = await r.json().catch(() => ({})); setBusy(false);
+          if (!r.ok || !j.ok) { setErr(j.error || "Couldn't save"); return; }
+          setOpen(false); onSaved();
+        }} className="h-10 px-4 rounded-lg font-extrabold text-sm disabled:opacity-60" style={{ background: "#f2b01e", color: "#0d1b3e" }}>{busy ? "Saving…" : "Save price"}</button>
       </div>
     </div>
   );

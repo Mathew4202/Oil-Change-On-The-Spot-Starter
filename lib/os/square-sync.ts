@@ -82,8 +82,9 @@ export async function syncSquare(from: Date, to: Date) {
   const [rule] = await sbGet<{ value: number }>("pricing_rules?select=value&key=eq.job_minutes").catch(() => []);
   const perCar = Number(rule?.value ?? 75);
   const jobs = await serviceJobs(list.flatMap((b) => (b.appointment_segments ?? []).map((x) => x.service_variation_id).filter(Boolean) as string[]));
-  const existing = new Map((await sbGet<{ id: string; square_booking_id: string | null; status: string; vehicle_id: string | null }>(
-    "bookings?select=id,square_booking_id,status,vehicle_id&square_booking_id=not.is.null&limit=10000")).map((b) => [b.square_booking_id!, b]));
+  const existing = new Map((await sbGet<{ id: string; square_booking_id: string | null; status: string; vehicle_id: string | null; quoted_total: number | null }>(
+    "bookings?select=id,square_booking_id,status,vehicle_id,quoted_total&square_booking_id=not.is.null&limit=10000")).map((b) => [b.square_booking_id!, b]));
+  const toPrice: { id: string; cars: CarText[]; job: string; addons: string[]; date: string }[] = [];
   let bAdded = 0, bUpdated = 0, carsAdded = 0;
   const lookUp: string[] = [];
   const now = Date.now();
@@ -116,6 +117,9 @@ export async function syncSquare(from: Date, to: Date) {
       const ins = await sbInsert<{ id: string }>("bookings", row).catch(() => null);
       if (ins?.ok && ins.data) { bAdded++; id = ins.data.id; }
     }
+    // no price yet (Square doesn't send one): price it the way HQ prices a booking, for the calendar's booked and profit
+    if (id && !old?.quoted_total && start.getTime() > now - 86400000 && status !== "cancelled" && (cars.length || job !== "oil_change"))
+      toPrice.push({ id, cars, job, addons: job === "oil_change" && kinds.includes("tires") ? ["tires"] : [], date: start.toISOString().slice(0, 10) });
     // the car(s) from the note become the customer's cars, and the first one goes on the booking (so the oil can be looked up)
     if (id && cust && cars.length && !old?.vehicle_id) {
       let first: string | null = null;
@@ -130,13 +134,15 @@ export async function syncSquare(from: Date, to: Date) {
       }
     }
   }
+  let priced = 0;
+  for (const p of toPrice.slice(0, 12)) if (await priceBooking(p).catch(() => false)) priced++;
   // upcoming oil changes: look up the oil now (the evening job catches any left over)
   let oil = 0;
   if (lookUp.length) {
     const { attachSpec } = await import("@/lib/os/spec-learn");
     for (const id of lookUp.slice(0, 6)) { const r = await attachSpec(id).catch(() => null); if (r && (r as { ok?: boolean }).ok) oil++; }
   }
-  return { ok: true, customers: { added, already: updated, linked: merged }, bookings: { added: bAdded, updated: bUpdated }, cars: carsAdded, oilFound: oil };
+  return { ok: true, customers: { added, already: updated, linked: merged }, bookings: { added: bAdded, updated: bUpdated }, cars: carsAdded, priced, oilFound: oil };
 }
 
 /** The customer's car, added if it isn't there yet (matched on year, make and model). */
@@ -165,4 +171,25 @@ async function serviceJobs(ids: string[]): Promise<Map<string, string>> {
     }
   } catch { /* names unknown: oil change */ }
   return out;
+}
+
+/** Price a Square appointment with HQ's prices (each car on the visit), so the calendar shows booked and profit. */
+async function priceBooking(p: { id: string; cars: CarText[]; job: string; addons: string[]; date: string }) {
+  const { buildQuote } = await import("@/lib/os/quote-service");
+  const list = p.cars.length ? p.cars : [{ year: null, make: null, model: null, engine: null }];
+  const quotes = [];
+  for (const c of list) {
+    if (p.job === "oil_change" && !(c.year && c.make && c.model)) return false;   // can't price an oil change without the car
+    const { quote } = await buildQuote({ year: c.year ?? 2018, make: c.make ?? "", model: c.model ?? "", engine: c.engine,
+      job: p.job as "oil_change", addons: p.addons as never[], km: null, date: p.date });
+    quotes.push({ c, quote });
+  }
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const many = quotes.length > 1;
+  const lines = quotes.flatMap(({ c, quote }) => quote.lines.map((l) => ({ ...l, label: many ? `${[c.year, c.make, c.model].filter(Boolean).join(" ")}: ${l.label}` : l.label })));
+  const subtotal = r2(quotes.reduce((t, q) => t + q.quote.subtotal, 0)), hst = r2(quotes.reduce((t, q) => t + q.quote.hst, 0));
+  const profit = quotes.every((q) => q.quote.profit != null) ? r2(quotes.reduce((t, q) => t + (q.quote.profit ?? 0), 0)) : null;
+  const breakdown = { ...quotes[0].quote, lines, subtotal, hst, total: r2(subtotal + hst), profit,
+    needsReview: [...new Set(quotes.flatMap((q) => q.quote.needsReview ?? []))] };
+  return sbPatch("bookings", `id=eq.${p.id}`, { quoted_total: breakdown.total, quote_breakdown: breakdown });
 }

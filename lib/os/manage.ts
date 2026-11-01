@@ -156,3 +156,33 @@ async function repriceMoved(ids: string[]) {
     if (q) await sbPatch("bookings", `id=eq.${b.id}`, { quote_breakdown: q, quoted_total: q.total }).catch(() => null);
   }
 }
+
+/**
+ * Change a booking's price (before HST), e.g. the car needed more oil or a different filter than quoted.
+ * The difference shows as its own line ("Price changed by Mathew"), the profit moves by the same amount, and the job
+ * sheet and receipt start from the new price.
+ */
+export async function setPrice(id: string, subtotalIn: number, by: string) {
+  const subtotal = Math.round(Number(subtotalIn) * 100) / 100;
+  if (!(subtotal >= 0 && subtotal < 20000)) return { ok: false as const, error: "Check the price" };
+  const [b] = await sbGet<{ status: string; quote_breakdown: (Priced & { cost?: number | null; raised?: boolean; needsReview?: string[] }) | null }>(
+    `bookings?select=status,quote_breakdown&id=eq.${enc(id)}`);
+  if (!b) return { ok: false as const, error: "Booking not found" };
+  if (b.status === "done" || b.status === "cancelled") return { ok: false as const, error: "This job is already finished or cancelled" };
+  const rate = Number((await rules()).hst_rate ?? 0.14);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const who = by ? by.charAt(0).toUpperCase() + by.slice(1) : "HQ";
+  const q = b.quote_breakdown;
+  // earlier price changes are folded into the new one, so there's only ever one line for it
+  const lines = (q?.lines ?? []).filter((l) => !/^Price (changed|set) by /.test(l.label));
+  const base = r2(lines.reduce((t, l) => t + Number(l.amount), 0));
+  const diff = r2(subtotal - base);
+  const newLines = lines.length ? [...lines, ...(diff ? [{ label: `Price changed by ${who}`, amount: diff }] : [])] : [{ label: `Price set by ${who}`, amount: subtotal }];
+  const hst = r2(subtotal * rate);
+  const oldProfit = q?.profit ?? null;
+  const oldDiff = r2((q?.lines ?? []).filter((l) => /^Price (changed|set) by /.test(l.label)).reduce((t, l) => t + Number(l.amount), 0));
+  const profit = oldProfit == null ? null : r2(oldProfit - oldDiff + diff);
+  const breakdown = { ...(q ?? {}), lines: newLines, subtotal, hst, total: r2(subtotal + hst), profit };
+  const ok = await sbPatch("bookings", `id=eq.${enc(id)}`, { quoted_total: breakdown.total, quote_breakdown: breakdown });
+  return ok ? { ok: true as const, total: breakdown.total, profit } : { ok: false as const, error: "Couldn't save the price" };
+}
