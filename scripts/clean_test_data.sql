@@ -16,7 +16,8 @@ create temp table x_jobs on commit drop as
 create temp table x_book on commit drop as
   -- not switched over yet: every booking made in HQ is a test (Square's come back with the Square sync)
   select id from bookings where (coalesce(source,'') <> 'square_import'
-     or customer_id in (select id from x_cust) or fleet_account_id in (select id from x_fleet)) and created_at < (select at from x_cut);
+     or customer_id in (select id from x_cust) or fleet_account_id in (select id from x_fleet)) and created_at < (select at from x_cut)
+     and square_booking_id is null;   -- anything that came from Square is real, even after the switchover made it an HQ booking
 create temp table x_exp on commit drop as
   select id from expenses where coalesce(source, '') not in ('expense_tracker', 'job_tracker_costs') and created_at < (select at from x_cut);
 

@@ -18,11 +18,11 @@ union all select 'Jobs finished inside HQ removed (the sheet has the real ones)'
        string_agg(to_char(done_at at time zone 'America/Halifax', 'Mon DD') || ' $' || coalesce(total, revenue, 0), ', ' order by done_at)
   from jobs where (imported_from is null or imported_from = 'test') and done_at < timestamptz '2026-11-01 10:20:00+00'
 union all select 'Bookings made in HQ removed (all tests; Square''s stay and the Square sync adds new ones)', count(*)::text, null from bookings
-  where coalesce(source,'') <> 'square_import' and created_at < timestamptz '2026-11-01 10:20:00+00'
+  where coalesce(source,'') <> 'square_import' and created_at < timestamptz '2026-11-01 10:20:00+00' and square_booking_id is null
 union all select 'Future Square appointments KEPT', count(*)::text,
        string_agg(to_char(b.starts_at at time zone 'America/Halifax', 'Mon DD HH12:MI AM') || ' ' || coalesce(c.first_name, '?'), ', ' order by b.starts_at)
   from bookings b left join customers c on c.id = b.customer_id
-  where b.starts_at >= now() and b.status in ('requested','confirmed') and b.source = 'square_import'
+  where b.starts_at >= now() and b.status in ('requested','confirmed') and b.square_booking_id is not null
 union all select 'Payments typed in HQ removed', count(*)::text, null from payments where paid_at < timestamptz '2026-11-01 10:20:00+00' or paid_at is null
 union all select 'Receipts snapped / bank lines in HQ removed (the sheet has the real expenses)', count(*)::text,
        string_agg(to_char(spent_at, 'Mon DD') || ' ' || coalesce(description, category, '') || ' $' || total, ', ' order by spent_at)
