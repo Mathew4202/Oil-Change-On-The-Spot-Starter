@@ -12,7 +12,7 @@ const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878", G
 type Detail = {
   customer: { id: string; firstName: string | null; lastName: string | null; name: string; phone: string | null; email: string | null; address: string | null; notes: string | null; smsOff: boolean; smsOffAt: string | null; smsOffBy: string | null; since: string; source: string | null; reviewAsked: boolean };
   stats: { visits: number; spent: number; average: number; lastVisit: string | null; nextDue: string | null; nextDueKm: number | null; due: string; cancelled: number; noShows: number };
-  vehicles: { id: string; name: string; engine: string | null; vin: string | null; lastKm: number | null; oil: string | null; filter: string | null; parts?: string | null }[];
+  vehicles: { id: string; name: string; year?: number | null; make?: string | null; model?: string | null; engine: string | null; vin: string | null; lastKm: number | null; oil: string | null; filter: string | null; parts?: string | null }[];
   upcoming: { id: string; date: string; at: string; status: string; total: number | null; job: string | null }[];
   jobs: { id: string; date: string; car: string | null; service: string | null; amount: number; tip: number; paidWith: string | null; receipt: string | null; receiptNo: number | null; fromSheet: boolean; km: number | null; oil: string | null; notes: string | null }[];
   texts: { kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null; direction: string | null }[];
@@ -31,6 +31,7 @@ const field = "h-11 rounded-xl border px-3 text-base w-full bg-white";
 
 export default function CustomerScreen({ id }: { id: string }) {
   const { can } = useRole();
+  const [editCar, setEditCar] = useState<string | null>(null);
   const [d, setD] = useState<Detail | null>(null); const [err, setErr] = useState("");
   const load = useCallback(() => fetch(`/api/owner/customers?id=${id}`, { cache: "no-store" }).then((r) => r.json())
     .then((x) => (x.error ? setErr(x.error) : setD(x))).catch(() => setErr("Couldn't load. Check your connection.")), [id]);
@@ -76,9 +77,12 @@ export default function CustomerScreen({ id }: { id: string }) {
       <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
         <h2 className="font-extrabold text-lg">Cars</h2>
         {d.vehicles.length === 0 && <p style={{ color: MUTED }}>No car saved yet.</p>}
-        {d.vehicles.map((v) => (
+        {d.vehicles.map((v) => editCar === v.id ? <CarEdit key={v.id} customerId={id} car={v} onDone={(saved) => { setEditCar(null); if (saved) load(); }} /> : (
           <div key={v.id} className="rounded-xl p-3 bg-[#f4f6fa] text-[15px]">
-            <p className="font-extrabold">{v.name}{v.engine ? ` · ${v.engine}` : ""}</p>
+            <div className="flex justify-between gap-2 items-start">
+              <p className="font-extrabold">{v.name}{v.engine ? ` · ${v.engine}` : ""}</p>
+              <button onClick={() => setEditCar(v.id)} className="h-8 px-3 rounded-lg border border-[#c8d0e0] bg-white text-sm font-bold shrink-0">Edit</button>
+            </div>
             {(v.oil || v.filter) && <p>{[v.oil ? `Oil: ${v.oil}` : "", v.filter ? `Filter: ${v.filter}` : ""].filter(Boolean).join(" · ")}</p>}
             {v.parts && <p>{v.parts}</p>}
             {v.lastKm != null && <p style={{ color: MUTED }}>Last odometer: {v.lastKm.toLocaleString()} km</p>}
@@ -289,5 +293,41 @@ function Referrals({ id, first }: { id: string; first: string }) {
       {r.sent.length > 0 && <p className="text-[15px]"><span style={{ color: MUTED }}>Sent us: </span>{r.sent.map((x, i) => <span key={x.id}>{i ? ", " : ""}<Link href={`/owner/customers/${x.id}` as Route} className="font-bold underline">{x.name}</Link></span>)}</p>}
       {msg && <p className="text-sm font-semibold" role="status">{msg}</p>}
     </section>
+  );
+}
+
+type CarRow = { id: string; name: string; year?: number | null; make?: string | null; model?: string | null; engine: string | null; vin: string | null };
+/** Fix a car: year, make, model, engine size, VIN. Saving links it to that car's oil and filter. */
+function CarEdit({ customerId, car, onDone }: { customerId: string; car: CarRow; onDone: (saved: boolean) => void }) {
+  const [f, setF] = useState({ year: car.year ? String(car.year) : "", make: car.make ?? "", model: car.model ?? "", engine: car.engine ?? "", vin: car.vin ?? "" });
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState("");
+  const field = "h-11 rounded-lg border border-[#c8d0e0] px-2 text-base w-full bg-white";
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+  async function save() {
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/owner/customers", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "car", id: customerId, carId: car.id, ...f, year: f.year ? Number(f.year) : null }) }).then((x) => x.json()).catch(() => null);
+    setBusy(false);
+    if (!r?.ok) { setMsg(r?.error || "Couldn't save"); return; }
+    onDone(true);
+  }
+  return (
+    <div className="rounded-xl p-3 bg-[#f4f6fa] flex flex-col gap-2 border-2 border-[#0d1b3e]">
+      <div className="grid grid-cols-[90px_1fr_1fr] gap-2">
+        <label className="text-xs font-semibold flex flex-col gap-1">Year<input value={f.year} onChange={set("year")} inputMode="numeric" className={field} /></label>
+        <label className="text-xs font-semibold flex flex-col gap-1">Make<input value={f.make} onChange={set("make")} className={field} /></label>
+        <label className="text-xs font-semibold flex flex-col gap-1">Model<input value={f.model} onChange={set("model")} className={field} /></label>
+      </div>
+      <div className="grid grid-cols-[1fr_2fr] gap-2">
+        <label className="text-xs font-semibold flex flex-col gap-1">Engine<input value={f.engine} onChange={set("engine")} placeholder="e.g. 2.0L" className={field} /></label>
+        <label className="text-xs font-semibold flex flex-col gap-1">VIN<input value={f.vin} onChange={(e) => setF({ ...f, vin: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17) })} autoCapitalize="characters" className={`${field} font-mono`} /></label>
+      </div>
+      {msg && <p className="text-sm font-semibold text-[#a02020]">{msg}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={() => onDone(false)} className="h-11 rounded-lg border border-[#c8d0e0] bg-white font-bold">Cancel</button>
+        <button onClick={save} disabled={busy} className="h-11 rounded-lg font-extrabold disabled:opacity-60" style={{ background: "#f2b01e", color: "#0d1b3e" }}>{busy ? "Saving…" : "Save car"}</button>
+      </div>
+      <p className="text-xs text-[#4a5878]">A new year, model or engine looks up that car&apos;s oil and filter for its next booking.</p>
+    </div>
   );
 }

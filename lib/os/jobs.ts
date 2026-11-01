@@ -130,9 +130,18 @@ export async function finishJob(input: FinishInput, owner: string) {
   // what we used becomes this car's (and engine's) spec for next time
   // their first visit: whoever referred them gets their $5 credit (and a text)
   if (!fleet && ctx.customer) await rewardReferrer(ctx.customer.id).catch(() => null);
-  if (withOil && ctx.vehicle && own !== "both") await learnFromJob(ctx.vehicle, { grade, litres, filter: filterPart, cars: ctx.booking.cars || 1 }).catch(() => null);
+  // The car's engine: what's on file, else from the VIN (free NHTSA decoder), else the spec we looked up. Kept on the car.
   const vin = (input.vin || "").toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "");
-  if (ctx.vehicle && (km || vin)) await sbPatch("vehicles", `id=eq.${ctx.vehicle.id}`, { ...(km ? { last_km: km } : {}), ...(vin.length === 17 ? { vin } : {}) });
+  let engine = ctx.vehicle?.engine || null;
+  if (ctx.vehicle && !engine && vin.length === 17) {
+    const { decodeVin } = await import("@/lib/os/vin-photo");
+    const d = await decodeVin(vin).catch(() => null);
+    if (d?.engineL) engine = `${d.engineL}L${d.cylinders ? ` ${d.cylinders}-cyl` : ""}`;
+  }
+  if (ctx.vehicle && !engine) engine = spec?.engine || null;
+  if (ctx.vehicle && (km || vin || (engine && !ctx.vehicle.engine)))
+    await sbPatch("vehicles", `id=eq.${ctx.vehicle.id}`, { ...(km ? { last_km: km } : {}), ...(vin.length === 17 ? { vin } : {}), ...(engine && !ctx.vehicle.engine ? { engine } : {}) });
+  if (withOil && ctx.vehicle && own !== "both") await learnFromJob({ ...ctx.vehicle, engine }, { grade, litres, filter: filterPart, cars: ctx.booking.cars || 1 }).catch(() => null);
   if (input.email && ctx.customer && !ctx.customer.email) await sbPatch("customers", `id=eq.${ctx.customer.id}`, { email: input.email.trim().toLowerCase() });
 
   // Stock: one filter per car comes off the shelf if we had it

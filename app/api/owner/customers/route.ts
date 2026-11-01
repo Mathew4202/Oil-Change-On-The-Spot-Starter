@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
 import { sbGet, enc } from "@/lib/os/db";
-import { listCustomers, customerDetail, updateCustomer, mergeCustomers } from "@/lib/os/customers";
+import { listCustomers, customerDetail, updateCustomer, mergeCustomers, updateCar } from "@/lib/os/customers";
 import { referralInfo, giveCredit, removeCredit, setReferredBy, ensureRefCode, refLink } from "@/lib/os/referrals";
 import { sendSms } from "@/lib/os/sms";
 
@@ -56,6 +56,12 @@ export async function POST(req: NextRequest) {
   const owner = currentOwner();
   if (!owner) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
   const b = await req.json().catch(() => ({}));
+  // fix one of their cars (year, make, model, engine, VIN)
+  if (b.action === "car") {
+    if (!UUID.test(String(b.id || "")) || !UUID.test(String(b.carId || ""))) return NextResponse.json({ error: "bad id" }, { status: 400 });
+    const r = await updateCar(b.id, b.carId, b);
+    return NextResponse.json(r, { status: r.ok ? 200 : 400 });
+  }
   // referrals: give or take back a credit, set who referred them, text them their link
   if (["credit", "uncredit", "referredBy", "sendLink"].includes(b.action)) {
     if (!UUID.test(String(b.id || ""))) return NextResponse.json({ error: "bad id" }, { status: 400 });

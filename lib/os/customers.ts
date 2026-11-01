@@ -47,7 +47,7 @@ export async function customerDetail(id: string) {
       lastVisit: jobs[0] ? day(jobs[0].done_at) : null, nextDue, nextDueKm: jobs.find((j) => j.next_due_km)?.next_due_km ?? null,
       due: dueState(nextDue, upcoming[0] ? day(upcoming[0].starts_at) : null, today),
       cancelled: bookings.filter((b) => b.status === "cancelled").length, noShows: bookings.filter((b) => b.status === "no_show").length },
-    vehicles: vehicles.map((v) => ({ id: v.id, name: [v.year, v.make, v.model].filter(Boolean).join(" ") || "Car", engine: v.engine, vin: v.vin, lastKm: v.last_km,
+    vehicles: vehicles.map((v) => ({ id: v.id, name: [v.year, v.make, v.model].filter(Boolean).join(" ") || "Car", year: v.year, make: v.make, model: v.model, engine: v.engine, vin: v.vin, lastKm: v.last_km,
       oil: v.vehicle_specs ? [v.vehicle_specs.oil_grade, v.vehicle_specs.capacity_l ? `${v.vehicle_specs.capacity_l} L` : null].filter(Boolean).join(", ") : null,
       filter: v.vehicle_specs?.oil_filter_part ?? null,
       parts: v.vehicle_specs ? [v.vehicle_specs.cabin_filter_part && `Cabin ${v.vehicle_specs.cabin_filter_part}`, v.vehicle_specs.air_filter_part && `Air ${v.vehicle_specs.air_filter_part}`,
@@ -105,4 +105,27 @@ export async function mergeCustomers(fromId: string, intoId: string) {
   });
   const res = await fetch(`${process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/customers?id=eq.${enc(fromId)}`, { method: "DELETE", headers: sbHeaders() });
   return res.ok ? { ok: true as const } : { ok: false as const, error: "Moved everything, but couldn't remove the old record" };
+}
+
+/** Fix a customer's car from HQ. A different year, make, model or engine links it to that car's oil and filter. */
+export async function updateCar(customerId: string, carId: string, f: { year?: unknown; make?: unknown; model?: unknown; engine?: unknown; vin?: unknown }) {
+  const [v] = await sbGet<{ id: string; year: number | null; make: string | null; model: string | null; engine: string | null }>(
+    `vehicles?select=id,year,make,model,engine&id=eq.${enc(carId)}&customer_id=eq.${enc(customerId)}`);
+  if (!v) return { ok: false as const, error: "Car not found" };
+  const t = (x: unknown, n = 40) => (typeof x === "string" ? x.trim().slice(0, n) || null : undefined);
+  const year = f.year === undefined ? v.year : Number(f.year) >= 1980 && Number(f.year) <= new Date().getFullYear() + 2 ? Math.round(Number(f.year)) : null;
+  const make = t(f.make) === undefined ? v.make : t(f.make)!, model = t(f.model) === undefined ? v.model : t(f.model)!;
+  const engine = t(f.engine, 30) === undefined ? v.engine : t(f.engine, 30)!;
+  const vin = typeof f.vin === "string" ? f.vin.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "") : undefined;
+  if (vin && vin.length !== 17) return { ok: false as const, error: "A VIN is 17 characters" };
+  const patch: Record<string, unknown> = { year, make, model, engine, ...(vin !== undefined ? { vin: vin || null } : {}) };
+  const changed = year !== v.year || make !== v.make || model !== v.model || engine !== v.engine;
+  if (changed && year && make && model) {
+    const { findSpecs, engineMatches } = await import("@/lib/os/quote-service");
+    const { rows } = await findSpecs(year, make, model, engine).catch(() => ({ rows: [] as { id: string; engine: string | null }[] }));
+    const pick = (engine ? rows.find((r) => engineMatches(engine, r.engine)) : undefined) ?? (rows.length === 1 ? rows[0] : rows.find((r) => !r.engine));
+    patch.spec_id = pick?.id ?? null;
+  }
+  await sbPatch("vehicles", `id=eq.${enc(carId)}`, patch);
+  return { ok: true as const };
 }
