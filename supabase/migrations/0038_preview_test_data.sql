@@ -29,4 +29,7 @@ union all select 'Receipts snapped / bank lines in HQ removed (the sheet has the
 union all select 'Bank statement uploads removed (upload real ones again after)', count(*)::text, null from bank_imports
 union all select 'Alerts cleared', count(*)::text, null from notifications
 union all select 'Fleet accounts KEPT (tell Claude if any of these are tests too)', count(*)::text, string_agg(business_name, ', ')
-  from fleet_accounts where not (business_name ilike '%test%' or business_name ilike '%parker%plumb%');
+  from fleet_accounts where not (business_name ilike '%test%' or business_name ilike '%parker%plumb%')
+union all select 'Plans removed (all were tests)', count(*)::text,
+       string_agg(trim(coalesce(c.first_name,'') || ' ' || coalesce(c.last_name,'')), ', ') from plans p left join customers c on c.id = p.customer_id
+union all select 'Plan requests and referral credits removed (tests)', ((select count(*) from plan_requests) + (select count(*) from customer_credits))::text, null;

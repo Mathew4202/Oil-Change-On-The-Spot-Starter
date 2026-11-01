@@ -29,7 +29,8 @@ delete from stock_moves where job_id in (select id from x_jobs) or expense_id in
 
 -- money made in HQ (the sheet has the real record)
 delete from online_payments;
-delete from plan_bills where job_id in (select id from x_jobs) or plan_id in (select id from plans where customer_id in (select id from x_cust));
+-- plans, referral credits and HQ's text log are new: nothing real in them yet (tests on real customers, like Harsh, go too)
+delete from plan_bills;
 delete from job_items where job_id in (select id from x_jobs);
 delete from jobs where id in (select id from x_jobs);
 update bank_lines set payment_id = null;
@@ -51,14 +52,16 @@ delete from notifications;
 -- test customers and fleets
 delete from calls where phone like '+1902555%';
 update calls set customer_id = null where customer_id in (select id from x_cust);   -- real callers' calls stay
-delete from plans where customer_id in (select id from x_cust);
+delete from plans;
+delete from plan_requests;
+delete from customer_credits;
+delete from messages;
 update customers set referred_by = null where referred_by in (select id from x_cust);
 delete from invoices where fleet_account_id in (select id from x_fleet);
 delete from vehicles where fleet_account_id in (select id from x_fleet);
 delete from customers where id in (select id from x_cust);   -- their cars and credits go with them
 delete from fleet_accounts where id in (select id from x_fleet);
 delete from fleet_requests where company ilike '%test%' or phone like '+1902555%';
-delete from plan_requests where phone like '+1902555%';
 delete from login_codes;
 delete from webhook_log;
 
