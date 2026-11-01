@@ -131,33 +131,40 @@ def hst_in(e):
     return 0
 
 # ---- Costs: count each dollar once ----
-# The Job Tracker records oil/filters/gas used on each job; the Expense Tracker records buying them.
-# Some months only one of the two was filled in (May/June: nothing was logged as bought).
-# Money out counts what was bought. Only when the running total used on jobs gets ahead of the running
-# total bought (incl. earlier catch-ups) is the gap added, so bulk oil bought in July still covers August.
+# The Job Tracker has the oil / filters / gas / parts bought for each job; the Expense Tracker has purchases.
+# How they were used (Mathew, Nov 1):
+#  - Oil: bulk oil is in the Expense Tracker from July 2. Oil on a job after that is oil bought just for that car
+#    (European 0W-30 / 5W-40 and the like), so every oil cost on a job counts, on top of the bulk oil.
+#    Only an exact same amount in the Expense Tracker is taken as the same purchase entered twice (counted once).
+#  - Filters: entered per job until FILTER_SWITCH; from then on they're bought and entered in the Expense Tracker.
+#  - Gas share and other parts on a job: always their own cost (gas went to the Expense Tracker from July).
 import calendar as _cal
-TYPES = {'oil': ('Oil', lambda c: 'oil' in c), 'filters': ('Filters and parts', lambda c: 'filter' in c or 'part' in c), 'gas': ('Gas', lambda c: c in ('gas', 'fuel'))}
-used, bought, last_day = {}, {}, {}
+FILTER_SWITCH = '2026-10-19'
+oil_exp_amounts = [round(e['amt'], 2) for e in exps if 'oil' in str(e['cat'] or '').lower()]
+dupes = []
+per = {}   # (month, type) -> amount
+last_day = {}
 for x in rows:
     m = x['date'][:7]; last_day[m] = max(last_day.get(m, ''), x['date'])
-    for t, v in (('oil', x['oil']), ('filters', (x['filt'] or 0) + (x['other_cost'] or 0)), ('gas', x['gas_cost'])):
-        used[(m, t)] = used.get((m, t), 0) + (v or 0)
-for e in exps:
-    if not e['date']: continue
-    c = str(e['cat'] or '').lower()
-    for t, (_, test) in TYPES.items():
-        if test(c): bought[(e['date'][:7], t)] = bought.get((e['date'][:7], t), 0) + e['amt']
-catchup = []
-cum_used, cum_counted = {}, {}
-for m in sorted({k[0] for k in used} | {k[0] for k in bought}):
-  for t in TYPES:
-    cum_used[t] = cum_used.get(t, 0) + used.get((m, t), 0)
-    cum_counted[t] = cum_counted.get(t, 0) + bought.get((m, t), 0)
-    gap = round(cum_used[t] - cum_counted[t], 2)
-    if gap >= 1 and m in last_day:
-        cum_counted[t] += gap
-        name = TYPES[t][0].lower()
-        catchup.append(dict(date=last_day[m], item=f"{TYPES[t][0]} used on jobs in {_cal.month_name[int(m[5:])]} (from Job Tracker, not in Expense Tracker)", cat=t, amt=gap))
+    oil = x['oil'] or 0
+    if oil and round(oil, 2) in oil_exp_amounts:
+        oil_exp_amounts.remove(round(oil, 2)); dupes.append(f"{x['date']} {x['name']}: oil ${oil:.2f} is also in the Expense Tracker, counted once"); oil = 0
+    for t, v in (('oil', oil), ('filters', (x['filt'] or 0) if x['date'] < FILTER_SWITCH else 0), ('gas', x['gas_cost'] or 0), ('parts', x['other_cost'] or 0)):
+        if v: per[(m, t)] = per.get((m, t), 0) + v
+NAMES = {'oil': ('Oil', 'oil'), 'filters': ('Filters', 'filters'), 'gas': ('Gas', 'gas'), 'parts': ('Parts', 'parts')}
+catchup = [dict(date=last_day[m], item=f"{NAMES[t][0]} bought for jobs in {_cal.month_name[int(m[5:])]} (from Job Tracker)", cat=NAMES[t][1], amt=round(v, 2))
+           for (m, t), v in sorted(per.items()) if round(v, 2) >= 0.01]
+for d in dupes: print('DUPLICATE?', d, file=sys.stderr)
+
+# ---- Card payments on the Taliup terminal that weren't in the sheet (Mathew sent the receipts, Nov 1) ----
+# (date, start of the name in the sheet): (HST, tip). The sheet price is before the tip, so the tip is added on top.
+TALIUP = {('2026-10-28', 'reiner'): (16.80, 0.0), ('2026-10-29', 'richard zink'): (19.60, 23.94),
+          ('2026-10-29', 'curtis'): (18.20, 22.23), ('2026-10-30', 'pran'): (8.40, 10.26)}
+for x in rows:
+    for (d, nm), (hst, tip) in TALIUP.items():
+        if x['date'] == d and x['name'].lower().startswith(nm):
+            x['hst'], x['tip'], x['method'] = hst, tip, 'card_terminal'
+            x['price'] = round((x['price'] or 0) + tip, 2)
 
 L = []
 L.append("""-- OCOTS OS: import Job Tracker + Expense Tracker history (safe to run again)

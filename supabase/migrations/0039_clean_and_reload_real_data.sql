@@ -208,14 +208,14 @@ insert into jt (n,d,name,raw,service,price,oil,filt,other,notes,method,split,yr,
 (122,'2026-10-25','Crystal latwaitis','2017 vw Tiguan oil type and capacity 0w20 vw508 5.1l ( oil filter - )','Oil Change',185.0,null,null,null,null,null,null,2017.0,'Volkswagen','Tiguan',null,'Euro 0W-20',5.1,null,25.9,0.0),
 (123,'2026-10-26','Brad tremblett','2020 honda civic 2l (oil type and capacity 0w20 4.2l) filter - 27356','Oil Change',90.0,null,9.68,null,null,null,null,2020.0,'Honda','Civic','2.0L','0W-20',4.2,'27356',12.6,0.0),
 (124,'2026-10-27','Meadow Feltmate','2010 Chevy equinox','Serpertine belt',265.0,null,null,null,null,null,null,2010.0,'Chevrolet','Equinox',null,null,null,null,37.1,0.0),
-(125,'2026-10-28','Reiner Regala','2017 Mitsubishi outlander 3l v6 (oil type and capacity 0w20 4.3l) filter - 27356','Oil Change',120.0,null,null,null,null,null,null,2017.0,'Mitsubishi','Outlander','3.0L','0W-20',4.3,'27356',16.8,0.0),
+(125,'2026-10-28','Reiner Regala','2017 Mitsubishi outlander 3l v6 (oil type and capacity 0w20 4.3l) filter - 27356','Oil Change',120.0,null,null,null,null,'card_terminal',null,2017.0,'Mitsubishi','Outlander','3.0L','0W-20',4.3,'27356',16.8,0.0),
 (126,'2026-10-28','Chadwick Johnson','2022 ford escape','Tire Change',90.0,null,null,null,null,null,null,2022.0,'Ford','Escape',null,null,null,null,12.6,0.0),
 (127,'2026-10-28','Rhonda Urquhart','2024 Kia forte 2L ( oil type and capacity 5w20 4.5l) filters - 21334','Oil Change',90.0,null,null,null,null,null,null,2024.0,'Kia','Forte 2L','2.0L','5W-20',4.5,null,12.6,0.0),
 (128,'2026-10-28','Rhonda Urquhart','2024 Kia forte 2L ( oil type and capacity 5w20 4.5l) filters - 21334','Oil Change',90.0,null,null,null,null,null,null,2024.0,'Kia','Forte 2L','2.0L','5W-20',4.5,null,12.6,0.0),
 (129,'2026-10-29','Kelsey Shipley','2002 Toyota echo 1.5l(oil type and capacity 5w30 4.1l) filter - 21394','Oil Change',90.0,null,null,null,null,null,null,2002.0,'Toyota','Echo','1.5L','5W-30',4.1,'21394',12.6,0.0),
-(130,'2026-10-29','Richard zink','2021 hyuandai veloster n 2l (oil type and capacity 0w30 5.1l) filter - 21334','Oil Change',140.0,79.78,null,null,null,null,null,2021.0,'Hyundai','Veloster N','2.0L','0W-30',5.1,'21334',19.6,0.0),
-(131,'2026-10-29','Curtis McLoon','2017 ford 150 3.5l eco boost (oil type and capacity 5w30 5.7l) finer - 27502','Oil Change',130.0,null,null,null,null,null,null,2017.0,'Ford','150','3.5L','5W-30',5.7,null,18.2,0.0),
-(132,'2026-10-30','Pran poulose','2024 Toyota rav4 (oil type and capacity 0w16 4.4l)','Tire Change',60.0,null,null,null,null,null,null,2024.0,'Toyota','Rav4',null,'0W-16',4.4,null,8.4,0.0);
+(130,'2026-10-29','Richard zink','2021 hyuandai veloster n 2l (oil type and capacity 0w30 5.1l) filter - 21334','Oil Change',163.94,79.78,null,null,null,'card_terminal',null,2021.0,'Hyundai','Veloster N','2.0L','0W-30',5.1,'21334',19.6,23.94),
+(131,'2026-10-29','Curtis McLoon','2017 ford 150 3.5l eco boost (oil type and capacity 5w30 5.7l) finer - 27502','Oil Change',152.23,null,null,null,null,'card_terminal',null,2017.0,'Ford','150','3.5L','5W-30',5.7,null,18.2,22.23),
+(132,'2026-10-30','Pran poulose','2024 Toyota rav4 (oil type and capacity 0w16 4.4l)','Tire Change',70.26,null,null,null,null,'card_terminal',null,2024.0,'Toyota','Rav4',null,'0W-16',4.4,null,8.4,10.26);
 
 -- match each name to a customer: best name similarity, needs 0.45+
 update jt set customer_id = m.id, score = m.s from (
@@ -356,16 +356,24 @@ insert into expenses (spent_at, description, category, total, subtotal, hst, sou
 
 -- oil / filters / gas used on jobs that were never logged as an expense (see 'Costs' in the script)
 insert into expenses (spent_at, description, category, total, subtotal, hst, source) values
-('2026-05-27'::date,'Oil used on jobs in May (from Job Tracker, not in Expense Tracker)','oil',218.3,191.49,26.81,'job_tracker_costs'),
-('2026-05-27'::date,'Filters and parts used on jobs in May (from Job Tracker, not in Expense Tracker)','filters',59.67,52.34,7.33,'job_tracker_costs'),
-('2026-05-27'::date,'Gas used on jobs in May (from Job Tracker, not in Expense Tracker)','gas',153.23,134.41,18.82,'job_tracker_costs'),
-('2026-06-28'::date,'Oil used on jobs in June (from Job Tracker, not in Expense Tracker)','oil',521.43,457.39,64.04,'job_tracker_costs'),
-('2026-06-28'::date,'Filters and parts used on jobs in June (from Job Tracker, not in Expense Tracker)','filters',202.32,177.47,24.85,'job_tracker_costs'),
-('2026-06-28'::date,'Gas used on jobs in June (from Job Tracker, not in Expense Tracker)','gas',132.99,116.66,16.33,'job_tracker_costs'),
-('2026-07-28'::date,'Filters and parts used on jobs in July (from Job Tracker, not in Expense Tracker)','filters',179.07,157.08,21.99,'job_tracker_costs'),
-('2026-08-28'::date,'Filters and parts used on jobs in August (from Job Tracker, not in Expense Tracker)','filters',132.04,115.82,16.22,'job_tracker_costs'),
-('2026-09-30'::date,'Filters and parts used on jobs in September (from Job Tracker, not in Expense Tracker)','filters',130.29,114.29,16.0,'job_tracker_costs'),
-('2026-10-30'::date,'Filters and parts used on jobs in October (from Job Tracker, not in Expense Tracker)','filters',118.44,103.89,14.55,'job_tracker_costs');
+('2026-05-27'::date,'Filters bought for jobs in May (from Job Tracker)','filters',59.67,52.34,7.33,'job_tracker_costs'),
+('2026-05-27'::date,'Gas bought for jobs in May (from Job Tracker)','gas',153.23,134.41,18.82,'job_tracker_costs'),
+('2026-05-27'::date,'Oil bought for jobs in May (from Job Tracker)','oil',218.3,191.49,26.81,'job_tracker_costs'),
+('2026-06-28'::date,'Filters bought for jobs in June (from Job Tracker)','filters',130.36,114.35,16.01,'job_tracker_costs'),
+('2026-06-28'::date,'Gas bought for jobs in June (from Job Tracker)','gas',132.99,116.66,16.33,'job_tracker_costs'),
+('2026-06-28'::date,'Oil bought for jobs in June (from Job Tracker)','oil',521.43,457.39,64.04,'job_tracker_costs'),
+('2026-06-28'::date,'Parts bought for jobs in June (from Job Tracker)','parts',71.96,63.12,8.84,'job_tracker_costs'),
+('2026-07-28'::date,'Filters bought for jobs in July (from Job Tracker)','filters',85.08,74.63,10.45,'job_tracker_costs'),
+('2026-07-28'::date,'Oil bought for jobs in July (from Job Tracker)','oil',37.79,33.15,4.64,'job_tracker_costs'),
+('2026-07-28'::date,'Parts bought for jobs in July (from Job Tracker)','parts',93.99,82.45,11.54,'job_tracker_costs'),
+('2026-08-28'::date,'Filters bought for jobs in August (from Job Tracker)','filters',116.65,102.32,14.33,'job_tracker_costs'),
+('2026-08-28'::date,'Oil bought for jobs in August (from Job Tracker)','oil',79.78,69.98,9.8,'job_tracker_costs'),
+('2026-08-28'::date,'Parts bought for jobs in August (from Job Tracker)','parts',20.51,17.99,2.52,'job_tracker_costs'),
+('2026-09-30'::date,'Filters bought for jobs in September (from Job Tracker)','filters',115.16,101.02,14.14,'job_tracker_costs'),
+('2026-09-30'::date,'Parts bought for jobs in September (from Job Tracker)','parts',15.13,13.27,1.86,'job_tracker_costs'),
+('2026-10-30'::date,'Filters bought for jobs in October (from Job Tracker)','filters',137.99,121.04,16.95,'job_tracker_costs'),
+('2026-10-30'::date,'Oil bought for jobs in October (from Job Tracker)','oil',185.78,162.96,22.82,'job_tracker_costs'),
+('2026-10-30'::date,'Parts bought for jobs in October (from Job Tracker)','parts',192.18,168.58,23.6,'job_tracker_costs');
 
 commit;
 

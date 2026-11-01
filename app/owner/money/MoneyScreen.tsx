@@ -27,6 +27,24 @@ const CATS: [string, string][] = [["fuel", "Gas"], ["parts", "Filters and parts"
 const KIND_NAME: Record<string, string> = { receipt: "Receipt", napa_account: "NAPA account", payment: "Customer e-transfer", card_payout: "Card sales payout", bank_fee: "Bank fee",
   transfer: "Transfer", expense_no_receipt: "Added, no receipt", personal: "Not business", money_in: "Money in" };
 
+/** Owners: the weekly backup email, and a button to send one now. */
+function BackupCard() {
+  const [state, setState] = useState<"idle" | "busy" | "sent" | "failed">("idle"); const [msg, setMsg] = useState("");
+  async function go() {
+    setState("busy");
+    const r = await fetch("/api/owner/backup", { method: "POST" }).then((x) => x.json()).catch(() => ({ sent: false }));
+    setState(r.sent ? "sent" : "failed"); setMsg(r.sent ? `Sent: ${r.rows} records, ${r.kb} KB.` : r.reason || "It didn't send. Try again in a minute.");
+  }
+  return (
+    <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
+      <h2 className="font-extrabold text-lg">Backup</h2>
+      <p className="text-sm" style={{ color: MUTED }}>Every Sunday evening HQ emails the business inbox a copy of everything (jobs, customers, expenses, bookings, fleets). Keep those emails: if anything is ever lost, it can all be put back from them.</p>
+      <button onClick={go} disabled={state === "busy"} className="h-11 rounded-xl border font-bold disabled:opacity-60" style={{ borderColor: LINE }}>{state === "busy" ? "Sending…" : "Email me a backup now"}</button>
+      {msg && <p className="text-sm font-semibold" style={{ color: state === "sent" ? GOOD : BAD }} role="status">{msg}</p>}
+    </section>
+  );
+}
+
 /** Where the money comes from: profit per hour (time at the stop plus the drive out) by area and service, and add-ons sold. */
 function PerHour({ h }: { h: Hourly }) {
   const [tab, setTab] = useState<"areas" | "services" | "addons">("areas");
@@ -171,6 +189,7 @@ export default function MoneyScreen() {
             )}
 
             <BankSection status={data.bank} lines={bank.needsLook} recent={bank.recent} reload={() => { loadBank(); load(); }} />
+            {can.team && <BackupCard />}
           </>
         )}
       </div>
