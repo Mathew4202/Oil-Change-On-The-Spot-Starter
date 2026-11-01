@@ -74,7 +74,8 @@ export async function GET(req: NextRequest) {
 
   // No profit on the booking yet (priced before the oil was looked up, a Square job, a price typed in): estimate it
   // from the price and what the oil and filter on file cost us.
-  const estimate = (r: Row, s: NonNullable<NonNullable<Row["vehicles"]>["vehicle_specs"]> | null | undefined) => {
+  // What the oil, filter and supplies cost us on this booking, at today's prices (so a new receipt updates it right away)
+  const costsOf = (r: Row, s: NonNullable<NonNullable<Row["vehicles"]>["vehicle_specs"]> | null | undefined) => {
     const job = r.services?.job ?? "oil_change";
     if (!s || !["oil_change", "seasonal"].includes(job) || r.services?.own) return null;
     const lines = r.quote_breakdown?.lines ?? [];
@@ -82,9 +83,13 @@ export async function GET(req: NextRequest) {
     const perL = oilPerL[s.oil_grade];
     if (!subtotal || perL == null) return null;
     const cars = r.cars || 1;
-    const filter = (s.oil_filter_part ? filterCosts[s.oil_filter_part] : undefined) ?? rr.filter_estimate ?? 6.5;
-    return Math.round((subtotal - cars * (Number(s.capacity_l) * perL + filter + (rr.consumables ?? 1))) * 100) / 100;
+    const known = s.oil_filter_part ? filterCosts[s.oil_filter_part] : undefined;
+    const filter = known ?? rr.filter_estimate ?? 6.5;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    return { subtotal: r2(subtotal), litres: r2(Number(s.capacity_l) * cars), perL, oil: r2(Number(s.capacity_l) * perL * cars), filter: r2(filter * cars),
+      filterGuess: known == null, supplies: r2((rr.consumables ?? 1) * cars), grade: s.oil_grade };
   };
+  const estimate = (c: ReturnType<typeof costsOf>) => (c ? Math.round((c.subtotal - c.oil - c.filter - c.supplies) * 100) / 100 : null);
   // ...and the gas to get there (each job's share of the last 60 days of gas receipts)
   const afterGas = (p: number | null, r: Row) => (p == null || !gas ? p : Math.round((p - gas.perJob * (r.cars || 1)) * 100) / 100);
   const jobs = rows.map((r) => {
@@ -105,7 +110,9 @@ export async function GET(req: NextRequest) {
       partNos: s ? [s.cabin_filter_part ? `Cabin filter ${s.cabin_filter_part}` : null, s.air_filter_part ? `Engine air filter ${s.air_filter_part}` : null,
         s.wiper_driver || s.wiper_passenger ? `Wipers ${[s.wiper_driver && `driver ${s.wiper_driver}`, s.wiper_passenger && `passenger ${s.wiper_passenger}`].filter(Boolean).join(", ")}` : null].filter(Boolean) as string[] : [],
       lines: r.quote_breakdown?.lines ?? [], total: r.quoted_total != null ? Number(r.quoted_total) : null,
-      profit: money ? afterGas(r.quote_breakdown?.profit ?? estimate(r, s), r) : null, notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
+      // plain oil changes: worked out live from today's oil and filter prices; with add-ons, the profit the quote worked out
+      ...(() => { const c = costsOf(r, s); const live = !(r.services?.addons ?? []).length ? estimate(c) : null;
+        return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? estimate(c), r) : null, costs: money && live != null ? c : null }; })(), notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       vin: (r.services as { vin?: string } | null)?.vin ?? null, vinCar: (r.services as { vinCar?: string } | null)?.vinCar ?? null,
     };
   });

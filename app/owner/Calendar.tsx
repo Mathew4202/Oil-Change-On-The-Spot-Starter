@@ -17,7 +17,7 @@ type Job = {
   oil: { grade: string; litres: number; filter: string | null; spec: string | null; engine?: string | null; diesel?: boolean; wix?: string | null;
     checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterCost?: number | null; filterNote?: string | null } | null;
   partNos?: string[];
-  lines: { label: string; amount: number }[]; total: number | null; profit: number | null;
+  lines: { label: string; amount: number }[]; total: number | null; profit: number | null; costs?: { subtotal: number; litres: number; perL: number; oil: number; filter: number; filterGuess: boolean; supplies: number; grade: string } | null;
   notes: string | null; checks: string[]; imported: boolean; photos?: string[]; vin?: string | null; vinCar?: string | null; job?: string; addons?: string[];
 };
 type Day = {
@@ -285,7 +285,9 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   {j.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>{money(l.amount)}</span></div>)}
                   {j.total != null && <div className="flex justify-between font-bold"><span>Total with HST</span><span>{money(j.total)}</span></div>}
                   {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>Est. profit</span><span>{money(j.profit)}</span></div>}
-                  {j.profit != null && <p className="text-xs text-[#4a5878]">After the oil and filter at what we last paid, ${"$"}1 of supplies{day?.gasPerJob ? ` and about ${money(day.gasPerJob)} of gas (from the last 60 days of gas receipts)` : ""}.</p>}
+                  {j.profit != null && (j.costs
+                    ? <p className="text-xs text-[#4a5878]">Takes off: oil {money(j.costs.oil)} ({j.costs.litres} L {j.costs.grade} at {money(j.costs.perL)}/L), filter {money(j.costs.filter)}{j.costs.filterGuess ? " (a guess, no filter price on file)" : ""}, supplies {money(j.costs.supplies)}{day?.gasPerJob ? `, gas about ${money(day.gasPerJob * (j.cars || 1))} (last 60 days of gas receipts)` : ""}. Prices are what we last paid, after HST.</p>
+                    : <p className="text-xs text-[#4a5878]">After the oil and filter at what we last paid, $1 of supplies{day?.gasPerJob ? ` and about ${money(day.gasPerJob)} of gas (from the last 60 days of gas receipts)` : ""}.</p>)}
                   {j.notes && <p className="text-[#4a5878] mt-1">Note: {j.notes}</p>}
                   {j.imported && <p className="text-xs text-[#4a5878] mt-1">Imported from Square</p>}
                   {["confirmed", "requested", "in_progress"].includes(j.status) && can.book && (

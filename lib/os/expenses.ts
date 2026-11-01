@@ -80,7 +80,10 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
     await sbInsert("part_quotes", { part_id: p.id, supplier: scan.supplier, our_cost: unitCostAfterTax });
     stock.push(isOil ? `+${addQty} L ${it.oilGrade}` : sup ? `+${addQty} ${sup.unit === "box" ? (addQty === 1 ? "box" : "boxes") : "towels"} of ${sup.name.toLowerCase()}` : `+${it.qty} × ${partNumber}`);
     prices.push(isOil ? `${it.oilGrade} now $${unitCostAfterTax.toFixed(2)}/L` : sup ? `${sup.name} now $${unitCostAfterTax.toFixed(2)} a ${sup.unit === "box" ? "box" : "towel"}` : `${partNumber} now $${unitCostAfterTax.toFixed(2)}`);
-    if (isOil) {
+    if (isOil && (unitCostAfterTax < 2 || unitCostAfterTax > 40)) {
+      // a misread (litres per jug or the price): don't let it change what jobs are priced and costed at
+      prices[prices.length - 1] = `${it.oilGrade} at $${unitCostAfterTax.toFixed(2)}/L looks wrong, so the oil price wasn't changed. Check the litres per jug`;
+    } else if (isOil) {
       // The pricing engine uses this: what we actually pay per litre, after HST
       const grade = /euro|vw|504|507|229|ll-0/i.test(it.description) ? `Euro ${it.oilGrade}` : it.oilGrade!;
       await sbInsert("oil_prices", { grade, cost_per_l: unitCostAfterTax, supplier: scan.vendor, updated_at: new Date().toISOString() }, { upsertOn: "grade" });
