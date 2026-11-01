@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
   // 4e) Two days out with open times: text a few customers coming due who live near the jobs already booked
   const fillIns = await fillSlowDay(addDays(today, 2), today).catch((e) => ({ texted: 0, note: String(e).slice(0, 120) }));
   // 4e2) Until the switchover: appointments and customers booked in Square come into HQ
-  const square = squareReady() ? await syncSquare(new Date(Date.now() - 3 * 86400000), new Date(Date.now() + 60 * 86400000)).catch((e) => ({ ok: false, note: String(e).slice(0, 120) })) : null;
+  const square = squareReady() && (rules.square_sync ?? 1) !== 0 ? await syncSquare(new Date(Date.now() - 3 * 86400000), new Date(Date.now() + 60 * 86400000)).catch((e) => ({ ok: false, note: String(e).slice(0, 120) })) : null;
   // 4f) Sunday evening: email a backup of everything to the business inbox
   const backup = new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax", weekday: "short" }) === "Sun" || req.nextUrl.searchParams.get("backup") === "1"
     ? await backupNow().catch((e) => ({ sent: false, reason: String(e).slice(0, 120) })) : null;
