@@ -109,8 +109,9 @@ export async function mergeCustomers(fromId: string, intoId: string) {
 
 /** Fix a customer's car from HQ. A different year, make, model or engine links it to that car's oil and filter. */
 export async function updateCar(customerId: string, carId: string, f: { year?: unknown; make?: unknown; model?: unknown; engine?: unknown; vin?: unknown }) {
-  const [v] = await sbGet<{ id: string; year: number | null; make: string | null; model: string | null; engine: string | null }>(
-    `vehicles?select=id,year,make,model,engine&id=eq.${enc(carId)}&customer_id=eq.${enc(customerId)}`);
+  const [v] = await sbGet<{ id: string; year: number | null; make: string | null; model: string | null; engine: string | null; spec_id: string | null;
+    vehicle_specs: { engine: string | null; source: string | null } | null }>(
+    `vehicles?select=id,year,make,model,engine,spec_id,vehicle_specs(engine,source)&id=eq.${enc(carId)}&customer_id=eq.${enc(customerId)}`);
   if (!v) return { ok: false as const, error: "Car not found" };
   const t = (x: unknown, n = 40) => (typeof x === "string" ? x.trim().slice(0, n) || null : undefined);
   const year = f.year === undefined ? v.year : Number(f.year) >= 1980 && Number(f.year) <= new Date().getFullYear() + 2 ? Math.round(Number(f.year)) : null;
@@ -120,7 +121,11 @@ export async function updateCar(customerId: string, carId: string, f: { year?: u
   if (vin && vin.length !== 17) return { ok: false as const, error: "A VIN is 17 characters" };
   const patch: Record<string, unknown> = { year, make, model, engine, ...(vin !== undefined ? { vin: vin || null } : {}) };
   const changed = year !== v.year || make !== v.make || model !== v.model || engine !== v.engine;
-  if (changed && year && make && model) {
+  const sameCar = year === v.year && make === v.make && model === v.model;
+  if (changed && sameCar && v.spec_id && !v.vehicle_specs?.engine) {
+    // only the engine was added, and what we learned from our own job on this car has none: keep it, and give it the engine
+    if (engine && v.vehicle_specs?.source === "job_history") await sbPatch("vehicle_specs", `id=eq.${v.spec_id}`, { engine }).catch(() => null);
+  } else if (changed && year && make && model) {
     const { findSpecs, engineMatches } = await import("@/lib/os/quote-service");
     const { rows } = await findSpecs(year, make, model, engine).catch(() => ({ rows: [] as { id: string; engine: string | null }[] }));
     const pick = (engine ? rows.find((r) => engineMatches(engine, r.engine)) : undefined) ?? (rows.length === 1 ? rows[0] : rows.find((r) => !r.engine));
