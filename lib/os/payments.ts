@@ -8,6 +8,15 @@ import { pushToOwners } from "@/lib/os/push";
 import { amountDue, convergeEnv, invoiceFor, judge, parseAscii, payPageUrl, processUrl, queryForm, tokenForm, tokenUrl } from "@/lib/os/converge";
 
 export const payReady = () => !!convergeEnv();
+/**
+ * May customers pay when they book? Off unless pay_at_booking is set to 1 in pricing_rules (and Converge is set up).
+ * Paying after the job is always fine: the price is final by then (extra parts, a filter that cost more).
+ */
+export async function payAtBooking() {
+  if (!payReady()) return false;
+  const [r] = await sbGet<{ value: number }>("pricing_rules?select=value&key=eq.pay_at_booking").catch(() => []);
+  return Number(r?.value ?? 0) === 1;
+}
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export type PayTarget = {

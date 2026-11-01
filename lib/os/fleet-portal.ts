@@ -91,7 +91,7 @@ export async function portalView(accountId: string) {
 export async function portalTimes(accountId: string, date: string, count: number) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { slots: [] };
   const minutes = await visitMinutes(Math.min(12, Math.max(1, count)));
-  return dayAvailability(date, { cars: 1, minutes, filterInStock: false });
+  return dayAvailability(date, { cars: 1, minutes, filterInStock: false, fleet: true });   // fleets see the time held for them
 }
 
 /** Book from the portal: only at a time that's actually open, then one text to the fleet contact. */

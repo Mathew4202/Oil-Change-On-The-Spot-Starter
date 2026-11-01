@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     if (tDate) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(tDate)) return NextResponse.json({ slots: [] });
       const n = Math.min(12, Math.max(1, Number(req.nextUrl.searchParams.get("count")) || 1));
-      return NextResponse.json(await dayAvailability(tDate, { cars: 1, minutes: await visitMinutes(n), filterInStock: true }));
+      return NextResponse.json(await dayAvailability(tDate, { cars: 1, minutes: await visitMinutes(n), filterInStock: true, fleet: true }));
     }
     if (!id) return NextResponse.json(await listAccounts());
     if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "bad id" }, { status: 400 });

@@ -95,7 +95,7 @@ export default function BookingFlow() {
   const [holdMsg, setHoldMsg] = useState("");   // optional VIN / engine label photo
 
   const years = useMemo(() => { const y = new Date().getFullYear() + 1; return Array.from({ length: y - 1989 }, (_, i) => String(y - i)); }, []);
-  useEffect(() => { fetch("/api/os/pay").then((r) => r.json()).then((d) => setPayOnline(!!d.ready)).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/os/pay").then((r) => r.json()).then((d) => setPayOnline(!!d.atBooking)).catch(() => {}); }, []);
   useEffect(() => { fetch("/api/makes").then((r) => r.json()).then((d) => setMakes(d.makes || [])).catch(() => {}); }, []);
   // Returning customer on this phone: fill in their details
   function fillInfo(v: Saved) { setSaved(v); setName(v.name); setPhone(v.phone); setEmail(v.email || ""); setAddress(v.address); }

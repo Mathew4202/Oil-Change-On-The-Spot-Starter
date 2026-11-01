@@ -1,4 +1,5 @@
 // One place that creates bookings, used by the customer website and by owners booking by phone.
+import { payAtBooking } from "@/lib/os/payments";
 import crypto from "crypto";
 import { vinOk, cleanVin } from "@/lib/os/vin";
 import { holdByToken, holdIsLive, useHold } from "@/lib/os/holds";
@@ -80,7 +81,9 @@ type Opts = {
 };
 
 /** One car, or several cars on the same visit (back to back, one travel fee, one text and one link). */
-export async function createBooking(b: BookingInput, opts: Opts): Promise<BookingResult> {
+export async function createBooking(bIn: BookingInput, opts: Opts): Promise<BookingResult> {
+  // paying when booking is switched off (pay_at_booking): website bookings pay after the job instead
+  let b: BookingInput = bIn.payMode === "online" && !opts.bookedBy && !(await payAtBooking()) ? { ...bIn, payMode: "after" } : bIn;
   // a time held for them on the phone: it's theirs, even though it shows as taken to everyone else
   const hold = b.holdToken ? await holdByToken(b.holdToken) : null;
   if (hold && holdIsLive(hold) && new Date(hold.starts_at).getTime() === new Date(b.start).getTime()) {

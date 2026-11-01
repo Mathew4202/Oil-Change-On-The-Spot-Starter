@@ -1,6 +1,6 @@
 // GET → is online payment switched on. POST {token, tip} → start a Converge payment, returns the page to send them to.
 import { NextRequest, NextResponse } from "next/server";
-import { payReady, startOnlinePayment } from "@/lib/os/payments";
+import { payReady, payAtBooking, startOnlinePayment } from "@/lib/os/payments";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ function tooMany(ip: string) {
 }
 
 export async function GET() {
-  return NextResponse.json({ ready: payReady() });
+  return NextResponse.json({ ready: payReady(), atBooking: await payAtBooking() });
 }
 
 export async function POST(req: NextRequest) {
