@@ -52,9 +52,10 @@ function HealthCard() {
   return (
     <section className="bg-white rounded-2xl p-4 flex flex-col">
       <h2 className="font-extrabold text-lg mb-1">Is everything connected?</h2>
-      <Row ok={quoOk && !!h.quo.lastEvent} title="Calls and texts (Quo)">
+      <Row ok={quoOk && !!h.quo.lastEvent && !h.quo.lastEvent.type.startsWith("rejected")} title="Calls and texts (Quo)">
         {!quoOk ? <>Missing in Vercel: {[!h.quo.key && "QUO_API_KEY", !h.quo.number && "QUO_FROM_NUMBER", !h.quo.secret && "QUO_WEBHOOK_SECRET"].filter(Boolean).join(", ")} (tick Production, then redeploy).</> : null}
         <>Last thing Quo sent HQ: <strong>{h.quo.lastEvent ? `${ago(h.quo.lastEvent.at)} (${h.quo.lastEvent.type || "event"})` : "nothing yet"}</strong>. Last call: {h.quo.lastCall ? ago(h.quo.lastCall.at) : "none"}.</>
+        {h.quo.lastEvent?.type.startsWith("rejected") ? <> Quo is reaching HQ, but the signing secret doesn&apos;t match, so HQ ignores it. In Quo, open the webhook, copy its signing secret, paste it into QUO_WEBHOOK_SECRET in Vercel (Production ticked), then redeploy.</> : null}
         <> If you just called and this didn&apos;t change, Quo isn&apos;t sending to the live site: in Quo, Settings → Webhooks, set the address to <span className="font-mono break-all">{h.webhookUrl}</span> for calls and messages.</>
       </Row>
       <Row ok={h.push.mine > 0} title="Notifications on your phone">

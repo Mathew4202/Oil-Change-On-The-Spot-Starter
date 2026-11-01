@@ -27,7 +27,12 @@ export async function POST(req: NextRequest) {
     id: req.headers.get("webhook-id"), timestamp: req.headers.get("webhook-timestamp"), signature: req.headers.get("webhook-signature"),
     legacy: req.headers.get("openphone-signature"),
   }, process.env.QUO_WEBHOOK_SECRET || "");
-  if (!ok) return NextResponse.json({ error: "bad signature" }, { status: 401 });
+  if (!ok) {
+    // note it (without the body) so the "Is everything connected?" check can say the secret doesn't match
+    let type = ""; try { type = String(JSON.parse(raw.toString("utf8"))?.type ?? ""); } catch { /* not json */ }
+    await sbInsert("webhook_log", { type: `rejected: ${type || "event"}`, body: {} }).catch(() => null);
+    return NextResponse.json({ error: "bad signature" }, { status: 401 });
+  }
 
   let json: unknown; try { json = JSON.parse(raw.toString("utf8")); } catch { return NextResponse.json({ ok: true, ignored: "not json" }); }
   // keep what Quo sent for two weeks, so any problem can be traced (migration 0028)
