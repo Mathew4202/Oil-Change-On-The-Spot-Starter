@@ -51,11 +51,14 @@ export async function handleCallEvent(ev: CallEvent) {
   else { const r = await sbInsert<CallRow>("calls", { provider_id: ev.callId, ...patch }); row = r.data; if (!r.ok && r.status === 409) [row] = await sbGet<CallRow>(`calls?select=${COLS}&provider_id=eq.${enc(ev.callId)}`); }
   if (!row) return { error: "couldn't save the call" };
 
-  // Missed call: tell the owners right away (one tap texts them the booking link)
-  if (ev.kind === "completed" && (ev.status === "unanswered" || ev.status === "abandoned") && !existing) {
+  // Every incoming call buzzes the phones once, when Quo says it ended (a retry or a late transcript doesn't buzz again).
+  // Missed: one tap texts them the booking link. Answered: what they wanted follows when Quo's summary is in.
+  const firstEnd = ev.kind === "completed" && !(existing?.status && existing.status !== "ai-handled");
+  if (firstEnd && MISSED.has(String(ev.status ?? "").toLowerCase())) {
     await alert(row, `Missed call from ${await who(row)}`, "Tap to text them the booking link.");
     return { ok: true, action: "missed" };
   }
+  if (firstEnd) await alert(row, `Call from ${await who(row)}`, row.extract ? "Tap to see what they wanted." : "What they wanted shows in HQ when Quo's summary is in.");
   // We have words: read them once
   const text = [...(row.summary ?? []), ...(row.next_steps ?? []).map((s) => `Next step: ${s}`), ...Object.entries(ev.aiFields).map(([k, v]) => `${k}: ${v}`), row.transcript ?? ""].join("\n").trim();
   if ((ev.kind === "summary" || ev.kind === "transcript") && text && !row.extract) {
@@ -74,6 +77,7 @@ export async function handleCallEvent(ev: CallEvent) {
   return { ok: true };
 }
 
+const MISSED = new Set(["unanswered", "abandoned", "missed", "no-answer", "no_answer", "busy", "canceled", "cancelled", "voicemail", "failed"]);
 const JOB_NAME: Record<string, string> = { oil_change: "an oil change", seasonal: "the seasonal package", tires: "a tire change", rotation: "a tire rotation", parts: "a parts visit", diagnostic: "a diagnostic" };
 
 async function who(row: CallRow) {
