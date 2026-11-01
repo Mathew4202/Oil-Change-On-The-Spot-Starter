@@ -58,6 +58,9 @@ export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: s
               </div>
             )}
             {x ? <p className="text-[15px]">{[x.job ? JOB[x.job] : null, car || null, x.cars > 1 ? `${x.cars} cars` : null].filter(Boolean).join(" · ") || "Wants to book"}{x.notes ? <span className="text-[#4a5878]"> · {x.notes}</span> : null}</p>
+              : null}
+            {x && c.summary?.length ? <p className="text-[14px] text-[#4a5878]">{c.summary.join(" ")}</p>
+              : x ? null
               : c.summary?.length ? <p className="text-[15px] text-[#4a5878]">{c.summary.join(" ")}</p>
               : c.channel === "text" ? null
               : <p className="text-[15px] text-[#4a5878]">{missed ? "No message. Text them the booking link?" : "Waiting for Quo's summary of the call…"}</p>}

@@ -12,6 +12,7 @@ import { handleRouteReply } from "@/lib/os/route";
 import { agreeByText } from "@/lib/os/plans";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;   // reading a call with AI can take a while; don't get cut off at 10 s
 
 const STOP_REPLY = "You won't get any more texts from Oil Change On The Spot. Reply START to turn them back on. - {signer}";
 const START_REPLY = "Texts from Oil Change On The Spot are back on. Reply STOP anytime to turn them off. - {signer}";
