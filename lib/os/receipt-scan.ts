@@ -72,6 +72,13 @@ export function cleanScan(raw: unknown): Scan | null {
     };
   }).filter((i) => i.lineTotal !== 0 || i.description !== "Item");
   foldFees(items);
+  // Oil priced per litre (East Coast: "Price / Litre" $6.20, qty = 20 L cases): make the price per case/jug,
+  // so qty x price = the line and cost per litre comes out right ($6.20, not $6.20 / 20)
+  for (const i of items) {
+    if (i.category !== "oil" || !i.litresPerUnit || !i.qty || !i.unitPrice) continue;
+    const perLitre = Math.abs(i.qty * i.litresPerUnit * i.unitPrice - i.lineTotal) <= 0.05 * Math.max(1, i.lineTotal) / 10 && Math.abs(i.qty * i.unitPrice - i.lineTotal) > 0.05;
+    if (perLitre) i.unitPrice = r2(i.lineTotal / i.qty);
+  }
 
   const subtotal = num(o.subtotal), hst = num(o.hst);
   const warnings: string[] = [];
@@ -99,7 +106,7 @@ Read it carefully. Reply with ONLY this JSON (no other text):
  "items":[{"description":"","part_number":"string or null","brand":"string or null","qty":1,"unit_price":0,"line_total":0,
    "category":"oil_filter|cabin_filter|engine_filter|wiper|battery|oil|fluid|tool|supply|gloves|shop_towels|fuel|other",
    "litres_per_unit":null,"oil_grade":null,"units_per_pack":null}]}
-Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". Disposable/nitrile gloves -> category "gloves", qty = number of boxes. Shop towels (blue towels, WypAll, rolls or boxes of wipes) -> category "shop_towels", qty = number of packs/rolls/boxes, units_per_pack = towels in each one (from "200 CT", "55 sheets" etc.). Environmental fee lines (e.g. NAPA "035 FILTERS LESS THAN 8IN") are their own items. "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". If something is unreadable use null.`;
+Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). unit_price is the price of ONE of what qty counts (one case, jug or pail): if the invoice shows a price per litre and qty in cases or jugs, unit_price = price per litre x litres in each. For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". Disposable/nitrile gloves -> category "gloves", qty = number of boxes. Shop towels (blue towels, WypAll, rolls or boxes of wipes) -> category "shop_towels", qty = number of packs/rolls/boxes, units_per_pack = towels in each one (from "200 CT", "55 sheets" etc.). Environmental fee lines (e.g. NAPA "035 FILTERS LESS THAN 8IN") are their own items. "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". If something is unreadable use null.`;
 
 export async function scanReceipt(imageBase64: string, mediaType: string): Promise<{ scan: Scan | null; error?: string }> {
   const { askAI, aiLastError } = await import("@/lib/os/ai");   // loaded here so this file stays testable on its own

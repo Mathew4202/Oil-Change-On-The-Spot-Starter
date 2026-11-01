@@ -49,3 +49,13 @@ test("gloves and shop towels are picked out, with the towels in each pack", asyn
   assert.deepEqual(s.items.map((i) => [i.category, i.unitsPerPack ?? null]), [["gloves", null], ["shop_towels", 55], ["shop_towels", 200]]);
   assert.equal(s.category, "supplies");
 });
+
+test("oil priced per litre with qty in 20 L cases (East Coast) comes out per case", async () => {
+  const { cleanScan } = await import("../receipt-scan.ts");
+  const s = cleanScan({ vendor: "East Coast Lubricant Limited", date: "2026-10-30", subtotal: 1737.6, hst: 243.26, total: 1980.86, items: [
+    { description: "0W-20 (20L)", qty: 10, unit_price: 6.2, line_total: 1240, category: "oil", litres_per_unit: 20, oil_grade: "0W-20" },
+    { description: "5W-20 (20L)", qty: 4, unit_price: 6.22, line_total: 497.6, category: "oil", litres_per_unit: 20, oil_grade: "5W-20" },
+    { description: "Jug 5W-30", qty: 2, unit_price: 40, line_total: 80, category: "oil", litres_per_unit: 4.4, oil_grade: "5W-30" },
+  ] })!;
+  assert.deepEqual(s.items.map((i) => i.unitPrice), [124, 124.4, 40]);   // per case; the per-jug one is left alone
+});
