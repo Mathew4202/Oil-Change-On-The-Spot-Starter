@@ -16,8 +16,11 @@ let lastError: string | null = null;
 export const aiLastError = () => lastError;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-export async function askAI(opts: { prompt: string; file?: AiFile; search?: boolean; maxTokens?: number; big?: boolean; private?: boolean; freeOnly?: boolean }): Promise<AiAnswer | null> {
+export async function askAI(opts: { prompt: string; file?: AiFile; search?: boolean; maxTokens?: number; big?: boolean; private?: boolean; freeOnly?: boolean; budgetMs?: number }): Promise<AiAnswer | null> {
   lastError = null;
+  // the whole request has to finish inside the page's time limit (60 s on Vercel), or the phone gets an error page instead of an answer
+  const stopAt = Date.now() + (opts.budgetMs ?? 50000);
+  const left = (want: number) => Math.min(want, stopAt - Date.now());
   const g = process.env.GEMINI_API_KEY;
   if (g && !opts.private) {
     const parts: any[] = [];
@@ -26,6 +29,7 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
     const errors: string[] = [];
     for (const model of GEMINI_MODELS()) {
       for (let attempt = 0; attempt < 2; attempt++) {
+        if (left(99999) < 6000) { errors.push(`${model}: out of time`); break; }
         const res = await fetch(`${process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com"}/v1beta/models/${model}:generateContent`, {
           method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": g },
           body: JSON.stringify({
@@ -34,7 +38,7 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
             // newer Gemini models "think" first and that counts against the output limit, so leave plenty of room (free either way)
             generationConfig: { maxOutputTokens: (opts.maxTokens ?? 2000) + 8192, temperature: 0.1 },
           }),
-          signal: AbortSignal.timeout(opts.search ? 40000 : 25000),
+          signal: AbortSignal.timeout(left(opts.search ? 40000 : 25000)),
         }).catch((e) => { errors.push(`${model}: ${e?.name === "TimeoutError" ? "took too long" : "couldn't reach it"}`); return null; });
         if (res?.ok) {
           const body = await res.json().catch(() => ({}));
@@ -59,6 +63,7 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
   const k = process.env.ANTHROPIC_API_KEY;
   if (!k || process.env.AI_ALLOW_PAID === "false" || opts.freeOnly) return null;
   const month = new Date().toISOString().slice(0, 7);
+  if (left(99999) < 8000) { lastError = `${lastError ? `${lastError}. ` : ""}Out of time for the backup`; return null; }
   const budget = await paidBudgetLeft(month);
   if (budget <= 0) { lastError = `${lastError ? `${lastError}. ` : ""}Paid backup off (budget used, or migration 0030 not run)`; return null; }
   const content: any[] = [];
@@ -73,7 +78,7 @@ export async function askAI(opts: { prompt: string; file?: AiFile; search?: bool
       model, max_tokens: opts.maxTokens ?? 2000, messages: [{ role: "user", content }],
       ...(opts.search ? { tools: [{ type: process.env.ANTHROPIC_SEARCH_TOOL || "web_search_20250305", name: "web_search", max_uses: 2 }] } : {}),
     }),
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(Math.max(3000, left(45000))),
   }).catch(() => null);
   if (!res?.ok) {
     const t = res ? await res.text().catch(() => "") : "";

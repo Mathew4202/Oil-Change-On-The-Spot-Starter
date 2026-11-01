@@ -14,11 +14,20 @@ const CATS: [string, string][] = [["oil_filter", "Oil filter"], ["cabin_filter",
 const PAID: [string, string][] = [["card", "Card"], ["cash", "Cash"], ["on_account", "On account"], ["etransfer", "E-transfer"], ["unknown", "Not sure"]];
 const money = (n: number | null | undefined) => n == null ? "" : `$${Number(n).toFixed(2)}`;
 
+async function decode(file: File): Promise<{ img: CanvasImageSource; w: number; h: number }> {
+  try { const b = await createImageBitmap(file); return { img: b, w: b.width, h: b.height }; }
+  catch {   // some phones' photos (HEIC, very large) don't decode that way: let the browser load it as a picture instead
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    await new Promise<void>((ok, bad) => { im.onload = () => ok(); im.onerror = () => bad(new Error("decode")); im.src = url; });
+    return { img: im, w: im.naturalWidth, h: im.naturalHeight };
+  }
+}
 async function shrink(file: File): Promise<string> {
   // Phone photos are huge: resize to max 1600 px JPEG so it uploads fast and stays readable
-  const img = await createImageBitmap(file);
-  const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
-  const c = document.createElement("canvas"); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  const { img, w, h } = await decode(file);
+  const scale = Math.min(1, 1600 / Math.max(w, h));
+  const c = document.createElement("canvas"); c.width = Math.round(w * scale); c.height = Math.round(h * scale);
   c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
   return c.toDataURL("image/jpeg", 0.85);
 }
@@ -37,13 +46,18 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
   async function onFile(f: File | undefined) {
     if (!f) return;
     setErr(""); setStage("reading"); setResult(null);
-    try {
-      const dataUrl = await shrink(f); setPreview(dataUrl);
-      const r = await fetch("/api/owner/receipt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "scan", image: dataUrl }) });
-      const j = await r.json();
-      if (!r.ok) { setErr(j.error || "Couldn't read it"); setStage("idle"); return; }
-      setScan(j.scan); setPhotoPath(j.photoPath); setStage("review");
-    } catch { setErr("Couldn't open that photo"); setStage("idle"); }
+    let dataUrl = "";
+    try { dataUrl = await shrink(f); setPreview(dataUrl); }
+    catch { setErr("Couldn't open that photo. Try taking it again, or pick it with \"Choose a photo instead\"."); setStage("idle"); return; }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await fetch("/api/owner/receipt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "scan", image: dataUrl }) }).catch(() => null);
+      if (!r) { setErr("No connection to HQ. Check your signal and try again."); setStage("idle"); return; }
+      const j = await r.json().catch(() => null);
+      if (j && r.ok) { setScan(j.scan); setPhotoPath(j.photoPath); setStage("review"); return; }
+      if (j) { setErr(j.error || "Couldn't read it"); setStage("idle"); return; }
+      if (attempt === 0 && r.status >= 500) continue;   // HQ timed out reading it: try once more
+      setErr(r.status === 401 ? "You've been signed out. Sign in again and retry." : `HQ couldn't read it in time (error ${r.status}). Try again in a minute.`); setStage("idle"); return;
+    }
   }
 
   async function save() {
