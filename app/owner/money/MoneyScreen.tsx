@@ -27,6 +27,54 @@ const CATS: [string, string][] = [["fuel", "Gas"], ["parts", "Filters and parts"
 const KIND_NAME: Record<string, string> = { receipt: "Receipt", napa_account: "NAPA account", payment: "Customer e-transfer", card_payout: "Card sales payout", bank_fee: "Bank fee",
   transfer: "Transfer", expense_no_receipt: "Added, no receipt", personal: "Not business", money_in: "Money in" };
 
+type Health = { quo: { key: boolean; number: boolean; secret: boolean; lastEvent: { at: string; type: string } | null; lastCall: { at: string; state: string | null } | null };
+  push: { mine: number; myDevices: { device: string; lastOk: string | null; since: string }[]; everyone: [string, number][] }; cron: boolean; site: string | null;
+  email: { ready: boolean; from: string | null }; webhookUrl: string };
+const ago = (iso: string | null | undefined) => {
+  if (!iso) return "never";
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+};
+
+/** Owners: is everything connected? Calls and texts from Quo, phone notifications, the evening job, email. */
+function HealthCard() {
+  const [h, setH] = useState<Health | null>(null); const [test, setTest] = useState(""); const [busy, setBusy] = useState(false);
+  const load = useCallback(() => { fetch("/api/owner/health", { cache: "no-store" }).then((r) => r.json()).then((j) => j.quo && setH(j)).catch(() => {}); }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!h) return null;
+  const quoOk = h.quo.key && h.quo.number && h.quo.secret;
+  const Row = ({ ok, title, children }: { ok: boolean; title: string; children: React.ReactNode }) => (
+    <div className="flex gap-2 py-2 border-t first:border-t-0" style={{ borderColor: "#eef1f6" }}>
+      <span aria-hidden className="mt-0.5 w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-xs font-extrabold text-white" style={{ background: ok ? GOOD : BAD }}>{ok ? "✓" : "!"}</span>
+      <div className="min-w-0"><p className="font-bold text-[15px]">{title}</p><div className="text-sm" style={{ color: MUTED }}>{children}</div></div>
+    </div>
+  );
+  return (
+    <section className="bg-white rounded-2xl p-4 flex flex-col">
+      <h2 className="font-extrabold text-lg mb-1">Is everything connected?</h2>
+      <Row ok={quoOk && !!h.quo.lastEvent} title="Calls and texts (Quo)">
+        {!quoOk ? <>Missing in Vercel: {[!h.quo.key && "QUO_API_KEY", !h.quo.number && "QUO_FROM_NUMBER", !h.quo.secret && "QUO_WEBHOOK_SECRET"].filter(Boolean).join(", ")} (tick Production, then redeploy).</> : null}
+        <>Last thing Quo sent HQ: <strong>{h.quo.lastEvent ? `${ago(h.quo.lastEvent.at)} (${h.quo.lastEvent.type || "event"})` : "nothing yet"}</strong>. Last call: {h.quo.lastCall ? ago(h.quo.lastCall.at) : "none"}.</>
+        <> If you just called and this didn&apos;t change, Quo isn&apos;t sending to the live site: in Quo, Settings → Webhooks, set the address to <span className="font-mono break-all">{h.webhookUrl}</span> for calls and messages.</>
+      </Row>
+      <Row ok={h.push.mine > 0} title="Notifications on your phone">
+        {h.push.mine ? <>On for {h.push.mine} device{h.push.mine === 1 ? "" : "s"} ({h.push.myDevices.map((d) => `${d.device}, last delivered ${ago(d.lastOk)}`).join("; ")}).</>
+          : <>Not on for your login on this site yet. On an iPhone: open oilchangeonthespot.ca/owner in Safari, Share → Add to Home Screen, open HQ from that icon, then tap the bell and turn notifications on.</>}
+        {h.push.everyone.length > 0 && <> Everyone: {h.push.everyone.map(([o, n]) => `${o.charAt(0).toUpperCase() + o.slice(1)} ${n}`).join(", ")}.</>}
+        <div className="mt-2 flex items-center gap-2">
+          <button onClick={async () => { setBusy(true); setTest(""); const r = await fetch("/api/owner/health", { method: "POST" }).then((x) => x.json()).catch(() => null); setBusy(false);
+            setTest(!r ? "Couldn't reach HQ." : r.sent ? `Sent to ${r.sent} device${r.sent === 1 ? "" : "s"}. It should buzz in a few seconds.` : r.failed ? "It failed on your devices: turn notifications off and on again with the bell." : "No device to send to: turn notifications on first."); load(); }}
+            disabled={busy} className="h-10 px-3 rounded-lg border font-bold text-sm disabled:opacity-60" style={{ borderColor: LINE, color: NAVY }}>{busy ? "Sending…" : "Send me a test notification"}</button>
+        </div>
+        {test && <p className="mt-1 font-semibold" style={{ color: NAVY }} role="status">{test}</p>}
+      </Row>
+      <Row ok={h.cron} title="Evening job (reminders, route texts, backups)">{h.cron ? "Set up: runs every day at 5 pm." : "CRON_SECRET isn't set in Vercel (Production): the 5 pm reminders and backups won't run until it is."}</Row>
+      <Row ok={!!h.site} title="Links in texts">{h.site ? <>Texts link to {h.site}.</> : "SITE_URL isn't set in Vercel (Production): links in texts may point to the wrong address."}</Row>
+      <Row ok={h.email.ready} title="Receipt and invoice emails">{h.email.ready ? <>Sent from {h.email.from}.</> : "Emails only reach your own inbox: verify your domain in Resend and set EMAIL_FROM (e.g. receipts@oilchangeonthespot.ca)."}</Row>
+    </section>
+  );
+}
+
 /** Owners: the weekly backup email, and a button to send one now. */
 function BackupCard() {
   const [state, setState] = useState<"idle" | "busy" | "sent" | "failed">("idle"); const [msg, setMsg] = useState("");
@@ -189,6 +237,7 @@ export default function MoneyScreen() {
             )}
 
             <BankSection status={data.bank} lines={bank.needsLook} recent={bank.recent} reload={() => { loadBank(); load(); }} />
+            {can.team && <HealthCard />}
             {can.team && <BackupCard />}
           </>
         )}
