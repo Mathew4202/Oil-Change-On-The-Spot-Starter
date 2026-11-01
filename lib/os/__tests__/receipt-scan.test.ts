@@ -26,3 +26,15 @@ test("numbers that don't add up are flagged, not hidden", () => {
 });
 
 test("no total = not a receipt", () => { assert.equal(cleanScan({ vendor: "x" }), null); });
+
+test("NAPA's 035 environmental fee goes onto the filter above it, not into stock", async () => {
+  const { cleanScan } = await import("../receipt-scan.ts");
+  const s = cleanScan({ vendor: "NAPA Dartmouth", date: "2026-11-01", subtotal: 14.87, hst: 2.08, total: 16.95, items: [
+    { description: "NAPA ProFormer Oil Filter", part_number: "PPF 2100290", qty: 1, unit_price: 5.88, line_total: 5.88, category: "oil_filter" },
+    { description: "FILTERS LESS THAN 8IN", part_number: "035", qty: 1, unit_price: 0.5, line_total: 0.5, category: "other" },
+    { description: "NAPA ProFormer Oil Filter", part_number: "PPF 21358", qty: 1, unit_price: 7.99, line_total: 7.99, category: "oil_filter" },
+    { description: "FILTERS LESS THAN 8IN", part_number: "035", qty: 1, unit_price: 0.5, line_total: 0.5, category: "other" },
+  ] })!;
+  assert.deepEqual(s.items.map((i) => [i.partNumber, i.lineTotal, i.unitPrice]), [["2100290", 6.38, 6.38], ["21358", 8.49, 8.49]]);
+  assert.deepEqual(s.warnings, []);   // still adds up to the subtotal
+});

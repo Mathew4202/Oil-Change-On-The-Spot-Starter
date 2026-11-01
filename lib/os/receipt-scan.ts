@@ -24,6 +24,25 @@ export function supplierOf(vendor: string): Scan["supplier"] {
   return "other";
 }
 
+/** An environmental fee line (NAPA's "035 FILTERS LESS THAN 8IN", eco fees): part of the filter or item above it, not stock. */
+export const isFee = (i: Pick<ScanItem, "description" | "partNumber">) =>
+  /^0*35$/.test(i.partNumber ?? "") || /filters? (less|more|greater) than|env(iro(nmental)?)?\.? ?(fee|levy|charge)|eco[- ]?fee|stewardship|recycl\w* fee/i.test(i.description);
+
+/** Add each fee to the item it belongs to (the one above it; the one below if it comes first), so a filter's cost includes its fee. */
+export function foldFees(items: ScanItem[]) {
+  for (let k = 0; k < items.length; k++) {
+    if (!isFee(items[k])) continue;
+    const fee = items[k];
+    let to = -1;
+    for (let j = k - 1; j >= 0; j--) if (!isFee(items[j])) { to = j; break; }
+    if (to < 0) for (let j = k + 1; j < items.length; j++) if (!isFee(items[j])) { to = j; break; }
+    if (to < 0) continue;   // only fees on the receipt: leave them
+    const t = items[to];
+    t.lineTotal = r2(t.lineTotal + fee.lineTotal); t.unitPrice = r2(t.lineTotal / (t.qty || 1));
+    items.splice(k, 1); k--;
+  }
+}
+
 /** Clean up whatever the model returned and flag anything that doesn't add up. */
 export function cleanScan(raw: unknown): Scan | null {
   const o = raw as Record<string, unknown>;
@@ -44,6 +63,7 @@ export function cleanScan(raw: unknown): Scan | null {
       litresPerUnit: num(it.litres_per_unit), oilGrade: grade ? `${grade[1]}W-${grade[2]}` : null,
     };
   }).filter((i) => i.lineTotal !== 0 || i.description !== "Item");
+  foldFees(items);
 
   const subtotal = num(o.subtotal), hst = num(o.hst);
   const warnings: string[] = [];
