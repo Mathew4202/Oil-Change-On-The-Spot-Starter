@@ -177,7 +177,7 @@ function AddStock({ onAdded }: { onAdded: () => void }) {
       {msg && <p className="text-sm font-semibold" style={{ color: ok ? "#1d6b3a" : "#9b1c1c" }} role="status">{msg}</p>}
       <div className="grid grid-cols-2 gap-2">
         <button onClick={() => setOpen(false)} className="h-11 rounded-lg border font-bold" style={{ borderColor: LINE }}>Done</button>
-        <button onClick={save} disabled={busy || !qty || (oil ? !grade : !pn)} className="h-11 rounded-lg font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Adding…" : "Add"}</button>
+        <button onClick={save} disabled={busy || !qty || (oil ? !grade : !supply && !pn)} className="h-11 rounded-lg font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Adding…" : "Add"}</button>
       </div>
       <p className="text-xs text-[#4a5878]">Add one thing at a time; the form stays open for the next one. A cost you enter updates the prices HQ uses for quotes and profit.</p>
     </section>
