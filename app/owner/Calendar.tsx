@@ -120,7 +120,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
   }
 
   return (
-    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl mx-auto">
+    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto">
       <Tour ready={!!day} />
       {/* Header */}
       <header className="sticky top-0 z-20 text-white px-4 pt-[max(14px,env(safe-area-inset-top))] pb-4 flex flex-col gap-3" style={{ background: NAVY }}>
@@ -363,7 +363,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
       {/* New booking (phone customers) */}
       {can.book && !booking && !showAlerts && !blocking && !holding && !jobOpen && !changing && (
         <button data-tour="new-booking" onClick={() => setBooking(true)} aria-label="New booking"
-          className="fixed z-20 right-4 bottom-[calc(84px+env(safe-area-inset-bottom))] h-14 px-5 rounded-full shadow-lg font-extrabold text-base flex items-center gap-2"
+          className="fixed z-20 right-[max(16px,calc(50vw_-_24rem_+_16px))] lg:right-[max(16px,calc(50vw_-_28rem_+_16px))] bottom-[calc(84px+env(safe-area-inset-bottom))] h-14 px-5 rounded-full shadow-lg font-extrabold text-base flex items-center gap-2"
           style={{ background: GOLD, color: NAVY }}>
           <span className="text-2xl leading-none" aria-hidden>+</span> New booking
         </button>

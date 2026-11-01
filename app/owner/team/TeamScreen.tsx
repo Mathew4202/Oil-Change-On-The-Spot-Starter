@@ -34,7 +34,7 @@ export default function TeamScreen() {
   }
 
   return (
-    <div className="min-h-dvh bg-[#eef1f6] text-[#0d1b3e] max-w-xl mx-auto pb-28">
+    <div className="min-h-dvh bg-[#eef1f6] text-[#0d1b3e] max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto pb-28">
       <header className="sticky top-0 z-10 text-white px-4 pt-[max(14px,env(safe-area-inset-top))] pb-4" style={{ background: NAVY }}>
         <Link href="/owner/money" className="text-sm text-[#c9d3ea] font-semibold">‹ Money</Link>
         <h1 className="text-[30px] leading-none font-extrabold mt-1" style={{ fontFamily: "var(--font-condensed)" }}>Team logins</h1>

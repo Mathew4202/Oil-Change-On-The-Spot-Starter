@@ -16,7 +16,7 @@ export const viewport = { themeColor: "#0d1b3e", width: "device-width", initialS
 export default function OwnerLayout({ children }: { children: React.ReactNode }) {
   const s = currentStaff();
   return (
-    <div className={`${barlow.variable} ${condensed.variable} ocots-owner`} style={{ fontFamily: "var(--font-barlow), system-ui, sans-serif" }}>
+    <div className={`${barlow.variable} ${condensed.variable} ocots-owner min-h-dvh bg-[#eef1f6]`} style={{ fontFamily: "var(--font-barlow), system-ui, sans-serif" }}>
       <RoleProvider name={s?.name ?? null} role={s?.role ?? "owner"}>{children}</RoleProvider>
     </div>
   );

@@ -152,7 +152,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
 
   return (
     <div className="fixed inset-0 z-40 bg-black/40 flex justify-center" onClick={() => onClose()}>
-      <div className="w-full max-w-xl h-full bg-[#eef1f6] flex flex-col" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="New booking">
+      <div className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl h-full bg-[#eef1f6] flex flex-col" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="New booking">
         <div className="flex items-center justify-between p-4 text-white pt-[max(16px,env(safe-area-inset-top))]" style={{ background: NAVY }}>
           <h2 className="text-2xl font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>New booking</h2>
           <button onClick={() => onClose()} className="h-10 px-3 rounded-lg border border-[#3b4d7a] font-bold text-sm">Cancel</button>
@@ -303,7 +303,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
         </div>
 
         <div className="fixed bottom-0 inset-x-0 z-50 bg-white border-t border-[#dde3ee] p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-          <div className="max-w-xl mx-auto flex flex-col gap-2">
+          <div className="max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto flex flex-col gap-2">
             {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
             <button onClick={save} disabled={busy} className="h-13 py-3.5 rounded-xl font-extrabold text-base disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>
               {busy ? "Saving…" : "Book it"}

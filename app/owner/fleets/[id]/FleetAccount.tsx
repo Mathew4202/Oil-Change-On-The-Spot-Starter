@@ -102,7 +102,7 @@ export default function FleetAccount({ id }: { id: string }) {
   const chip = (on: boolean) => ({ background: on ? NAVY : "#fff", color: on ? "#fff" : NAVY, borderColor: on ? NAVY : LINE });
   const a = d?.account;
   return (
-    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl mx-auto">
+    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto">
       <header className="sticky top-0 z-10 text-white px-4 pt-[max(14px,env(safe-area-inset-top))] pb-3" style={{ background: NAVY }}>
         <Link href={"/owner/fleets" as Route} className="text-sm text-[#c9d3ea] font-semibold no-underline">‹ Fleets</Link>
         <h1 className="text-[28px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>{a?.business_name ?? " "}</h1>

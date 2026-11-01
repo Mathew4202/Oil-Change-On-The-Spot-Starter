@@ -118,7 +118,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
 
   return (
     <div className="fixed inset-0 z-40 bg-black/40 flex justify-center" onClick={() => onClose(!!result)}>
-      <div className="w-full max-w-xl h-full bg-[#eef1f6] flex flex-col" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Job">
+      <div className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl h-full bg-[#eef1f6] flex flex-col" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Job">
         <div className="flex items-center justify-between gap-3 p-4 text-white pt-[max(16px,env(safe-area-inset-top))]" style={{ background: NAVY }}>
           <div className="min-w-0">
             <h2 className="text-2xl font-extrabold truncate" style={{ fontFamily: "var(--font-condensed)" }}>{name || "Job"}</h2>
@@ -263,7 +263,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
 
         {ctx && !finished && !result && (
           <div className="fixed bottom-0 inset-x-0 z-50 bg-white border-t border-[#dde3ee] p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-            <div className="max-w-xl mx-auto flex flex-col gap-2">
+            <div className="max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto flex flex-col gap-2">
               {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
               <button onClick={finish} disabled={busy} className="py-3.5 rounded-xl font-extrabold text-base disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>
                 {busy ? "Saving…" : fleetJob ? `Finish job · ${money(total)} on the invoice` : prepaid > 0 ? `Finish job · ${balance > 0 ? `${money(balance)} ${pay ? "paid" : "owed"}` : "paid online"}` : pay === "bill" ? `Finish job · send bill for ${money(total)}` : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}

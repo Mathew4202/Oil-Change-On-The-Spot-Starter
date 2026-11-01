@@ -25,7 +25,7 @@ export default function OwnerNav() {
   const items = ITEMS.filter((i) => can.tabs.includes(i.tab));   // tabs a login doesn't have aren't shown at all
   return (
     <nav aria-label="App sections" className="fixed bottom-0 inset-x-0 z-20 bg-white border-t border-[#dde3ee] pb-[max(14px,env(safe-area-inset-bottom))] pt-2">
-      <div className="max-w-xl mx-auto grid gap-1 px-2" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+      <div className="max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto grid gap-1 px-2" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
         {items.map(({ label, href }) => {
           const active = href === "/owner" ? path === "/owner" : !!href && path?.startsWith(href);
           const inner = (

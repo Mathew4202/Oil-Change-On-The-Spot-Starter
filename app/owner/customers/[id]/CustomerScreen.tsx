@@ -116,7 +116,7 @@ export default function CustomerScreen({ id }: { id: string }) {
 
 function Shell({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl mx-auto">
+    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto">
       <header className="sticky top-0 z-10 text-white px-4 pt-[max(14px,env(safe-area-inset-top))] pb-4" style={{ background: NAVY }}>
         <Link href={"/owner/customers" as Route} className="text-sm font-semibold text-[#c9d3ea]">‹ Customers</Link>
         <h1 className="text-[28px] leading-tight font-extrabold mt-1" style={{ fontFamily: "var(--font-condensed)" }}>{title}</h1>

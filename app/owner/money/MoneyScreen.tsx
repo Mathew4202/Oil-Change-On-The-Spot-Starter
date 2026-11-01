@@ -146,7 +146,7 @@ export default function MoneyScreen() {
 
   const s = data?.summary;
   return (
-    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl mx-auto">
+    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto">
       <header className="sticky top-0 z-10 text-white px-4 pt-[max(14px,env(safe-area-inset-top))] pb-3" style={{ background: NAVY }}>
         <p className="text-sm text-[#c9d3ea] font-semibold">Profit, HST and the bank</p>
         <div className="flex items-end justify-between gap-2">

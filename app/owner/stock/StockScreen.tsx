@@ -61,7 +61,7 @@ export default function StockScreen() {
   const buying = toBuy.filter((b) => b.buy > 0);
 
   return (
-    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl mx-auto">
+    <div className="min-h-dvh flex flex-col bg-[#eef1f6] text-[#0d1b3e] max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto">
       <header className="sticky top-0 z-10 text-white px-4 pt-[max(14px,env(safe-area-inset-top))] pb-4" style={{ background: NAVY }}>
         <p className="text-sm text-[#c9d3ea] font-semibold">Filters and oil</p>
         <h1 className="text-[30px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>Stock</h1>
