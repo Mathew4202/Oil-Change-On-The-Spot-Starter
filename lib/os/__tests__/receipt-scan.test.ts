@@ -38,3 +38,14 @@ test("NAPA's 035 environmental fee goes onto the filter above it, not into stock
   assert.deepEqual(s.items.map((i) => [i.partNumber, i.lineTotal, i.unitPrice]), [["2100290", 6.38, 6.38], ["21358", 8.49, 8.49]]);
   assert.deepEqual(s.warnings, []);   // still adds up to the subtotal
 });
+
+test("gloves and shop towels are picked out, with the towels in each pack", async () => {
+  const { cleanScan } = await import("../receipt-scan.ts");
+  const s = cleanScan({ vendor: "Canadian Tire", date: "2026-11-01", total: 45.6, items: [
+    { description: "Nitrile Gloves L 100pk", qty: 2, unit_price: 14, category: "supply" },
+    { description: "Blue Shop Towels 55 sheets", qty: 3, unit_price: 4, category: "other" },
+    { description: "Shop towels", qty: 1, unit_price: 6, category: "shop_towels", units_per_pack: 200 },
+  ] })!;
+  assert.deepEqual(s.items.map((i) => [i.category, i.unitsPerPack ?? null]), [["gloves", null], ["shop_towels", 55], ["shop_towels", 200]]);
+  assert.equal(s.category, "supplies");
+});

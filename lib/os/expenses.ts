@@ -25,7 +25,10 @@ export async function photoLink(path: string): Promise<string | null> {
   return j.signedURL ? `${base()}/storage/v1${j.signedURL}` : null;
 }
 
-const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil"];
+const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "gloves", "shop_towels"];
+// supplies kept as one count each, whatever brand: gloves in boxes, shop towels in towels
+const SUPPLY: Record<string, { pn: string; unit: string; name: string }> = {
+  gloves: { pn: "GLOVES", unit: "box", name: "Gloves" }, shop_towels: { pn: "SHOP-TOWELS", unit: "towels", name: "Shop towels" } };
 const defaultBrand = (s: Scan, cat: string) =>
   s.supplier === "napa" && cat === "oil_filter" ? "NAPA ProFormer" : s.supplier === "napa" ? "NAPA" : s.supplier === "partsource" ? "PartSource" : s.vendor;
 
@@ -56,26 +59,27 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
   const stock: string[] = [], prices: string[] = [];
   for (const it of scan.items) {
     if (!STOCK_CATS.includes(it.category) || it.qty <= 0) continue;
-    const isOil = it.category === "oil";
+    const isOil = it.category === "oil", sup = SUPPLY[it.category];
     if (isOil && (!it.oilGrade || !it.litresPerUnit)) continue;                 // can't track oil without grade + size
-    if (!isOil && !it.partNumber) continue;                                     // filters etc. are tracked by part number
-    const partNumber = isOil ? `OIL-${it.oilGrade}` : it.partNumber!;
-    const brand = isOil ? (it.brand || scan.vendor) : it.brand || defaultBrand(scan, it.category);
-    const addQty = isOil ? r2(it.qty * it.litresPerUnit!) : it.qty;
-    const unitCostAfterTax = isOil ? r2((it.unitPrice * HST) / it.litresPerUnit!) : r2(it.unitPrice * HST);
+    if (!isOil && !sup && !it.partNumber) continue;                             // filters etc. are tracked by part number
+    const partNumber = isOil ? `OIL-${it.oilGrade}` : sup ? sup.pn : it.partNumber!;
+    const brand = sup ? "Shop" : isOil ? (it.brand || scan.vendor) : it.brand || defaultBrand(scan, it.category);
+    const perPack = it.category === "shop_towels" ? Math.max(1, it.unitsPerPack || 1) : 1;
+    const addQty = isOil ? r2(it.qty * it.litresPerUnit!) : r2(it.qty * perPack);
+    const unitCostAfterTax = isOil ? r2((it.unitPrice * HST) / it.litresPerUnit!) : r2((it.unitPrice * HST) / perPack);
 
     let [p] = await sbGet<{ id: string; on_hand: number }>(`parts?select=id,on_hand&part_number=eq.${enc(partNumber)}&order=on_hand.desc&limit=1`);
     if (!p) {
-      const made = await sbInsert<{ id: string; on_hand: number }>("parts", { part_number: partNumber, brand, description: it.description, category: it.category,
-        unit: isOil ? "L" : "each", litres_per_unit: it.litresPerUnit, oil_grade: it.oilGrade, on_hand: 0 });
+      const made = await sbInsert<{ id: string; on_hand: number }>("parts", { part_number: partNumber, brand, description: sup ? sup.name : it.description, category: it.category,
+        unit: isOil ? "L" : sup ? sup.unit : "each", litres_per_unit: it.litresPerUnit, oil_grade: it.oilGrade, on_hand: 0 });
       if (!made.ok) continue;
       p = made.data!;
     }
     await sbPatch("parts", `id=eq.${p.id}`, { on_hand: r2(Number(p.on_hand) + addQty) });
     await sbInsert("stock_moves", { part_id: p.id, qty: addQty, reason: "receipt", expense_id: exp.data!.id, unit_cost: unitCostAfterTax });
     await sbInsert("part_quotes", { part_id: p.id, supplier: scan.supplier, our_cost: unitCostAfterTax });
-    stock.push(isOil ? `+${addQty} L ${it.oilGrade}` : `+${it.qty} × ${partNumber}`);
-    prices.push(isOil ? `${it.oilGrade} now $${unitCostAfterTax.toFixed(2)}/L` : `${partNumber} now $${unitCostAfterTax.toFixed(2)}`);
+    stock.push(isOil ? `+${addQty} L ${it.oilGrade}` : sup ? `+${addQty} ${sup.unit === "box" ? (addQty === 1 ? "box" : "boxes") : "towels"} of ${sup.name.toLowerCase()}` : `+${it.qty} × ${partNumber}`);
+    prices.push(isOil ? `${it.oilGrade} now $${unitCostAfterTax.toFixed(2)}/L` : sup ? `${sup.name} now $${unitCostAfterTax.toFixed(2)} a ${sup.unit === "box" ? "box" : "towel"}` : `${partNumber} now $${unitCostAfterTax.toFixed(2)}`);
     if (isOil) {
       // The pricing engine uses this: what we actually pay per litre, after HST
       const grade = /euro|vw|504|507|229|ll-0/i.test(it.description) ? `Euro ${it.oilGrade}` : it.oilGrade!;

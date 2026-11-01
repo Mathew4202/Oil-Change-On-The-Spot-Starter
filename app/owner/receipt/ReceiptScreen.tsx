@@ -4,13 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import OwnerNav from "../OwnerNav";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
-type Item = { description: string; partNumber: string | null; brand: string | null; qty: number; unitPrice: number; lineTotal: number; category: string; litresPerUnit: number | null; oilGrade: string | null };
+type Item = { description: string; partNumber: string | null; brand: string | null; qty: number; unitPrice: number; lineTotal: number; category: string; litresPerUnit: number | null; oilGrade: string | null; unitsPerPack?: number | null };
 type Scan = { vendor: string; supplier: string; date: string | null; invoiceNo: string | null; subtotal: number | null; hst: number | null; total: number; paidWith: string; category: string; items: Item[]; warnings: string[] };
 type Exp = { id: string; vendor: string | null; description: string | null; total: number; hst: number | null; spent_at: string; category: string | null; paid_with: string | null; added_by: string | null };
 // what an expense counts as on the Money page
 const EXP_CATS: [string, string][] = [["oil", "Oil"], ["parts", "Filters and parts"], ["fuel", "Gas"], ["supplies", "Supplies and tools"], ["software", "Phone and software"],
   ["insurance", "Insurance"], ["fees", "Bank and card fees"], ["marketing", "Marketing"], ["truck", "Truck repairs"], ["other", "Other"]];
-const CATS: [string, string][] = [["oil_filter", "Oil filter"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine filter"], ["wiper", "Wipers"], ["battery", "Battery"], ["oil", "Oil"], ["fluid", "Fluid"], ["supply", "Supplies"], ["tool", "Tool"], ["fuel", "Gas"], ["other", "Other"]];
+const CATS: [string, string][] = [["oil_filter", "Oil filter"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine filter"], ["wiper", "Wipers"], ["battery", "Battery"], ["oil", "Oil"], ["fluid", "Fluid"], ["gloves", "Gloves (boxes)"], ["shop_towels", "Shop towels"], ["supply", "Supplies"], ["tool", "Tool"], ["fuel", "Gas"], ["other", "Other"]];
 const PAID: [string, string][] = [["card", "Card"], ["cash", "Cash"], ["on_account", "On account"], ["etransfer", "E-transfer"], ["unknown", "Not sure"]];
 const money = (n: number | null | undefined) => n == null ? "" : `$${Number(n).toFixed(2)}`;
 
@@ -140,6 +140,11 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
                     <label className="flex items-center gap-2 text-xs font-semibold text-[#4a5878] whitespace-nowrap">Each $
                       <DecimalInput value={it.unitPrice} onChange={(n) => updItem(i, { unitPrice: n ?? 0 })} className={field} style={{ borderColor: LINE }} /></label>
                   </div>
+                  {it.category === "shop_towels" && (
+                    <label className="text-xs font-semibold flex items-center gap-2">Towels in each pack or roll
+                      <DecimalInput value={it.unitsPerPack ?? null} onChange={(n) => updItem(i, { unitsPerPack: n })} className="h-9 w-20 rounded-lg border px-2" style={{ borderColor: LINE }} />
+                    </label>
+                  )}
                   {it.category === "oil" && (
                     <label className="text-xs font-semibold flex items-center gap-2">Litres per jug
                       <DecimalInput value={it.litresPerUnit} onChange={(n) => updItem(i, { litresPerUnit: n })} className="h-9 w-20 rounded-lg border px-2" style={{ borderColor: LINE }} />

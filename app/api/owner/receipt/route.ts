@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   if (body.action === "save") {
     const scan = cleanScan(body.scan ? { ...body.scan, paid_with: body.scan.paidWith, invoice_no: body.scan.invoiceNo,
       items: (body.scan.items || []).map((i: Record<string, unknown>) => ({ description: i.description, part_number: i.partNumber, brand: i.brand, qty: i.qty,
-        unit_price: i.unitPrice, line_total: i.lineTotal, category: i.category, litres_per_unit: i.litresPerUnit, oil_grade: i.oilGrade })) } : null);
+        unit_price: i.unitPrice, line_total: i.lineTotal, category: i.category, litres_per_unit: i.litresPerUnit, oil_grade: i.oilGrade, units_per_pack: i.unitsPerPack })) } : null);
     if (!scan) return NextResponse.json({ error: "Nothing to save" }, { status: 400 });
     const r = await saveExpense(scan, typeof body.photoPath === "string" ? body.photoPath : null, owner);
     return NextResponse.json(r, { status: r.ok ? 200 : 500 });

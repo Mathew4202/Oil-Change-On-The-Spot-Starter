@@ -34,7 +34,9 @@ export async function GET() {
   return NextResponse.json({ parts, toBuy, bookingsCounted: upcoming.length });
 }
 
-const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "other"];
+const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "gloves", "shop_towels", "other"];
+const SUPPLY: Record<string, { pn: string; unit: string; name: string }> = {
+  gloves: { pn: "GLOVES", unit: "box", name: "Gloves" }, shop_towels: { pn: "SHOP-TOWELS", unit: "towels", name: "Shop towels" } };
 
 /** Stock already on the shelf (or bought without a receipt): adds to the part if HQ knows it, otherwise adds the part. */
 async function addStock(b: Record<string, unknown>) {
@@ -42,15 +44,16 @@ async function addStock(b: Record<string, unknown>) {
   const isOil = category === "oil";
   const grade = isOil ? String(b.oilGrade || "").toUpperCase().replace(/\s+/g, "").replace(/^(\d+)W(\d+)$/, "$1W-$2") : null;
   if (isOil && !/^\d+W-\d+$/.test(grade || "")) return { ok: false, error: "Type the oil grade, like 0W-20" };
-  const partNumber = isOil ? `OIL-${grade}` : String(b.partNumber || "").trim().toUpperCase().replace(/^PPF\s*/, "").replace(/\s+/g, " ").slice(0, 30);
+  const sup = SUPPLY[category];
+  const partNumber = sup ? sup.pn : isOil ? `OIL-${grade}` : String(b.partNumber || "").trim().toUpperCase().replace(/^PPF\s*/, "").replace(/\s+/g, " ").slice(0, 30);
   if (!partNumber) return { ok: false, error: "Type the part number" };
   const qty = Math.round(Number(b.qty) * 100) / 100;
-  if (!(qty > 0 && qty <= 1000)) return { ok: false, error: isOil ? "How many litres?" : "How many?" };
+  if (!(qty > 0 && qty <= (sup ? 20000 : 1000))) return { ok: false, error: isOil ? "How many litres?" : "How many?" };
   const cost = b.unitCost == null || b.unitCost === "" ? null : Math.round(Number(b.unitCost) * 100) / 100;
   let [p] = await sbGet<Part>(`parts?select=id,on_hand&part_number=eq.${enc(partNumber)}&order=on_hand.desc&limit=1`);
   if (!p) {
-    const made = await sbInsert<Part>("parts", { part_number: partNumber, brand: String(b.brand || "").slice(0, 60) || (isOil ? null : "NAPA ProFormer"),
-      description: String(b.description || "").slice(0, 120) || (isOil ? `${grade} oil` : null), category, unit: isOil ? "L" : "each", oil_grade: grade, on_hand: 0 });
+    const made = await sbInsert<Part>("parts", { part_number: partNumber, brand: sup ? "Shop" : String(b.brand || "").slice(0, 60) || (isOil ? null : "NAPA ProFormer"),
+      description: sup ? sup.name : String(b.description || "").slice(0, 120) || (isOil ? `${grade} oil` : null), category, unit: isOil ? "L" : sup ? sup.unit : "each", oil_grade: grade, on_hand: 0 });
     if (!made.ok || !made.data) return { ok: false, error: "Couldn't add that part" };
     p = made.data;
   }

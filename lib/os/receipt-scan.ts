@@ -1,8 +1,9 @@
 // Read a receipt photo with Claude (vision) and turn it into clean data. The parsing/checking is pure (tested).
 export type ScanItem = {
   description: string; partNumber: string | null; brand: string | null; qty: number; unitPrice: number; lineTotal: number;
-  category: "oil_filter" | "cabin_filter" | "engine_filter" | "wiper" | "battery" | "oil" | "fluid" | "tool" | "supply" | "fuel" | "other";
+  category: "oil_filter" | "cabin_filter" | "engine_filter" | "wiper" | "battery" | "oil" | "fluid" | "tool" | "supply" | "gloves" | "shop_towels" | "fuel" | "other";
   litresPerUnit: number | null; oilGrade: string | null;
+  unitsPerPack?: number | null;   // shop towels: towels in each pack or roll
 };
 export type Scan = {
   vendor: string; supplier: "napa" | "partsource" | "westpier" | "eastcoast" | "other";
@@ -11,7 +12,7 @@ export type Scan = {
   warnings: string[]; currency?: "CAD" | "USD";
 };
 
-const CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "tool", "supply", "fuel", "other"] as const;
+const CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "tool", "supply", "gloves", "shop_towels", "fuel", "other"] as const;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: unknown) => { const n = typeof v === "string" ? Number(v.replace(/[$,\s]/g, "")) : Number(v); return Number.isFinite(n) ? n : null; };
 
@@ -23,6 +24,9 @@ export function supplierOf(vendor: string): Scan["supplier"] {
   if (/east\s*coast/.test(v)) return "eastcoast";
   return "other";
 }
+
+/** "200 CT", "50 sheets", "pack of 75" in a shop towel description → 200, 50, 75. */
+export const towelsIn = (d: string) => { const m = d.match(/(\d{2,4})\s*(ct|count|sheets?|towels?|pk|pcs?|\/roll)\b/i) ?? d.match(/(?:pack|box|roll) of (\d{2,4})/i); return m ? Number(m[1]) : null; };
 
 /** An environmental fee line (NAPA's "035 FILTERS LESS THAN 8IN", eco fees): part of the filter or item above it, not stock. */
 export const isFee = (i: Pick<ScanItem, "description" | "partNumber">) =>
@@ -54,13 +58,17 @@ export function cleanScan(raw: unknown): Scan | null {
     const qty = num(it.qty) ?? 1;
     const unit = num(it.unit_price) ?? (num(it.line_total) != null ? (num(it.line_total) as number) / (qty || 1) : 0);
     const line = num(it.line_total) ?? unit * qty;
-    const cat = CATS.includes(String(it.category) as never) ? (String(it.category) as ScanItem["category"]) : "other";
+    let cat = CATS.includes(String(it.category) as never) ? (String(it.category) as ScanItem["category"]) : "other";
+    const words = String(it.description ?? "");
+    if (/\bgloves?\b|nitrile/i.test(words)) cat = "gloves";
+    else if (/shop\s*towel|blue\s*towel|wypall|wipers? towel|paper towel/i.test(words)) cat = "shop_towels";
     const pn = it.part_number ? String(it.part_number).toUpperCase().replace(/^(PPF|NAPA|PFG)\s*/, "").replace(/[^A-Z0-9-]/g, "").slice(0, 20) || null : null;
     const grade = it.oil_grade ? String(it.oil_grade).toUpperCase().replace(/\s+/g, "").match(/^(\d{1,2})W-?(\d{1,2})$/) : null;
     return {
       description: String(it.description ?? "").trim().slice(0, 120) || "Item", partNumber: pn,
       brand: it.brand ? String(it.brand).trim().slice(0, 40) : null, qty: r2(qty), unitPrice: r2(unit), lineTotal: r2(line), category: cat,
       litresPerUnit: num(it.litres_per_unit), oilGrade: grade ? `${grade[1]}W-${grade[2]}` : null,
+      ...(cat === "shop_towels" ? { unitsPerPack: num(it.units_per_pack) ?? towelsIn(words) } : {}),
     };
   }).filter((i) => i.lineTotal !== 0 || i.description !== "Item");
   foldFees(items);
@@ -73,9 +81,10 @@ export function cleanScan(raw: unknown): Scan | null {
   if (hst != null && subtotal != null && subtotal > 0 && Math.abs(hst / subtotal - 0.14) > 0.01) warnings.push(`HST isn't 14% of the subtotal`);
   const date = typeof o.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.date) ? o.date : null;
   if (!date) warnings.push("Couldn't read the date");
+  for (const i of items) if (i.category === "shop_towels" && !i.unitsPerPack) warnings.push(`How many towels are in each pack of "${i.description}"? Type it in so the count is right`);
   const pw = String(o.paid_with ?? "unknown");
   const main = items.some((i) => i.category === "oil") ? "oil" : items.some((i) => /filter|wiper|battery/.test(i.category)) ? "parts"
-    : items.some((i) => i.category === "fuel") ? "gas" : items.some((i) => i.category === "tool") ? "tools" : items.some((i) => i.category === "supply" || i.category === "fluid") ? "supplies" : "other";
+    : items.some((i) => i.category === "fuel") ? "gas" : items.some((i) => i.category === "tool") ? "tools" : items.some((i) => ["supply", "fluid", "gloves", "shop_towels"].includes(i.category)) ? "supplies" : "other";
   return {
     vendor, supplier: supplierOf(vendor), date, invoiceNo: o.invoice_no ? String(o.invoice_no).slice(0, 40) : null,
     subtotal, hst, total, paidWith: (["card", "cash", "on_account", "etransfer"].includes(pw) ? pw : "unknown") as Scan["paidWith"],
@@ -88,9 +97,9 @@ Read it carefully. Reply with ONLY this JSON (no other text):
 {"vendor":"store name","date":"YYYY-MM-DD","invoice_no":"string or null","subtotal":0,"hst":0,"total":0,"currency":"CAD|USD",
  "paid_with":"card|cash|on_account|etransfer|unknown",
  "items":[{"description":"","part_number":"string or null","brand":"string or null","qty":1,"unit_price":0,"line_total":0,
-   "category":"oil_filter|cabin_filter|engine_filter|wiper|battery|oil|fluid|tool|supply|fuel|other",
-   "litres_per_unit":null,"oil_grade":null}]}
-Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". If something is unreadable use null.`;
+   "category":"oil_filter|cabin_filter|engine_filter|wiper|battery|oil|fluid|tool|supply|gloves|shop_towels|fuel|other",
+   "litres_per_unit":null,"oil_grade":null,"units_per_pack":null}]}
+Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". Disposable/nitrile gloves -> category "gloves", qty = number of boxes. Shop towels (blue towels, WypAll, rolls or boxes of wipes) -> category "shop_towels", qty = number of packs/rolls/boxes, units_per_pack = towels in each one (from "200 CT", "55 sheets" etc.). Environmental fee lines (e.g. NAPA "035 FILTERS LESS THAN 8IN") are their own items. "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". If something is unreadable use null.`;
 
 export async function scanReceipt(imageBase64: string, mediaType: string): Promise<{ scan: Scan | null; error?: string }> {
   const { askAI, aiLastError } = await import("@/lib/os/ai");   // loaded here so this file stays testable on its own
