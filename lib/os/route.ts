@@ -15,7 +15,7 @@ import { pushToOwners } from "@/lib/os/push";
 import { geocode } from "@/lib/os/geo";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-type DayRow = { id: string; starts_at: string; ends_at: string; address: string | null; status: string; pay_mode: string; group_id: string | null;
+type DayRow = { id: string; starts_at: string; ends_at: string; address: string | null; status: string; pay_mode: string; group_id: string | null; source?: string | null;
   customers: { id: string; first_name: string | null; phone: string | null; sms_opt_out: boolean | null; address: string | null } | null };
 // clock time in Halifax (minutes after midnight), so the day the clocks change still lines up with halifaxToDate
 const minutes = (iso: string, date: string) => {
@@ -27,7 +27,7 @@ const minutes = (iso: string, date: string) => {
 
 async function dayRows(date: string) {
   const from = halifaxToDate(date, 0).toISOString(), to = halifaxToDate(date, 24 * 60).toISOString();
-  return sbGet<DayRow>(`bookings?select=id,starts_at,ends_at,address,status,pay_mode,group_id,customers(id,first_name,phone,sms_opt_out,address)` +
+  return sbGet<DayRow>(`bookings?select=id,starts_at,ends_at,address,status,pay_mode,group_id,source,customers(id,first_name,phone,sms_opt_out,address)` +
     `&starts_at=gte.${from}&starts_at=lt.${to}&status=in.(requested,confirmed,in_progress)&order=starts_at`);
 }
 
@@ -65,7 +65,7 @@ export async function offerRouteMoves(date: string) {
     const pt = await geocode(r.address || r.customers?.address);
     if (!pt) continue;
     const end = r.group_id ? Math.max(...rows.filter((x) => x.group_id === r.group_id).map((x) => minutes(x.ends_at, date))) : minutes(r.ends_at, date);
-    const movable = !r.group_id && r.status === "confirmed" && r.pay_mode !== "fleet_invoice" && !!r.customers?.phone && !r.customers.sms_opt_out
+    const movable = !r.group_id && r.status === "confirmed" && r.source !== "square_import"   // Square's own bookings move in Square && r.pay_mode !== "fleet_invoice" && !!r.customers?.phone && !r.customers.sms_opt_out
       && !already.some((a) => a.booking_id === r.id);
     stops.push({ id: r.id, ...pt, start: minutes(r.starts_at, date), end, movable });
     byId.set(r.id, r);

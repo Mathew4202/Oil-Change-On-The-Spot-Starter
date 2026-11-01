@@ -6,6 +6,7 @@ import { attachUpcoming } from "@/lib/os/spec-learn";
 import { offerRouteMoves, closeRouteOffers } from "@/lib/os/route";
 import { fillSlowDay } from "@/lib/os/fill-ins";
 import { backupNow } from "@/lib/os/backup";
+import { syncSquare, squareReady } from "@/lib/os/square-sync";
 import { chargeLateBills } from "@/lib/os/bills";
 import { NextRequest, NextResponse } from "next/server";
 import { sbGet, sbPatch, sbDelete } from "@/lib/os/db";
@@ -36,7 +37,8 @@ export async function GET(req: NextRequest) {
   const tomorrows = await sbGet<{ id: string; starts_at: string; address: string | null; manage_token: string | null; customers: Who | null;
     vehicles: { year: number | null; make: string | null; model: string | null } | null }>(
     `bookings?select=id,starts_at,address,manage_token,customers(id,first_name,phone,sms_opt_out),vehicles(year,make,model)` +
-    `&status=in.(confirmed,requested)&reminder_sent_at=is.null&starts_at=gte.${from}&starts_at=lt.${to}`);
+    `&status=in.(confirmed,requested)&reminder_sent_at=is.null&starts_at=gte.${from}&starts_at=lt.${to}` +
+    `&or=(source.is.null,source.neq.square_import)`);   // booked in Square: Square reminds them (HQ can't move a Square booking)
   for (const b of tomorrows) {
     const car = [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model].filter(Boolean).join(" ") || "car";
     const r = await textCustomer("day_before", b.customers, { time: timeOnly(b.starts_at), car, address: b.address || "your address",
@@ -76,12 +78,14 @@ export async function GET(req: NextRequest) {
   };
   // 4e) Two days out with open times: text a few customers coming due who live near the jobs already booked
   const fillIns = await fillSlowDay(addDays(today, 2), today).catch((e) => ({ texted: 0, note: String(e).slice(0, 120) }));
+  // 4e2) Until the switchover: appointments and customers booked in Square come into HQ
+  const square = squareReady() ? await syncSquare(new Date(Date.now() - 3 * 86400000), new Date(Date.now() + 60 * 86400000)).catch((e) => ({ ok: false, note: String(e).slice(0, 120) })) : null;
   // 4f) Sunday evening: email a backup of everything to the business inbox
   const backup = new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax", weekday: "short" }) === "Sun" || req.nextUrl.searchParams.get("backup") === "1"
     ? await backupNow().catch((e) => ({ sent: false, reason: String(e).slice(0, 120) })) : null;
   // 5) What Quo sent us is only kept two weeks
   await sbDelete("webhook_log", `at=lt.${new Date(Date.now() - 14 * 86400000).toISOString()}`).catch(() => null);
-  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached, route, late, fillIns, backup });
+  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached, route, late, fillIns, backup, square });
 }
 
 function addDays(d: string, n: number) { const [y, m, dd] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); }

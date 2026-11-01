@@ -27,6 +27,25 @@ const CATS: [string, string][] = [["fuel", "Gas"], ["parts", "Filters and parts"
 const KIND_NAME: Record<string, string> = { receipt: "Receipt", napa_account: "NAPA account", payment: "Customer e-transfer", card_payout: "Card sales payout", bank_fee: "Bank fee",
   transfer: "Transfer", expense_no_receipt: "Added, no receipt", personal: "Not business", money_in: "Money in" };
 
+/** Owners: until the switchover, appointments booked in Square come into HQ every evening; this pulls them now. */
+function SquareCard() {
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(""); const [ok, setOk] = useState(true);
+  async function go() {
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/owner/square-sync", { method: "POST" }).then((x) => x.json()).catch(() => ({ ok: false }));
+    setBusy(false); setOk(!!r.ok);
+    setMsg(r.ok ? `Done: ${r.bookings.added} new appointment${r.bookings.added === 1 ? "" : "s"}, ${r.bookings.updated} updated, ${r.customers.added} new customer${r.customers.added === 1 ? "" : "s"}${r.customers.linked ? `, ${r.customers.linked} matched to customers already here` : ""}.` : r.note || r.error || "Couldn't reach Square. Try again in a minute.");
+  }
+  return (
+    <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
+      <h2 className="font-extrabold text-lg">Square</h2>
+      <p className="text-sm" style={{ color: MUTED }}>Until you switch over, appointments and customers you add in Square come into HQ every evening by themselves. HQ shows them on the calendar but leaves the reminder texts to Square, and moves or cancels for them happen in Square.</p>
+      <button onClick={go} disabled={busy} className="h-11 rounded-xl border font-bold disabled:opacity-60" style={{ borderColor: LINE }}>{busy ? "Pulling from Square…" : "Pull from Square now"}</button>
+      {msg && <p className="text-sm font-semibold" style={{ color: ok ? GOOD : BAD }} role="status">{msg}</p>}
+    </section>
+  );
+}
+
 /** Owners: the weekly backup email, and a button to send one now. */
 function BackupCard() {
   const [state, setState] = useState<"idle" | "busy" | "sent" | "failed">("idle"); const [msg, setMsg] = useState("");
@@ -189,6 +208,7 @@ export default function MoneyScreen() {
             )}
 
             <BankSection status={data.bank} lines={bank.needsLook} recent={bank.recent} reload={() => { loadBank(); load(); }} />
+            {can.team && <SquareCard />}
             {can.team && <BackupCard />}
           </>
         )}

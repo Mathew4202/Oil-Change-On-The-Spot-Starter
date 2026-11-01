@@ -1,15 +1,18 @@
--- Remove everything made while testing HQ (see 0038 for the preview). Real customers, their phone numbers, cars and
--- future bookings stay; so do logins, settings, wordings, oil specs and prices.
+-- Remove everything made while testing HQ (see 0038 for the preview). Customers from Square and the sheet, their cars
+-- and Square's appointments stay; so do logins, settings, wordings, oil specs and prices.
 create temp table x_cust on commit drop as
   select id from customers
   where source = 'test' or phone like '+1902555%' or email ilike '%@example.%'
      or first_name ilike 'test' or last_name ilike 'test' or first_name ilike 'test %' or last_name ilike '% test'
-     or fleet_account_id in (select id from fleet_accounts where business_name ilike '%test%');
-create temp table x_fleet on commit drop as select id from fleet_accounts where business_name ilike '%test%';
+     or fleet_account_id in (select id from fleet_accounts where (business_name ilike '%test%' or business_name ilike '%parker%plumb%'))
+     -- not switched over yet: customers made in HQ (website, phone or fleet bookings) are tests; real ones come from Square or the sheet
+     or (square_customer_id is null and coalesce(source, '') in ('website', 'phone', 'fleet', ''));
+create temp table x_fleet on commit drop as select id from fleet_accounts where (business_name ilike '%test%' or business_name ilike '%parker%plumb%');
 create temp table x_jobs on commit drop as
   select id from jobs where imported_from is null or imported_from = 'test' or customer_id in (select id from x_cust);
 create temp table x_book on commit drop as
-  select id from bookings where (starts_at < now() and coalesce(source,'') <> 'square_import')
+  -- not switched over yet: every booking made in HQ is a test (Square's come back with the Square sync)
+  select id from bookings where coalesce(source,'') <> 'square_import'
      or customer_id in (select id from x_cust) or fleet_account_id in (select id from x_fleet);
 create temp table x_exp on commit drop as
   select id from expenses where coalesce(source, '') not in ('expense_tracker', 'job_tracker_costs');
@@ -42,7 +45,8 @@ delete from route_offers;
 delete from notifications;
 
 -- test customers and fleets
-delete from calls where customer_id in (select id from x_cust) or phone like '+1902555%';
+delete from calls where phone like '+1902555%';
+update calls set customer_id = null where customer_id in (select id from x_cust);   -- real callers' calls stay
 delete from plans where customer_id in (select id from x_cust);
 update customers set referred_by = null where referred_by in (select id from x_cust);
 delete from invoices where fleet_account_id in (select id from x_fleet);
