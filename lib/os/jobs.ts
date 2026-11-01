@@ -140,6 +140,9 @@ export async function finishJob(input: FinishInput, owner: string) {
     await sbInsert("stock_moves", { part_id: filterId, qty: -used, reason: "job", job_id: job.data!.id });
   }
 
+  // Gloves and shop towels used on every car (pricing rules: gloves_per_car 2, gloves_per_box 100, towels_per_car 2)
+  await useSupplies(ctx.booking.cars || 1, rules, job.data!.id).catch(() => null);
+
   // Paid online when they booked? Only the difference (if anything was added on site) is still owed.
   const prepaid = r2((await sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${ctx.booking.id}`)).reduce((t, p) => t + Number(p.amount), 0));
   const tip = input.tip ?? 0;
@@ -256,4 +259,18 @@ export async function sendReceipt(jobId: string, emailOverride: string | null): 
   } catch (e) { return { sent: false, reason: String(e).slice(0, 120) }; }
   await sbPatch("jobs", `id=eq.${r.jobId}`, { receipt_sent_at: new Date().toISOString() });
   return { sent: true };
+}
+
+/** Take the gloves (counted in boxes) and shop towels a visit uses off the shelf. Never below zero; nothing if they aren't in stock yet. */
+async function useSupplies(cars: number, rules: Record<string, number | undefined>, jobId: string) {
+  const perBox = rules.gloves_per_box || 100;
+  const use: [string, number][] = [["GLOVES", ((rules.gloves_per_car ?? 2) * cars) / perBox], ["SHOP-TOWELS", (rules.towels_per_car ?? 2) * cars]];
+  for (const [pn, n] of use) {
+    if (!(n > 0)) continue;
+    const [p] = await sbGet<{ id: string; on_hand: number }>(`parts?select=id,on_hand&part_number=eq.${pn}&order=on_hand.desc&limit=1`);
+    if (!p || Number(p.on_hand) <= 0) continue;
+    const used = Math.min(Number(p.on_hand), Math.round(n * 100) / 100);
+    await sbPatch("parts", `id=eq.${p.id}`, { on_hand: Math.round((Number(p.on_hand) - used) * 100) / 100 });
+    await sbInsert("stock_moves", { part_id: p.id, qty: -used, reason: "job", job_id: jobId });
+  }
 }
