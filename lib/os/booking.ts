@@ -2,7 +2,7 @@
 import { payAtBooking } from "@/lib/os/payments";
 import crypto from "crypto";
 import { vinOk, cleanVin } from "@/lib/os/vin";
-import { holdByToken, holdIsLive, useHold } from "@/lib/os/holds";
+import { holdByToken, holdIsLive, useHold as claimHold } from "@/lib/os/holds";
 import { planFor } from "@/lib/os/plans";
 import { applyPlan } from "@/lib/os/plan-cover";
 import { decodeVin } from "@/lib/os/vin-photo";
@@ -91,7 +91,7 @@ export async function createBooking(bIn: BookingInput, opts: Opts): Promise<Book
     b = { ...b, notes: [b.notes, `Time held on the phone by ${hold.created_by ? hold.created_by[0].toUpperCase() + hold.created_by.slice(1) : "us"}`].filter(Boolean).join(" · ") };
   }
   const r = await createBookingInner(b, opts);
-  if (r.ok && hold && b.holdToken) await useHold(b.holdToken, r.bookingId);
+  if (r.ok && hold && b.holdToken) await claimHold(b.holdToken, r.bookingId);
   return r;
 }
 
