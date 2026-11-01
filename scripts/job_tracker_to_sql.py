@@ -122,8 +122,8 @@ for r in wb['Expense Tracker'].iter_rows(min_row=2, values_only=True):
 # Claimable back from CRA only on things bought from Canadian businesses that charge HST.
 # No HST on: insurance, bank/card fees, fines, and online ads/software from foreign platforms (not claimable).
 TAXED_CATS = ('oil', 'filter', 'gas', 'fuel', 'suppl', 'tool', 'part')
-TAXED_WORDS = re.compile(r'repair|decal|golf|gasket|funnel|wrench|glove|absorb|carpet|towel|arranger|battery|sckt|socket|tire|mechanic', re.I)
-NO_HST = re.compile(r'insur|bmo|bank|fee|elavon|square|parking|ticket|fine|google|facebook|instagram|tiktok|meta|website|anthropic|claude', re.I)
+TAXED_WORDS = re.compile(r'anthrop|claude|repair|decal|golf|gasket|funnel|wrench|glove|absorb|carpet|towel|arranger|battery|sckt|socket|tire|mechanic', re.I)
+NO_HST = re.compile(r'insur|bmo|bank|fee|elavon|square|parking|ticket|fine|google|facebook|instagram|tiktok|meta|website', re.I)
 def hst_in(e):
     c, item = str(e['cat'] or '').lower(), str(e['item'] or '')
     if NO_HST.search(item) or 'insur' in c: return 0
