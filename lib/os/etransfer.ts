@@ -1,6 +1,6 @@
 // An Interac e-Transfer email came in (forwarded by the Google script in the business Gmail): match it to the bill it pays,
 // mark it paid by e-transfer (anything over what was owed is a tip), send the receipt, and tell the owners.
-import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
+import { sbGet, sbInsert, enc } from "@/lib/os/db";
 import { parseInterac, nameMatches } from "@/lib/os/etransfer-parse";
 import { pushToOwners } from "@/lib/os/push";
 
