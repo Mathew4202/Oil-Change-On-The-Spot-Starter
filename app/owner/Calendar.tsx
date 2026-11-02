@@ -18,7 +18,8 @@ type Job = {
     checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterCost?: number | null; filterNote?: string | null } | null;
   partNos?: string[];
   lastTime?: { now: string[]; soon: string[]; note: string | null } | null;
-  groupId?: string | null;   // several cars on one visit   // what we flagged on this car last visit
+  groupId?: string | null;   // several cars on one visit
+  actual?: boolean;           // profit is what the finished job made, not an estimate   // what we flagged on this car last visit
   lines: { label: string; amount: number }[]; total: number | null; profit: number | null; costs?: { subtotal: number; litres: number; perL: number; oil: number; filter: number; filterGuess: boolean; supplies: number; grade: string } | null;
   notes: string | null; checks: string[]; imported: boolean; photos?: string[]; vin?: string | null; vinCar?: string | null; job?: string; addons?: string[];
 };
@@ -232,11 +233,11 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
           const many = members.length > 1;
           const j: Job = many ? (() => {
             const nextUp = members.find((m) => m.status !== "done") ?? members[members.length - 1];
-            const sumN = (f: (m: Job) => number | null | undefined) => members.every((m) => f(m) == null) ? null : Math.round(members.reduce((t, m) => t + (f(m) ?? 0), 0) * 100) / 100;
+            const sumN = (f: (m: Job) => number | null | undefined) => members.some((m) => f(m) == null) ? null : Math.round(members.reduce((t, m) => t + (f(m) ?? 0), 0) * 100) / 100;
             return { ...nextUp, start: first.start, car: members.map((m) => m.car).filter(Boolean).join(" + "), cars: members.length,
               status: members.every((m) => m.status === "done") ? "done" : members.some((m) => m.status === "in_progress" || m.status === "done") ? "in_progress" : nextUp.status,
               paid: members.every((m) => m.paid), lines: members.flatMap((m) => m.lines.map((l) => ({ ...l, label: `${m.car || "Car"}: ${l.label}` }))),
-              total: sumN((m) => m.total), profit: sumN((m) => m.profit), finalTotal: sumN((m) => m.finalTotal), costs: null };
+              total: sumN((m) => m.total), profit: sumN((m) => m.profit), finalTotal: sumN((m) => m.finalTotal), costs: null, actual: members.every((m) => m.actual) };
           })() : first;
           const expanded = open === j.id;
           const paid = j.payMode === "online";
@@ -309,8 +310,9 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 <div className="border-t border-[#eef1f6] pt-2 flex flex-col gap-1 text-[15px]">
                   {j.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>{money(l.amount)}</span></div>)}
                   {j.total != null && <div className="flex justify-between font-bold"><span>Total with HST</span><span>{money(j.total)}</span></div>}
-                  {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>Est. profit</span><span>{money(j.profit)}</span></div>}
-                  {j.profit != null && (j.costs
+                  {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>{j.actual ? "Profit" : "Est. profit"}</span><span>{money(j.profit)}</span></div>}
+                  {j.profit != null && j.actual && <p className="text-xs text-[#4a5878]">What the job made: the price before HST, less the oil, filter and parts you used (at what you paid), $1 of supplies{day?.gasPerJob ? ` and about ${money(day.gasPerJob * (j.cars || 1))} of gas` : ""}.</p>}
+                  {j.profit != null && !j.actual && (j.costs
                     ? <p className="text-xs text-[#4a5878]">Takes off: oil {money(j.costs.oil)} ({j.costs.litres} L {j.costs.grade} at {money(j.costs.perL)}/L), filter {money(j.costs.filter)}{j.costs.filterGuess ? " (a guess, no filter price on file)" : ""}, supplies {money(j.costs.supplies)}{day?.gasPerJob ? `, gas about ${money(day.gasPerJob * (j.cars || 1))} (last 60 days of gas receipts)` : ""}. Prices are what we last paid, after HST.</p>
                     : <p className="text-xs text-[#4a5878]">After the oil and filter at what we last paid, $1 of supplies{day?.gasPerJob ? ` and about ${money(day.gasPerJob)} of gas (from the last 60 days of gas receipts)` : ""}.</p>)}
                   {j.notes && <p className="text-[#4a5878] mt-1">Note: {j.notes}</p>}

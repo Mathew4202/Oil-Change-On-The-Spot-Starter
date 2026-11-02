@@ -102,11 +102,12 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
       extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined, customerNote: custNote.trim() || undefined,
       payMethod: pay && pay !== "bill" ? pay : null, tip: pay && pay !== "bill" && Number(tip) > 0 ? Number(tip) : null, email: email.trim() || null, sendReceipt: true, bill: pay === "bill",
     });
-    if (j?.partial) { setNext({ id: j.nextBookingId, car: j.nextCar, left: j.carsLeft }); setResult(`Car done (${money(j.total)}). Next: ${j.nextCar}. Payment, the receipt and the texts come after the last car.`); return; }
+    const stockLine = (j?.stock ?? []).length ? ` Stock: ${j.stock.join(". ")}.` : "";
+    if (j?.partial) { setNext({ id: j.nextBookingId, car: j.nextCar, left: j.carsLeft }); setResult(`Car done (${money(j.total)}). Next: ${j.nextCar}. Payment, the receipt and the texts come after the last car.${stockLine}`); return; }
     const paidLine = j?.prepaid > 0 ? (j.refund > 0 ? `, paid online. They paid ${money(j.refund)} too much, refund it in Converge` : balance > 0 && !pay ? `, ${money(balance)} still owed` : ", paid online") : pay ? ", paid" : ", not paid yet";
     const billLine = pay === "bill" ? ` Bill sent: ${[j?.receipt?.sent ? "emailed" : null, j?.billText?.sent ? "texted the pay link" : null].filter(Boolean).join(" and ") || "nothing went out (no email or texts on file), send the pay link from the job later"}. It's marked paid by itself when they pay online, or when the e-transfer shows on the bank statement.` : "";
     if (j) setResult(`Job done${j.cars > 1 ? ` (${j.cars} cars)` : ""}. Receipt #${j.receiptNo}, ${money(j.total)}${pay === "bill" ? ", not paid yet." + billLine : paidLine + "." + receiptMsg(j.receipt)}${
-      j.reviewText ? (j.reviewText.sent ? " Review text sent." : j.reviewText.status === "not_set_up" ? " Review text not sent (texting isn't set up yet)." : " Review text failed, check the number.") : ""}`);
+      j.reviewText ? (j.reviewText.sent ? " Review text sent." : j.reviewText.status === "not_set_up" ? " Review text not sent (texting isn't set up yet)." : " Review text failed, check the number.") : ""}${stockLine}`);
   }
   async function markPaid() {
     if (!pay) return setErr("Pick how they paid");

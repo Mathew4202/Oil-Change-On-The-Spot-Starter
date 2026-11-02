@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 type Row = {
   id: string; starts_at: string; ends_at: string; status: string; pay_mode: string; address: string | null; paid_at: string | null;
-  jobs: { receipt_no: number | null; total: number | null }[] | null;
+  jobs: { receipt_no: number | null; total: number | null; subtotal?: number | null; cost_oil?: number | null; cost_parts?: number | null; cost_other?: number | null }[] | null;
   quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; profit?: number | null } | null; needs_review: string[] | null; notes: string | null; cars: number; vehicle_id?: string | null; group_id?: string | null;
   services: { job?: string; own?: "both" | "oil" | "filter" | null; addons?: string[] } | null; source: string | null;
   customers: { first_name: string | null; last_name: string | null; phone: string | null; address: string | null } | null;
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "bad date" }, { status: 400 });
   const from = halifaxToDate(date, 0).toISOString(), to = halifaxToDate(date, 24 * 60).toISOString();
 
-  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,vehicle_id,group_id,` +
+  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total,subtotal,cost_oil,cost_parts,cost_other),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,vehicle_id,group_id,` +
       `customers(first_name,last_name,phone,address),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,verified,source,confidence${extra}))` +
       `&starts_at=gte.${from}&starts_at=lt.${to}&status=neq.cancelled&order=starts_at`);
   // everything that only needs the date goes out at once (each trip to the database is a wait, so never one after another)
@@ -117,8 +117,15 @@ export async function GET(req: NextRequest) {
         s.wiper_driver || s.wiper_passenger ? `Wipers ${[s.wiper_driver && `driver ${s.wiper_driver}`, s.wiper_passenger && `passenger ${s.wiper_passenger}`].filter(Boolean).join(", ")}` : null].filter(Boolean) as string[] : [],
       lines: r.quote_breakdown?.lines ?? [], total: r.quoted_total != null ? Number(r.quoted_total) : null,
       // plain oil changes: worked out live from today's oil and filter prices; with add-ons, the profit the quote worked out
-      ...(() => { const c = costsOf(r, s); const live = !(r.services?.addons ?? []).length ? estimate(c) : null;
-        return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? estimate(c), r) : null, costs: money && live != null ? c : null }; })(), notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
+      ...(() => {
+        // finished: what it actually made (the oil, filter and parts recorded on the job), not an estimate
+        const done = r.jobs?.[0];
+        if (done && done.subtotal != null) {
+          const made = Math.round((Number(done.subtotal) - Number(done.cost_oil ?? 0) - Number(done.cost_parts ?? 0) - Number(done.cost_other ?? 0)) * 100) / 100;
+          return { profit: money ? afterGas(made, r) : null, costs: null, actual: true };
+        }
+        const c = costsOf(r, s); const live = !(r.services?.addons ?? []).length ? estimate(c) : null;
+        return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? estimate(c), r) : null, costs: money && live != null ? c : null, actual: false }; })(), notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       lastTime: lastTimeFor(r),
       groupId: r.pay_mode !== "fleet_invoice" ? r.group_id ?? null : null,   // several cars on one visit: one card in HQ
       vin: (r.services as { vin?: string } | null)?.vin ?? null, vinCar: (r.services as { vinCar?: string } | null)?.vinCar ?? null,

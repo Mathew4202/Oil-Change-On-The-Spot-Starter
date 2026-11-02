@@ -175,11 +175,25 @@ export async function finishJob(input: FinishInput, owner: string) {
   if (withOil && ctx.vehicle && own !== "both") await learnFromJob({ ...ctx.vehicle, engine }, { grade, litres, filter: filterPart, cars: ctx.booking.cars || 1 }).catch(() => null);
   if (input.email && ctx.customer && !ctx.customer.email) await sbPatch("customers", `id=eq.${ctx.customer.id}`, { email: input.email.trim().toLowerCase() });
 
-  // Stock: one filter per car comes off the shelf if we had it
-  if (filterId && filterOnHand > 0) {
-    const used = Math.min(filterOnHand, ctx.booking.cars || 1);
-    await sbPatch("parts", `id=eq.${filterId}`, { on_hand: filterOnHand - used });
-    await sbInsert("stock_moves", { part_id: filterId, qty: -used, reason: "job", job_id: job.data!.id });
+  // Stock: the filter and the oil we used come off the shelf (never below zero). Say what didn't, so it's never a silent miss.
+  const stock: string[] = [];
+  if (withOil && filterPart && own !== "both" && own !== "filter") {
+    if (filterId && filterOnHand > 0) {
+      const used = Math.min(filterOnHand, ctx.booking.cars || 1);
+      await sbPatch("parts", `id=eq.${filterId}`, { on_hand: filterOnHand - used });
+      await sbInsert("stock_moves", { part_id: filterId, qty: -used, reason: "job", job_id: job.data!.id });
+      stock.push(`Filter ${filterPart}: ${filterOnHand - used} left`);
+    } else stock.push(filterId ? `Filter ${filterPart} was at 0 in Stock, so nothing came off (snap the NAPA receipt to add it)` : `Filter ${filterPart} isn't in Stock yet (snap the NAPA receipt to add it)`);
+  }
+  if (withOil && grade && litres && own !== "both" && own !== "oil") {
+    const pn = `OIL-${grade.replace(/^Euro /i, "").toUpperCase()}`;
+    const [o] = await sbGet<{ id: string; on_hand: number }>(`parts?select=id,on_hand&part_number=eq.${enc(pn)}&order=on_hand.desc&limit=1`).catch(() => []);
+    if (o && Number(o.on_hand) > 0) {
+      const used = r2(Math.min(Number(o.on_hand), litres));
+      await sbPatch("parts", `id=eq.${o.id}`, { on_hand: r2(Number(o.on_hand) - used) });
+      await sbInsert("stock_moves", { part_id: o.id, qty: -used, reason: "job", job_id: job.data!.id });
+      stock.push(`${grade}: ${r2(Number(o.on_hand) - used)} L left`);
+    } else stock.push(`${grade} oil isn't in Stock (or is at 0), so nothing came off`);
   }
 
   // Gloves and shop towels used on every car (pricing rules: gloves_per_car 2, gloves_per_box 100, towels_per_car 2)
@@ -190,7 +204,7 @@ export async function finishJob(input: FinishInput, owner: string) {
   const others = visit.filter((c) => c.bookingId !== ctx.booking.id);
   const nextCar = others.find((c) => !c.job);
   if (nextCar) return { ok: true as const, jobId: job.data!.id, receiptNo, total, prepaid: 0, refund: 0, receipt: { sent: false, reason: "after the last car" }, reviewText: null, billText: null,
-    profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)), partial: true, nextBookingId: nextCar.bookingId, nextCar: nextCar.car, carsLeft: others.filter((c) => !c.job).length };
+    profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)), stock, partial: true, nextBookingId: nextCar.bookingId, nextCar: nextCar.car, carsLeft: others.filter((c) => !c.job).length };
   const othersOwed = r2(others.reduce((t, c) => t + owedOn(c), 0));
 
   // Paid online when they booked? Only the difference (if anything was added on site) is still owed.
@@ -233,7 +247,7 @@ export async function finishJob(input: FinishInput, owner: string) {
     billText = ctx.customer ? await textCustomer("bill_sent", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }, ctx.booking.id)
       .then((x) => (x.status === "template_off" && body ? sendSms(ctx.customer!.phone || "", fill(body, { first_name: ctx.customer!.first_name?.trim() || "there", total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }), { kind: "bill_sent", customerId: ctx.customer!.id, bookingId: ctx.booking.id }) : x)).catch(() => null) : null;
   }
-  return { ok: true as const, jobId: job.data!.id, receiptNo, total: r2(total + others.reduce((t, c) => t + Number(c.job?.total ?? 0), 0)), cars: visit.length || 1, prepaid, refund, receipt, reviewText, billText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
+  return { ok: true as const, jobId: job.data!.id, receiptNo, total: r2(total + others.reduce((t, c) => t + Number(c.job?.total ?? 0), 0)), cars: visit.length || 1, stock, prepaid, refund, receipt, reviewText, billText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
 }
 
 /** amount = the receipt total (with HST). A tip is added on top: it's income, but it never gets HST. */
