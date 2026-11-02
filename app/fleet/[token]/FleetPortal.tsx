@@ -10,9 +10,10 @@ const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878";
 type Due = { state: "ok" | "soon" | "due" | "booked" | "new"; date: string | null };
 type Checks = { now: string[]; soon: string[]; ok: string[] } | null;
 type Vehicle = { id: string; unit: string | null; car: string; engine: string | null; plate: string | null; vin: string | null; price: number | null;
+  year?: number | null; make?: string | null; model?: string | null;
   lastService: string | null; lastKm: number | null; booked: string | null; due: Due; checks?: Checks };
 type Data = {
-  account: { name: string; contact: string | null; address: string | null; billing: string; terms: number; every: number };
+  account: { name: string; contact: string | null; phone?: string | null; email?: string | null; invoiceEmail?: string | null; address: string | null; billing: string; terms: number; every: number };
   vehicles: Vehicle[]; upcoming: { id: string; at: string; vehicle: string | null }[];
   history: { date: string; vehicle: string | null; km: number | null; work: string | null; total: number; invoiced: boolean; checks?: Checks }[];
   invoices: { no: number; link: string; issued: string; due: string | null; total: number; status: string; overdue: boolean }[]; owing: number; error?: string;
@@ -39,6 +40,8 @@ export default function FleetPortal({ token }: { token: string }) {
   const [tab, setTab] = useState<"history" | "invoices">("invoices");
   const [bulk, setBulk] = useState(false);
   const [slotTick, setSlotTick] = useState(0);
+  const [where, setWhere] = useState<string | null>(null);   // null = their yard address
+  const [editV, setEditV] = useState<string | null>(null);
   useEffect(() => { const t = setInterval(() => setSlotTick((n) => n + 1), 60000); return () => clearInterval(t); }, []);   // keeps the open times fresh
 
   const load = () => fetch(`/api/os/fleet-portal?t=${encodeURIComponent(token)}`, { cache: "no-store" }).then((r) => r.json())
@@ -63,12 +66,17 @@ export default function FleetPortal({ token }: { token: string }) {
   async function book() {
     setBookErr(""); if (!pick.length) return setBookErr("Tick the vehicles you want done."); if (!start) return setBookErr("Pick a start time.");
     setBusy(true);
-    const r = await fetch("/api/os/fleet-portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, action: "book", vehicleIds: pick, start, note }) });
+    const r = await fetch("/api/os/fleet-portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, action: "book", vehicleIds: pick, start, note, ...(where?.trim() ? { address: where.trim() } : {}) }) });
     const j = await r.json().catch(() => ({})); setBusy(false);
     if (!r.ok || !j.ok) { setSlotTick((n) => n + 1); return setBookErr(j.error || "Couldn't book. Call or text us."); }
     setMsg(`Booked: ${pick.length} vehicle${pick.length > 1 ? "s" : ""} on ${at(start)}. We'll text you a confirmation and a reminder the day before.`);
-    setPick([]); setNote(""); setStart(""); load(); window.scrollTo({ top: 0, behavior: "smooth" });
+    setPick([]); setNote(""); setStart(""); setWhere(null); load(); window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  const post = async (body: Record<string, unknown>) => {
+    const r = await fetch("/api/os/fleet-portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ t: token, ...body }) });
+    return r.json().catch(() => ({ error: "Couldn't save. Check your connection." }));
+  };
 
   async function addVehicle() {
     setAddErr(""); setBusy(true);
@@ -119,6 +127,8 @@ export default function FleetPortal({ token }: { token: string }) {
           <div className="flex flex-col gap-2">
             {d.vehicles.map((v) => {
               const on = pick.includes(v.id), s = DUE[v.due.state];
+              if (editV === v.id) return <VehicleEdit key={v.id} v={v} field={field} onCancel={() => setEditV(null)}
+                onSave={async (f) => { const j = await post({ action: "editVehicle", vehicleId: v.id, vehicle: f }); if (!j.ok) return j.error || "Couldn't save."; setEditV(null); setMsg(f.remove ? "Vehicle removed from your list." : "Vehicle updated."); load(); return null; }} />;
               return (
                 <label key={v.id} className="flex items-start gap-3 rounded-xl border p-3 cursor-pointer" style={{ borderColor: on ? NAVY : LINE, borderWidth: on ? 2 : 1, background: on ? "#fff6dd" : "#fff" }}>
                   <input type="checkbox" checked={on} disabled={v.due.state === "booked"} onChange={() => setPick((p) => on ? p.filter((x) => x !== v.id) : [...p, v.id])} className="mt-1 w-5 h-5 accent-[#0d1b3e]" />
@@ -128,7 +138,10 @@ export default function FleetPortal({ token }: { token: string }) {
                     {s.text(v) && <span className="inline-block mt-1 text-[12px] font-bold rounded-full px-2 py-0.5" style={{ background: s.bg, color: s.fg }}>{s.text(v)}</span>}
                     <CheckLine c={v.checks} />
                   </span>
-                  {v.price != null && <span className="text-sm font-bold whitespace-nowrap text-right">{money(v.price)}<span className="block text-[11px] font-semibold" style={{ color: MUTED }}>+ HST</span></span>}
+                  <span className="flex flex-col items-end gap-1 shrink-0">
+                    {v.price != null && <span className="text-sm font-bold whitespace-nowrap text-right">{money(v.price)}<span className="block text-[11px] font-semibold" style={{ color: MUTED }}>+ HST</span></span>}
+                    <button type="button" onClick={(e) => { e.preventDefault(); setEditV(editV === v.id ? null : v.id); }} className="h-8 px-3 rounded-lg border text-sm font-bold bg-white" style={{ borderColor: LINE }}>Edit</button>
+                  </span>
                 </label>
               );
             })}
@@ -143,6 +156,11 @@ export default function FleetPortal({ token }: { token: string }) {
                 {slots == null ? <p className="text-sm" style={{ color: MUTED }}>Checking open times…</p>
                   : slots.length ? slots.map((s) => <button key={s.start} type="button" onClick={() => setStart(s.start)} className="h-11 px-4 rounded-full border font-bold" style={{ background: start === s.start ? NAVY : "#fff", color: start === s.start ? "#fff" : NAVY, borderColor: start === s.start ? NAVY : LINE }}>{s.label}</button>)
                   : <p className="text-sm font-semibold text-[#8a5a00]">No room for {pick.length} vehicle{pick.length > 1 ? "s" : ""} that day. Try another day, or fewer vehicles.</p>}
+              </div>
+              <div className="flex flex-col gap-1 text-sm font-semibold" style={{ color: MUTED }}>Where
+                {where == null
+                  ? <p className="text-[15px] font-normal text-[#0d1b3e]">{a.address || "Your yard"} <button type="button" onClick={() => setWhere("")} className="underline font-semibold ml-1">Somewhere else?</button></p>
+                  : <input value={where} onChange={(e) => setWhere(e.target.value)} placeholder="Street address, town" className={field} style={{ borderColor: LINE }} autoFocus />}
               </div>
               <label className="flex flex-col gap-1 text-sm font-semibold" style={{ color: MUTED }}>Anything we should know? (optional)
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Gate code, where the vans are parked, a warning light" className={field} style={{ borderColor: LINE }} />
@@ -198,6 +216,8 @@ export default function FleetPortal({ token }: { token: string }) {
             </div>)) : <p style={{ color: MUTED }}>Nothing yet.</p>)}
         </section>
 
+        <Details a={a} field={field} save={async (f) => { const j = await post({ action: "account", account: f }); if (!j.ok) return j.error || "Couldn't save."; setMsg("Your details are saved."); load(); return null; }} />
+
         <p className="text-center text-sm" style={{ color: MUTED }}>Questions? Call or text <a className="underline font-semibold" href={PHONE_TEL}>{PHONE}</a>. Keep this link private, it works like a key to your account.</p>
       </div>
     </div>
@@ -212,5 +232,63 @@ function CheckLine({ c }: { c?: Checks }) {
       {c.now.length > 0 && <span className="block font-semibold" style={{ color: "#9b1c1c" }}>Needs doing now: {c.now.join(", ")}</span>}
       {c.soon.length > 0 && <span className="block font-semibold" style={{ color: "#8a5a00" }}>Coming up soon: {c.soon.join(", ")}</span>}
     </span>
+  );
+}
+
+/** Their own details: who we text, emails, and where the vehicles are parked. */
+function Details({ a, field, save }: { a: Data["account"]; field: string; save: (f: Record<string, string>) => Promise<string | null> }) {
+  const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const init = () => ({ contact: a.contact ?? "", phone: a.phone ?? "", email: a.email ?? "", invoiceEmail: a.invoiceEmail ?? "", address: a.address ?? "" });
+  const [f, setF] = useState(init);
+  const row = (label: string, value: string | null | undefined) => <p className="text-[15px]"><span style={{ color: MUTED }}>{label}: </span>{value || "not set"}</p>;
+  const input = (k: keyof ReturnType<typeof init>, label: string, extra: Record<string, string> = {}) => (
+    <label className="flex flex-col gap-1 text-sm font-semibold" style={{ color: MUTED }}>{label}
+      <input value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} className={field} style={{ borderColor: LINE }} {...extra} /></label>);
+  return (
+    <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
+      <div className="flex justify-between items-center gap-2"><h2 className="font-extrabold text-lg">Your details</h2>
+        {!open && <button onClick={() => { setF(init()); setOpen(true); setErr(""); }} className="h-10 px-4 rounded-full border font-bold" style={{ borderColor: NAVY }}>Edit</button>}</div>
+      {!open ? (<>
+        {row("Contact", a.contact)}{row("Phone (we text visit times here)", a.phone)}{row("Email", a.email)}{row("Invoices go to", a.invoiceEmail || a.email)}{row("Vehicles are parked at", a.address)}
+      </>) : (
+        <div className="flex flex-col gap-2">
+          {input("contact", "Contact name")}
+          {input("phone", "Phone (we text visit times here)", { type: "tel", inputMode: "tel" })}
+          {input("email", "Email", { type: "email" })}
+          {input("invoiceEmail", "Send invoices to (if different)", { type: "email", placeholder: "accounts@..." })}
+          {input("address", "Where the vehicles are parked", { placeholder: "Street address, town" })}
+          {err && <p className="text-sm font-semibold text-[#b3261e]" role="alert">{err}</p>}
+          <div className="flex gap-2">
+            <button disabled={busy} onClick={async () => { setBusy(true); setErr(""); const e = await save(f); setBusy(false); if (e) setErr(e); else setOpen(false); }} className="h-12 flex-1 rounded-xl font-bold text-white disabled:opacity-60" style={{ background: NAVY }}>{busy ? "Saving…" : "Save"}</button>
+            <button onClick={() => setOpen(false)} className="h-12 px-4 rounded-xl border font-bold" style={{ borderColor: LINE }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Fix one vehicle (unit, plate, VIN, year, make, model, engine) or take it off the list. */
+function VehicleEdit({ v, field, onSave, onCancel }: { v: Vehicle; field: string; onSave: (f: Record<string, string | boolean>) => Promise<string | null>; onCancel: () => void }) {
+  const [f, setF] = useState({ unit_number: v.unit ?? "", plate: v.plate ?? "", vin: v.vin ?? "", year: v.year ? String(v.year) : "", make: v.make ?? "", model: v.model ?? "", engine: v.engine ?? "" });
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [sure, setSure] = useState(false);
+  const go = async (body: Record<string, string | boolean>) => { setBusy(true); setErr(""); const e = await onSave(body); setBusy(false); if (e) setErr(e); };
+  const box = (k: keyof typeof f, ph: string, extra: Record<string, string> = {}) =>
+    <input value={f[k]} onChange={(e) => setF({ ...f, [k]: k === "plate" || k === "vin" ? e.target.value.toUpperCase() : e.target.value })} placeholder={ph} aria-label={ph} className={field} style={{ borderColor: LINE }} {...extra} />;
+  return (
+    <div className="rounded-xl border-2 p-3 flex flex-col gap-2" style={{ borderColor: NAVY }}>
+      <p className="font-bold">Edit {name(v)}</p>
+      <div className="grid grid-cols-2 gap-2">{box("unit_number", "Unit #")}{box("plate", "Plate")}</div>
+      {box("vin", "VIN (17 characters)")}
+      <div className="grid grid-cols-[90px_1fr_1fr] gap-2">{box("year", "Year", { inputMode: "numeric" })}{box("make", "Make")}{box("model", "Model")}</div>
+      {box("engine", "Engine, e.g. 6.6L")}
+      {err && <p className="text-sm font-semibold text-[#b3261e]" role="alert">{err}</p>}
+      <div className="flex gap-2">
+        <button disabled={busy} onClick={() => go(f)} className="h-12 flex-1 rounded-xl font-bold text-white disabled:opacity-60" style={{ background: NAVY }}>{busy ? "Saving…" : "Save"}</button>
+        <button onClick={onCancel} className="h-12 px-4 rounded-xl border font-bold" style={{ borderColor: LINE }}>Cancel</button>
+      </div>
+      <button disabled={busy} onClick={() => (sure ? go({ remove: true }) : setSure(true))} className="self-start text-sm font-semibold underline text-[#9b1c1c]">
+        {sure ? "Tap again to remove it from your list" : "We sold it / remove this vehicle"}</button>
+    </div>
   );
 }

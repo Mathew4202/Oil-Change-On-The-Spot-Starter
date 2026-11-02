@@ -139,11 +139,12 @@ export async function normalPrice(v: Pick<FleetVehicle, "year" | "make" | "model
 }
 
 /** Book a visit at the yard: the picked vehicles one after another, each its own job, billed to the fleet. */
-export async function bookFleetVisit(accountId: string, vehicleIds: string[], startIso: string, owner: string, note?: string) {
+export async function bookFleetVisit(accountId: string, vehicleIds: string[], startIso: string, owner: string, note?: string, addressIn?: string) {
   const d = await accountDetail(accountId);
   if (!d) return { ok: false as const, error: "Account not found" };
   const a = d.account;
-  if (!a.address) return { ok: false as const, error: "Add the yard address to the account first" };
+  const where = addressIn?.trim() || a.address;   // a visit can be at another site than the yard
+  if (!where) return { ok: false as const, error: "Add the yard address to the account first" };
   if (!a.phone) return { ok: false as const, error: "Add the contact's phone number to the account first" };
   const picked = vehicleIds.map((id) => d.vehicles.find((v) => v.id === id)).filter(Boolean) as typeof d.vehicles;
   if (!picked.length) return { ok: false as const, error: "Pick at least one vehicle" };
@@ -164,7 +165,7 @@ export async function bookFleetVisit(accountId: string, vehicleIds: string[], st
   let next = new Date(startIso).toISOString();
   for (const v of picked) {
     const r = await createBooking({
-      firstName: first || a.business_name, lastName: rest.join(" "), phone: a.phone, email: a.email || "", address: a.address,
+      firstName: first || a.business_name, lastName: rest.join(" "), phone: a.phone, email: a.email || "", address: where,
       car: { year: v.year!, make: v.make!, model: v.model!, ...(v.engine ? { engine: v.engine } : {}) }, job: "oil_change", addons: [], own: null,
       start: next, cars: 1, payMode: "after", notes: [v.unit_number ? `Unit ${v.unit_number}` : "", note || ""].filter(Boolean).join(" · ") || undefined,
     }, { source: owner === "fleet" ? "website" : "phone", bookedBy: owner === "fleet" ? undefined : owner, anyTime: true, customerId: cust.id, priceOverride: v.fleet_price ?? null, groupId, noTravel: true, silent: true,
@@ -178,7 +179,7 @@ export async function bookFleetVisit(accountId: string, vehicleIds: string[], st
   }
   const title = owner === "fleet" ? `${a.business_name} booked online: ${picked.length} vehicle${picked.length > 1 ? "s" : ""}`
     : `${owner[0].toUpperCase()}${owner.slice(1)} booked ${a.business_name}: ${picked.length} vehicle${picked.length > 1 ? "s" : ""}`;
-  const body = `${new Date(startIso).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} at ${a.address}`;
+  const body = `${new Date(startIso).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} at ${where}`;
   try { await sbInsert("notifications", { kind: "new_booking", booking_id: made[0], title, body }); } catch { /* best effort */ }
   await Promise.race([pushToOwners({ title, body, url: `/owner?date=${halifaxDate(new Date(startIso))}`, tag: made[0] }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
   return { ok: true as const, bookings: made, ends: next };

@@ -1,6 +1,6 @@
 // The fleet's own page: a private link per account (no password). Everything a fleet manager needs without calling us.
 import crypto from "crypto";
-import { sbGet, sbPatch, enc } from "@/lib/os/db";
+import { sbGet, sbPatch, sbInsert, enc } from "@/lib/os/db";
 import { accountDetail, bookFleetVisit, saveVehicle, saveVehicles, visitMinutes } from "@/lib/os/fleet";
 import { dayAvailability } from "@/lib/os/calendar";
 import { checksFrom } from "@/lib/os/fleet-math";
@@ -73,8 +73,10 @@ export async function portalView(accountId: string) {
   const upcoming = ids.length ? await sbGet<{ id: string; starts_at: string; vehicle_id: string; status: string; address: string | null }>(
     `bookings?select=id,starts_at,vehicle_id,status,address&vehicle_id=in.(${ids.join(",")})&status=in.(confirmed,requested)&starts_at=gte.${new Date().toISOString()}&order=starts_at`) : [];
   return {
-    account: { name: a.business_name, contact: a.contact_name, address: a.address, billing: a.billing, terms: a.terms_days, every: a.service_every_months },
+    account: { name: a.business_name, contact: a.contact_name, phone: a.phone, email: a.email, invoiceEmail: (a as { invoice_email?: string | null }).invoice_email ?? null,
+      address: a.address, billing: a.billing, terms: a.terms_days, every: a.service_every_months },
     vehicles: d.vehicles.filter((v) => v.active !== false).map((v) => ({ id: v.id, unit: v.unit_number, car: [v.year, v.make, v.model].filter(Boolean).join(" "), engine: v.engine,
+      year: v.year, make: v.make, model: v.model,
       plate: v.plate, vin: v.vin, price: v.fleet_price, lastService: v.lastService, lastKm: v.lastKm, booked: v.booked, due: v.due,
       // what we found on the last visit (Now / Soon), so the fleet knows before it becomes a breakdown
       checks: checksFrom(d.history.find((j) => j.vehicle_id === v.id && j.service !== "cancellation_fee")?.inspection ?? null) })),
@@ -95,18 +97,18 @@ export async function portalTimes(accountId: string, date: string, count: number
 }
 
 /** Book from the portal: only at a time that's actually open, then one text to the fleet contact. */
-export async function portalBook(accountId: string, vehicleIds: string[], startIso: string, note: string) {
+export async function portalBook(accountId: string, vehicleIds: string[], startIso: string, note: string, address?: string) {
   const start = new Date(startIso);
   if (isNaN(start.getTime())) return { ok: false as const, error: "Pick a time" };
   const day = halifaxDate(start);
   const open = await portalTimes(accountId, day, vehicleIds.length) as { slots?: { start: string }[] };
   if (!(open.slots ?? []).some((s) => new Date(s.start).getTime() === start.getTime())) return { ok: false as const, error: "That time was just taken. Pick another one." };
-  const r = await bookFleetVisit(accountId, vehicleIds, start.toISOString(), "fleet", note);
+  const r = await bookFleetVisit(accountId, vehicleIds, start.toISOString(), "fleet", note, address?.trim().slice(0, 200) || undefined);
   if (!r.ok) return r;
   const d = await accountDetail(accountId);
   if (d?.account.phone) {
     const body = (await template("fleet_booked")) || "Hi {first_name}, your yard visit is booked for {when} at {address}: {count}.\n- {signer}, Oil Change On The Spot";
-    await sendSms(d.account.phone, fill(body, { first_name: (d.account.contact_name || "there").split(/\s+/)[0], when: whenText(start.toISOString()), address: d.account.address || "your yard",
+    await sendSms(d.account.phone, fill(body, { first_name: (d.account.contact_name || "there").split(/\s+/)[0], when: whenText(start.toISOString()), address: address?.trim() || d.account.address || "your yard",
       count: `${vehicleIds.length} vehicle${vehicleIds.length > 1 ? "s" : ""}` }), { kind: "fleet_booked", bookingId: r.bookings[0] }).catch(() => null);
   }
   return r;
@@ -146,5 +148,67 @@ export async function sendPortalLink(contact: string) {
   const [a] = await sbGet<{ id: string; phone: string | null; active: boolean; portal_sent_at: string | null }>(`fleet_accounts?select=id,phone,active,portal_sent_at&or=(${or})&limit=1`).catch(() => []);
   // one send a minute per account at most (text + email)
   if (a && a.active !== false && !(a.portal_sent_at && Date.now() - new Date(a.portal_sent_at).getTime() < 60000)) await textPortal(a.id).catch(() => null);
+  return { ok: true as const };
+}
+
+const txt = (v: unknown, n: number) => (typeof v === "string" ? v.trim().slice(0, n) : undefined);
+async function tellOwners(accountId: string, what: string) {
+  const d = await accountDetail(accountId);
+  const title = `${d?.account.business_name ?? "A fleet"} ${what}`;
+  try { await sbInsert("notifications", { kind: "fleet", title, body: "See their account on the Fleets screen." }); } catch { /* best effort */ }
+  await Promise.race([pushToOwners({ title, body: "See their account on the Fleets screen.", url: `/owner/fleets/${accountId}`, tag: `${accountId}-edit` }).catch(() => null), new Promise((x) => setTimeout(x, 3000))]);
+}
+
+/** The fleet fixes its own details: contact, phone, emails, the yard address. The contact's customer record follows. */
+export async function portalEditAccount(accountId: string, f: Record<string, unknown>) {
+  const { e164 } = await import("@/lib/os/booking");
+  const patch: Record<string, unknown> = {};
+  const contact = txt(f.contact, 80), address = txt(f.address, 200), email = txt(f.email, 120), invoiceEmail = txt(f.invoiceEmail, 120), phoneIn = txt(f.phone, 30);
+  const okEmail = (e: string) => !e || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+  if (email !== undefined && !okEmail(email)) return { ok: false as const, error: "That email doesn't look right" };
+  if (invoiceEmail !== undefined && !okEmail(invoiceEmail)) return { ok: false as const, error: "That invoice email doesn't look right" };
+  let phone: string | null | undefined;
+  if (phoneIn !== undefined) { phone = phoneIn ? e164(phoneIn) : null; if (phoneIn && !phone) return { ok: false as const, error: "That phone number doesn't look right" }; if (!phone) return { ok: false as const, error: "We need a phone number to text you about visits" }; }
+  if (address !== undefined && !address) return { ok: false as const, error: "Add the address where your vehicles are parked" };
+  if (contact !== undefined) patch.contact_name = contact || null;
+  if (phone) patch.phone = phone;
+  if (email !== undefined) patch.email = email.toLowerCase() || null;
+  if (invoiceEmail !== undefined) patch.invoice_email = invoiceEmail.toLowerCase() || null;
+  if (address !== undefined) patch.address = address;
+  if (!Object.keys(patch).length) return { ok: true as const };
+  await sbPatch("fleet_accounts", `id=eq.${enc(accountId)}`, patch);
+  // the person we text and book under
+  const c: Record<string, unknown> = {};
+  if (patch.contact_name) { const [first, ...rest] = String(patch.contact_name).split(/\s+/); c.first_name = first; c.last_name = rest.join(" ") || null; }
+  if (patch.phone) c.phone = patch.phone;
+  if ("email" in patch) c.email = patch.email;
+  if (patch.address) c.address = patch.address;
+  if (Object.keys(c).length) await sbPatch("customers", `fleet_account_id=eq.${enc(accountId)}`, c).catch(() => null);
+  await tellOwners(accountId, "updated their details");
+  return { ok: true as const };
+}
+
+/** The fleet fixes one of its vehicles (unit, plate, VIN, year, make, model, engine) or takes it off the list. Price and our notes stay ours. */
+export async function portalEditVehicle(accountId: string, vehicleId: string, f: Record<string, unknown>) {
+  const [v] = await sbGet<{ id: string; unit_number: string | null }>(`vehicles?select=id,unit_number&id=eq.${enc(vehicleId)}&fleet_account_id=eq.${enc(accountId)}`);
+  if (!v) return { ok: false as const, error: "Vehicle not found" };
+  if (f.remove === true) {
+    await sbPatch("vehicles", `id=eq.${enc(vehicleId)}`, { active: false });
+    await tellOwners(accountId, `removed ${v.unit_number ? `unit ${v.unit_number}` : "a vehicle"}`);
+    return { ok: true as const };
+  }
+  const { cleanVin, vinOk } = await import("@/lib/os/vin");
+  const vinIn = txt(f.vin, 20);
+  if (vinIn && !vinOk(vinIn)) return { ok: false as const, error: "That VIN doesn't look right (17 letters and numbers, no I, O or Q)" };
+  const year = f.year === undefined || f.year === "" ? undefined : Number(f.year);
+  if (year !== undefined && !(year >= 1980 && year <= new Date().getFullYear() + 2)) return { ok: false as const, error: "Check the year" };
+  const patch: Record<string, unknown> = {};
+  for (const [k, n] of [["unit_number", 30], ["make", 40], ["model", 60], ["engine", 60]] as const) { const x = txt(f[k], n); if (x !== undefined) patch[k] = x || null; }
+  const plate = txt(f.plate, 15); if (plate !== undefined) patch.plate = plate.toUpperCase() || null;
+  if (vinIn !== undefined) patch.vin = vinIn ? cleanVin(vinIn) : null;
+  if (year !== undefined) patch.year = year;
+  if (patch.make === null || patch.model === null) return { ok: false as const, error: "Keep the make and model" };
+  await sbPatch("vehicles", `id=eq.${enc(vehicleId)}`, patch);
+  await tellOwners(accountId, `edited ${v.unit_number ? `unit ${v.unit_number}` : "a vehicle"}`);
   return { ok: true as const };
 }

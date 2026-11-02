@@ -1,6 +1,6 @@
 // The fleet's own page. GET ?t=TOKEN → their account · GET ?t=&date=&count= → open times · POST {t, action: book|vehicle}
 import { NextRequest, NextResponse } from "next/server";
-import { accountByPortal, portalView, portalTimes, portalBook, portalAddVehicle, portalAddVehicles } from "@/lib/os/fleet-portal";
+import { accountByPortal, portalView, portalTimes, portalBook, portalAddVehicle, portalAddVehicles, portalEditAccount, portalEditVehicle } from "@/lib/os/fleet-portal";
 import { readVehicleList, fileFromDataUrl } from "@/lib/os/photo-read";
 import { numberUnits } from "@/lib/os/fleet-list";
 import { accountDetail } from "@/lib/os/fleet";
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   try {
     if (b.action === "book") {
       const ids = (Array.isArray(b.vehicleIds) ? b.vehicleIds : []).filter(okId).slice(0, 12);
-      const r = await portalBook(id, ids, String(b.start || ""), String(b.note || "").slice(0, 300));
+      const r = await portalBook(id, ids, String(b.start || ""), String(b.note || "").slice(0, 300), typeof b.address === "string" ? b.address : undefined);
       return NextResponse.json(r, { status: r.ok ? 200 : 400 });
     }
     if (b.action === "scan") {
@@ -42,6 +42,15 @@ export async function POST(req: NextRequest) {
       const d = await accountDetail(id);
       const r = await readVehicleList(f);
       return NextResponse.json({ ...r, rows: numberUnits(r.rows, (d?.vehicles ?? []).map((v) => v.unit_number)), existingVins: (d?.vehicles ?? []).map((v) => v.vin).filter(Boolean), existingPlates: (d?.vehicles ?? []).map((v) => v.plate).filter(Boolean) });
+    }
+    if (b.action === "account") {
+      const r = await portalEditAccount(id, b.account || {});
+      return NextResponse.json(r, { status: r.ok ? 200 : 400 });
+    }
+    if (b.action === "editVehicle") {
+      if (!okId(b.vehicleId)) return NextResponse.json({ error: "Bad request" }, { status: 400 });
+      const r = await portalEditVehicle(id, b.vehicleId, b.vehicle || {});
+      return NextResponse.json(r, { status: r.ok ? 200 : 400 });
     }
     if (b.action === "vehicles") {
       const r = await portalAddVehicles(id, Array.isArray(b.vehicles) ? b.vehicles.slice(0, 200) : []);
