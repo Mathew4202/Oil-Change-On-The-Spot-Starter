@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 type Row = {
   id: string; starts_at: string; ends_at: string; status: string; pay_mode: string; address: string | null; paid_at: string | null;
-  jobs: { receipt_no: number | null; total: number | null; subtotal?: number | null; cost_oil?: number | null; cost_parts?: number | null; cost_other?: number | null }[] | null;
+  jobs: { receipt_no: number | null; total: number | null; subtotal?: number | null; cost_oil?: number | null; cost_parts?: number | null; cost_other?: number | null; oil_grade?: string | null; oil_litres?: number | null; filter_part?: string | null }[] | null;
   quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; profit?: number | null } | null; needs_review: string[] | null; notes: string | null; cars: number; vehicle_id?: string | null; group_id?: string | null;
   services: { job?: string; own?: "both" | "oil" | "filter" | null; addons?: string[] } | null; source: string | null;
   customers: { first_name: string | null; last_name: string | null; phone: string | null; address: string | null } | null;
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "bad date" }, { status: 400 });
   const from = halifaxToDate(date, 0).toISOString(), to = halifaxToDate(date, 24 * 60).toISOString();
 
-  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total,subtotal,cost_oil,cost_parts,cost_other),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,vehicle_id,group_id,` +
+  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total,subtotal,cost_oil,cost_parts,cost_other,oil_grade,oil_litres,filter_part),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,vehicle_id,group_id,` +
       `customers(first_name,last_name,phone,address),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,verified,source,confidence${extra}))` +
       `&starts_at=gte.${from}&starts_at=lt.${to}&status=neq.cancelled&order=starts_at`);
   // everything that only needs the date goes out at once (each trip to the database is a wait, so never one after another)
@@ -111,7 +111,10 @@ export async function GET(req: NextRequest) {
       oil: s && (!r.services?.job || ["oil_change", "seasonal"].includes(r.services.job)) ? { grade: s.oil_grade, litres: Number(s.capacity_l), filter: s.oil_filter_part, spec: s.oil_spec,
         engine: s.engine, diesel: s.fuel === "diesel", wix: s.wix_filter, checked: !!s.verified, lowConfidence: s.source === "ai_lookup" && s.confidence === "low",
         filterInStock: s.oil_filter_part ? (stock[s.oil_filter_part] ?? 0) >= 1 : null, filterCost: money && s.oil_filter_part ? filterCosts[s.oil_filter_part] ?? null : null,
-        filterNote: s.filter_note ?? null } : null,
+        filterNote: s.filter_note ?? null }
+        // finished: what the job actually got (even if the car has no oil on file)
+        : r.jobs?.[0]?.oil_grade ? { grade: r.jobs[0].oil_grade, litres: Number(r.jobs[0].oil_litres ?? 0) / (r.cars || 1), filter: r.jobs[0].filter_part ?? null, spec: null, engine: null, diesel: false, wix: null,
+            checked: true, lowConfidence: false, filterInStock: null, filterCost: null, filterNote: null } : null,
       // part numbers we have used on this car before
       partNos: s ? [s.cabin_filter_part ? `Cabin filter ${s.cabin_filter_part}` : null, s.air_filter_part ? `Engine air filter ${s.air_filter_part}` : null,
         s.wiper_driver || s.wiper_passenger ? `Wipers ${[s.wiper_driver && `driver ${s.wiper_driver}`, s.wiper_passenger && `passenger ${s.wiper_passenger}`].filter(Boolean).join(", ")}` : null].filter(Boolean) as string[] : [],

@@ -29,8 +29,8 @@ export async function learnFromJob(v: { id: string; year: number | null; make: s
     id = mine.id;
     await sbPatch("vehicle_specs", `id=eq.${mine.id}`, { oil_grade: grade, capacity_l: perCar, ...(filter ? { oil_filter_part: filter } : {}),
       times_done: (mine.times_done ?? 0) + 1, last_done: today }).catch(() => null);
-  } else if (!mine) {
-    // first time we've done this car (or this engine): save it as ours. Keep the oil approval / diesel flag from the online lookup.
+  } else {
+    // first time we've done this car (or this engine), or our sheet says another oil: what we just used is saved as this car's, so it's on file next time. Keep the oil approval / diesel flag from the online lookup.
     const [linked] = await sbGet<{ spec: { oil_spec: string | null; fuel: string | null; oil_grade: string | null } | null }>(`vehicles?select=spec:vehicle_specs(oil_spec,fuel,oil_grade)&id=eq.${enc(v.id)}`).catch(() => []);
     const ls = linked?.spec;
     const r = await sbInsert<{ id: string }>("vehicle_specs", {

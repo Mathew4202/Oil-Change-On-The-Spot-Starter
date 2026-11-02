@@ -172,11 +172,12 @@ export async function finishJob(input: FinishInput, owner: string) {
   if (ctx.vehicle && !engine) engine = spec?.engine || null;
   if (ctx.vehicle && (km || vin || (engine && !ctx.vehicle.engine)))
     await sbPatch("vehicles", `id=eq.${ctx.vehicle.id}`, { ...(km ? { last_km: km } : {}), ...(vin.length === 17 ? { vin } : {}), ...(engine && !ctx.vehicle.engine ? { engine } : {}) });
-  if (withOil && ctx.vehicle && own !== "both") await learnFromJob({ ...ctx.vehicle, engine }, { grade, litres, filter: filterPart, cars: ctx.booking.cars || 1 }).catch(() => null);
+  const learned = withOil && ctx.vehicle && own !== "both" ? await learnFromJob({ ...ctx.vehicle, engine }, { grade, litres, filter: filterPart, cars: ctx.booking.cars || 1 }).catch(() => null) : undefined;
   if (input.email && ctx.customer && !ctx.customer.email) await sbPatch("customers", `id=eq.${ctx.customer.id}`, { email: input.email.trim().toLowerCase() });
 
   // Stock: the filter and the oil we used come off the shelf (never below zero). Say what didn't, so it's never a silent miss.
   const stock: string[] = [];
+  if (learned === null && withOil && ctx.vehicle) stock.push(!grade || !litres ? "Oil not saved for this car (type the oil and litres next time)" : "Couldn't save the oil for this car");
   if (withOil && filterPart && own !== "both" && own !== "filter") {
     if (filterId && filterOnHand > 0) {
       const used = Math.min(filterOnHand, ctx.booking.cars || 1);
