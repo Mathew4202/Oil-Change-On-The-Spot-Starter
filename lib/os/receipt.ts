@@ -81,7 +81,8 @@ export function receiptHtml(r: ReceiptData): string {
    ${r.checks.now.length ? `<div style="color:#9b1c1c"><strong>Needs doing now:</strong> ${esc(r.checks.now.join(", "))}</div>` : ""}
    ${r.checks.soon.length ? `<div style="color:#8a5a00"><strong>Coming up soon:</strong> ${esc(r.checks.soon.join(", "))}</div>` : ""}
    ${r.checks.ok.length ? `<div style="color:#1d6b3a"><strong>Good:</strong> ${esc(r.checks.ok.join(", "))}</div>` : ""}
-   ${r.checks.now.length || r.checks.soon.length ? `<div style="margin-top:6px;color:#4a5878">We can take care of these on your next visit. Reply or text ${esc(BUSINESS.phone)} and we'll add them.</div>` : ""}
+   ${[...r.checks.now, ...r.checks.soon].some((x) => !/\btires?\b/i.test(x)) ? `<div style="margin-top:6px;color:#4a5878">We can take care of ${[...r.checks.now, ...r.checks.soon].some((x) => /\btires?\b/i.test(x)) ? "everything except the tires" : "these"} on your next visit. Reply or text ${esc(BUSINESS.phone)} and we'll add them.</div>` : ""}
+   ${[...r.checks.now, ...r.checks.soon].some((x) => /\btires?\b/i.test(x)) ? `<div style="margin-top:6px;color:#4a5878">For the tires, we recommend a tire shop.</div>` : ""}
   </div>` : ""}
   ${r.reviewUrl ? `<div style="border:2px solid #f2b01e;border-radius:10px;padding:14px;margin-top:16px;font-size:15px;line-height:1.5">
    Happy with the service? A quick Google review helps other people in HRM find us and supports our small business.<br>

@@ -267,7 +267,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   <div className="text-[14px] rounded-lg bg-[#fff6dd] border border-[#f2b01e] px-3 py-2">
                     <span className="font-bold">Last visit: </span>
                     {[j.lastTime.note, j.lastTime.now.length ? `needs doing now: ${j.lastTime.now.join(", ")}` : "", j.lastTime.soon.length ? `coming up soon: ${j.lastTime.soon.join(", ")}` : ""].filter(Boolean).join(" · ")}
-                    <span className="text-[#4a5878]">. Offer it on this visit.</span>
+                    <span className="text-[#4a5878]">{[...j.lastTime.now, ...j.lastTime.soon].some((x) => !/\btires?\b/i.test(x)) || (j.lastTime.note && !/\btires?\b/i.test(j.lastTime.note)) ? ". Offer it on this visit (not tires)." : "."}</span>
                   </div>
                 )}
                 {j.checks.length > 0 && <p className="text-[13px] font-semibold text-[#8a5a00] bg-[#fff6dd] rounded-lg px-2 py-1">{j.checks.join(" · ")}</p>}

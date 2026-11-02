@@ -11,9 +11,14 @@ export function lastVisit(inspection: Parameters<typeof checksFrom>[0], note: st
   return { now: c?.now ?? [], soon: c?.soon ?? [], note: n };
 }
 
-/** One short line for a reminder text, or "" when nothing was flagged. */
-export function lastVisitText(v: LastVisit): string {
-  if (!v) return "";
+// tires need a tire machine, which we don't have: never offer them in a text
+export const isTires = (s: string) => /\btires?\b|\btyres?\b/i.test(s);
+
+/** One short line for a reminder text offering what we can do, or "" when there's nothing (tires are left out). */
+export function lastVisitText(v0: LastVisit): string {
+  if (!v0) return "";
+  const v = { now: v0.now.filter((x) => !isTires(x)), soon: v0.soon.filter((x) => !isTires(x)), note: v0.note && !isTires(v0.note) ? v0.note : null };
+  if (!v.note && !v.now.length && !v.soon.length) return "";
   const items = [...v.now.map((x) => `${x.toLowerCase()} (needs doing)`), ...v.soon.map((x) => `${x.toLowerCase()} (coming up soon)`)];
   const what = [v.note ? v.note.replace(/[.\s]+$/, "") : "", items.length ? `${v.note ? "Also " : ""}${items.join(", ")}` : ""].filter(Boolean).join(". ");
   return `Last visit we noted: ${what}. We can take care of it at the same visit, just reply and we'll add it.`;
