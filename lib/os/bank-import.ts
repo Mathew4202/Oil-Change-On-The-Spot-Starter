@@ -54,11 +54,12 @@ export async function importStatement(p: Parsed, fileName: string, owner: string
   for (const [i, r] of results.entries()) {
     if (!r.owedBookingId) continue;
     const { recordPayment, sendReceipt } = await import("@/lib/os/jobs");
-    await recordPayment(r.owedBookingId, Math.abs(r.amount), "etransfer", `${owner} (bank statement)`).catch(() => null);
+    await recordPayment(r.owedBookingId, Math.abs(r.amount), "etransfer", `${owner} (bank statement)`, 0, { noReview: true }).catch(() => null);
     const [pay] = await sbGet<{ id: string }>(`payments?select=id&booking_id=eq.${r.owedBookingId}&order=paid_at.desc&limit=1`).catch(() => []);
     if (pay) { await sbPatch("payments", `id=eq.${pay.id}`, { bank_line_id: rows[i].id }).catch(() => null); await sbPatch("bank_lines", `id=eq.${rows[i].id}`, { payment_id: pay.id }).catch(() => null); }
     const [jb] = await sbGet<{ id: string }>(`jobs?select=id&booking_id=eq.${r.owedBookingId}&limit=1`).catch(() => []);
     if (jb) await sendReceipt(jb.id, null).catch(() => null);
+    { const { reviewIfDue } = await import("@/lib/os/jobs"); await reviewIfDue(r.owedBookingId).catch(() => null); }   // after the receipt
   }
   const count = (s: Result["status"]) => results.filter((r) => r.status === s).length;
   return { ok: true as const, account: p.account, from, to, added: fresh.length, skipped, matched: count("matched"), auto: count("auto"), needsLook: count("needs_look") };

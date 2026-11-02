@@ -212,11 +212,12 @@ async function recordOnline(p: OnlineRow, txnId: string, last4: string | null) {
     return;
   } else if (p.kind === "job") {
     const { payVisit } = await import("@/lib/os/jobs");
-    if (!(await payVisit(p.booking_id, "card_online", "online", tip).catch(() => false))) await recordPayment(p.booking_id, r2(amount - tip), "card_online", "online", tip);   // several cars: each car's share
+    if (!(await payVisit(p.booking_id, "card_online", "online", tip, { noReview: true }).catch(() => false))) await recordPayment(p.booking_id, r2(amount - tip), "card_online", "online", tip, { noReview: true });   // several cars: each car's share
     // recordPayment writes "recorded by online"; put the Converge reference on it
     const [pay] = await sbGet<{ id: string }>(`payments?select=id&booking_id=eq.${p.booking_id}&method=eq.card_online&order=paid_at.desc&limit=1`);
     if (pay) await sbPatch("payments", `id=eq.${pay.id}`, { processor_ref: `${ref}${tip ? `, includes $${tip.toFixed(2)} tip` : ""}` });
     if (p.job_id) await sendReceipt(p.job_id, null).catch(() => null);
+    { const { reviewIfDue } = await import("@/lib/os/jobs"); await reviewIfDue(p.booking_id).catch(() => null); }   // after the receipt
   } else {
     // paid for every car on the visit: one payment row per car, so each job sees its own share
     const group = await groupOf(p.booking_id);

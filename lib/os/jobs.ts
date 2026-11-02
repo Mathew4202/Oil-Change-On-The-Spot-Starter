@@ -252,7 +252,7 @@ export async function finishJob(input: FinishInput, owner: string) {
 }
 
 /** amount = the receipt total (with HST). A tip is added on top: it's income, but it never gets HST. */
-export async function recordPayment(bookingId: string, amount: number, method: string, owner: string, tip = 0) {
+export async function recordPayment(bookingId: string, amount: number, method: string, owner: string, tip = 0, opts: { noReview?: boolean } = {}) {
   const t = r2(Math.max(0, tip || 0));
   await sbInsert("payments", { booking_id: bookingId, amount: r2(amount + t), method, processor_ref: `recorded by ${owner}${t ? `, includes $${t.toFixed(2)} tip` : ""}` });
   await sbPatch("bookings", `id=eq.${enc(bookingId)}`, { paid_at: new Date().toISOString() });
@@ -260,17 +260,17 @@ export async function recordPayment(bookingId: string, amount: number, method: s
   const late = Number(j?.late_fee ?? 0) + Number(j?.late_interest ?? 0);   // late charges are income too (no HST on them)
   await sbPatch("jobs", `booking_id=eq.${enc(bookingId)}`, { payment_method: method, tip: t, ...(j?.subtotal != null ? { revenue: r2(Number(j.subtotal) + t + late) } : {}) });
   // a pay-later bill just got paid: now the thank-you / review text goes out (once, and not for a visit with cars still unpaid)
-  if ((j as { bill_sent_at?: string | null } | undefined)?.bill_sent_at) await reviewIfDue(bookingId).catch(() => null);
+  if (!opts.noReview && (j as { bill_sent_at?: string | null } | undefined)?.bill_sent_at) await reviewIfDue(bookingId).catch(() => null);
 }
 
 /** Pay everything still owed on a visit (every car), the same way. The tip goes on the car you're looking at. */
-export async function payVisit(bookingId: string, method: string, owner: string, tip = 0) {
+export async function payVisit(bookingId: string, method: string, owner: string, tip = 0, opts: { noReview?: boolean } = {}) {
   const visit = await visitGroup(bookingId);
   const [b] = await sbGet<{ id: string }>(`bookings?select=id&id=eq.${enc(bookingId)}`);
   if (!b) return;
   const cars = visit.length ? visit.filter((c) => c.job) : [];
   if (!cars.length) return false;
-  for (const c of cars) { const o = owedOn(c); const t = c.bookingId === bookingId ? tip : 0; if (o > 0 || t > 0) await recordPayment(c.bookingId, o, method, owner, t); }
+  for (const c of cars) { const o = owedOn(c); const t = c.bookingId === bookingId ? tip : 0; if (o > 0 || t > 0) await recordPayment(c.bookingId, o, method, owner, t, opts); }
   return true;
 }
 
