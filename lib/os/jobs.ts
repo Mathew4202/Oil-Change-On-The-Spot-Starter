@@ -33,7 +33,8 @@ export type JobContext = {
 /** Several cars booked together (one visit): every booking in it, its job once finished, and what's been paid on it. Empty for a single car or a fleet visit. */
 export type VisitCar = { bookingId: string; status: string; car: string; paid: number;
   job: { id: string; total: number; tip: number | null; late_fee: number | null; late_interest: number | null; receipt_token: string; receipt_no: number;
-    lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; vehicle_text: string | null; oil_grade: string | null; oil_litres: number | null; filter_part: string | null; review_requested: boolean | null; customer_note?: string | null } | null };
+    lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; vehicle_text: string | null; oil_grade: string | null; oil_litres: number | null; filter_part: string | null; review_requested: boolean | null; customer_note?: string | null;
+    km?: number | null; next_due_km?: number | null; next_due_date?: string | null; inspection?: Record<string, { status?: string }> | null; vehicle_id?: string | null } | null };
 export async function visitGroup(bookingId: string): Promise<VisitCar[]> {
   const [me] = await sbGet<{ group_id: string | null; pay_mode: string }>(`bookings?select=group_id,pay_mode&id=eq.${enc(bookingId)}`).catch(() => []);
   if (!me?.group_id || me.pay_mode === "fleet_invoice") return [];
@@ -314,13 +315,13 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       lines: many ? visit.flatMap((c) => (c.job!.lines ?? []).map((l) => ({ label: `${c.job!.vehicle_text || c.car}: ${l.label}`, amount: l.amount }))) : j.lines ?? [],
       subtotal: many ? sum((c) => Number(c.job!.subtotal)) : Number(j.subtotal), hst: many ? sum((c) => Number(c.job!.hst)) : Number(j.hst), total: many ? sum((c) => Number(c.job!.total)) : Number(j.total),
       tip: many ? sum((c) => Number(c.job!.tip ?? 0)) : Number(j.tip ?? 0),
-      paidWith: j.payment_method, km: many ? null : j.km, nextDueKm: many ? null : j.next_due_km,   // several cars: each car's km is in its own history
-      nextDueDate: j.next_due_date ? nice(new Date(`${j.next_due_date}T12:00:00Z`)) : null,
-      oil: many ? visit.filter((c) => c.job!.oil_grade).map((c) => `${c.job!.vehicle_text || c.car}: ${c.job!.oil_grade!.replace(/^Euro /, "")} full synthetic${c.job!.oil_litres ? `, ${Number(c.job!.oil_litres)} L` : ""}`).join("; ") || null
+      paidWith: j.payment_method, km: many ? null : j.km, nextDueKm: many ? null : j.next_due_km,   // several cars: in each car's own record below
+      nextDueDate: many ? null : j.next_due_date ? nice(new Date(`${j.next_due_date}T12:00:00Z`)) : null,
+      oil: many ? null
         : j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${spec ? ` (meets ${spec})` : ""}${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
-      filter: many ? visit.filter((c) => c.job!.filter_part).map((c) => `${c.job!.vehicle_text || c.car}: ${fp?.brand || "NAPA ProFormer"} ${c.job!.filter_part}`).join("; ") || null
+      filter: many ? null
         : j.filter_part ? `${fp?.brand || "NAPA ProFormer"} ${j.filter_part}` : null,
-      vin: many ? null : v?.vin ?? null, customerNote: many ? visit.map((c) => c.job!.customer_note ? `${c.job!.vehicle_text || c.car}: ${c.job!.customer_note}` : "").filter(Boolean).join("\n") || null : j.customer_note ?? null,
+      vin: many ? null : v?.vin ?? null, customerNote: many ? null : j.customer_note ?? null,
       ...(await (async () => {
         const paid = j.booking_id ? (await sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${j.booking_id}`).catch(() => [])).reduce((t, p) => t + Number(p.amount), 0) - Number(j.tip ?? 0) : 0;
         const x = j as unknown as { late_fee?: number | null; late_interest?: number | null; bill_due_at?: string | null };
@@ -331,7 +332,18 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
           dueBy: due > 0 && x.bill_due_at && !(Number(x.late_fee) > 0) ? dueText(x.bill_due_at) : null,
           lateTerms: !(due > 0 && x.bill_due_at) ? null : Number(x.late_fee) > 0 ? `This bill is past due. ${lateRules(rules).monthlyPct > 0 ? `${lateRules(rules).monthlyPct}% interest is added each month until it's paid.` : ""}`.trim() : lateTerms(lateRules(rules)) };
       })()),
-      checks: !j.service || ["oil_change", "seasonal"].includes(j.service) ? checksFrom(j.inspection) : null,
+      checks: many ? null : !j.service || ["oil_change", "seasonal"].includes(j.service) ? checksFrom(j.inspection) : null,
+      // several cars: each car gets its own service record, notes and checks, under its name
+      cars: many ? await Promise.all(visit.map(async (c) => {
+        const x = c.job!;
+        const [vv] = x.vehicle_id ? await sbGet<{ vin: string | null }>(`vehicles?select=vin&id=eq.${x.vehicle_id}`).catch(() => []) : [];
+        const [fb] = x.filter_part ? await sbGet<{ brand: string | null }>(`parts?select=brand&part_number=eq.${enc(x.filter_part)}&limit=1`).catch(() => []) : [];
+        return { name: x.vehicle_text || c.car, vin: vv?.vin ?? null, km: x.km ?? null,
+          oil: x.oil_grade ? `${x.oil_grade.replace(/^Euro /i, "").toUpperCase()} full synthetic${x.oil_litres ? `, ${Number(x.oil_litres)} L` : ""}` : null,
+          filter: x.filter_part ? `${fb?.brand || "NAPA ProFormer"} ${x.filter_part}` : null,
+          nextDueKm: x.next_due_km ?? null, nextDueDate: x.next_due_date ? nice(new Date(`${x.next_due_date}T12:00:00Z`)) : null,
+          checks: checksFrom(x.inspection ?? null), note: x.customer_note ?? null };
+      })) : undefined,
       receiptUrl: `${siteUrl()}/receipt/${j.receipt_token}`,
       logoUrl: `${siteUrl()}/email-logo.png`,
       reviewUrl: j.review_requested ? await reviewLink() : null,

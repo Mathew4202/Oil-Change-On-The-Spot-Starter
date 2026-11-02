@@ -23,7 +23,10 @@ export type ReceiptData = {
   late?: { label: string; amount: number }[];   // late fee / interest (no HST)
   dueBy?: string | null; lateTerms?: string | null;
   payUrl?: string | null;    // their pay page: card online, or e-transfer details
+  cars?: CarRecord[];        // several cars on one visit: a service record, the checks and the notes for each car
 };
+export type CarRecord = { name?: string | null; vin?: string | null; km?: number | null; oil?: string | null; filter?: string | null;
+  nextDueKm?: number | null; nextDueDate?: string | null; checks?: { now: string[]; soon: string[]; ok: string[] } | null; note?: string | null };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 const money = (n: number) => `${n < 0 ? "−" : ""}$${Math.abs(n).toFixed(2)}`;
@@ -64,26 +67,7 @@ export function receiptHtml(r: ReceiptData): string {
    <div style="font-size:13px;color:#4a5878;margin-top:8px">Card online, or Interac e-Transfer to ${esc(BUSINESS.email)} (put #${r.receiptNo} in the message).</div>
    ${r.lateTerms ? `<div style="font-size:13px;color:#8a5a00;margin-top:6px">${esc(r.lateTerms)}</div>` : ""}
   </div>` : ""}
-  ${r.oil || r.km || r.nextDueKm || r.vin || r.filter ? `<div style="background:#eef1f6;border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6">
-   <div style="font-weight:700;margin-bottom:4px">Service record</div>
-   ${r.vin ? `<div><strong>VIN:</strong> ${esc(r.vin)}</div>` : ""}
-   ${r.km ? `<div><strong>Odometer:</strong> ${r.km.toLocaleString("en-CA")} km</div>` : ""}
-   ${r.oil ? `<div><strong>Oil:</strong> ${esc(r.oil)}</div>` : ""}
-   ${r.filter ? `<div><strong>Oil filter:</strong> ${esc(r.filter)}</div>` : ""}
-   ${r.nextDueKm || r.nextDueDate ? `<div><strong>Next oil change:</strong> ${r.nextDueKm ? `${r.nextDueKm.toLocaleString("en-CA")} km` : ""}${r.nextDueKm && r.nextDueDate ? " or " : ""}${r.nextDueDate ? esc(r.nextDueDate) : ""}, whichever comes first</div>` : ""}
-  </div>` : ""}
-  ${r.customerNote ? `<div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6;background:#fff6dd;border:1px solid #f2b01e">
-   <div style="font-weight:700;margin-bottom:4px">Notes from your technician</div>
-   <div style="white-space:pre-wrap">${esc(r.customerNote)}</div>
-  </div>` : ""}
-  ${r.checks && (r.checks.now.length || r.checks.soon.length || r.checks.ok.length) ? `<div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6;border:1px solid #c8d0e0">
-   <div style="font-weight:700;margin-bottom:4px">What we checked</div>
-   ${r.checks.now.length ? `<div style="color:#9b1c1c"><strong>Needs doing now:</strong> ${esc(r.checks.now.join(", "))}</div>` : ""}
-   ${r.checks.soon.length ? `<div style="color:#8a5a00"><strong>Coming up soon:</strong> ${esc(r.checks.soon.join(", "))}</div>` : ""}
-   ${r.checks.ok.length ? `<div style="color:#1d6b3a"><strong>Good:</strong> ${esc(r.checks.ok.join(", "))}</div>` : ""}
-   ${[...r.checks.now, ...r.checks.soon].some((x) => !/\btires?\b/i.test(x)) ? `<div style="margin-top:6px;color:#4a5878">We can take care of ${[...r.checks.now, ...r.checks.soon].some((x) => /\btires?\b/i.test(x)) ? "everything except the tires" : "these"} on your next visit. Reply or text ${esc(BUSINESS.phone)} and we'll add them.</div>` : ""}
-   ${[...r.checks.now, ...r.checks.soon].some((x) => /\btires?\b/i.test(x)) ? `<div style="margin-top:6px;color:#4a5878">For the tires, we recommend a tire shop.</div>` : ""}
-  </div>` : ""}
+  ${(r.cars?.length ? r.cars : [{ vin: r.vin, km: r.km, oil: r.oil, filter: r.filter, nextDueKm: r.nextDueKm, nextDueDate: r.nextDueDate, checks: r.checks, note: r.customerNote }]).map(recordHtml).join("")}
   ${r.reviewUrl ? `<div style="border:2px solid #f2b01e;border-radius:10px;padding:14px;margin-top:16px;font-size:15px;line-height:1.5">
    Happy with the service? A quick Google review helps other people in HRM find us and supports our small business.<br>
    <a href="${esc(r.reviewUrl)}" style="display:inline-block;margin-top:10px;background:#f2b01e;color:#0d1b3e;font-weight:700;text-decoration:none;padding:10px 16px;border-radius:8px">Leave a review</a>
@@ -97,16 +81,44 @@ export function receiptHtml(r: ReceiptData): string {
 </div></body></html>`;
 }
 
+
+/** One car's service record, the notes for it and what we checked on it (a heading with the car when there are several). */
+function recordHtml(c: CarRecord): string {
+  return `${c.name ? `<div style="font-weight:800;font-size:17px;margin-top:22px;padding-top:12px;border-top:2px solid #0d1b3e">${esc(c.name)}</div>` : ""}
+  ${c.oil || c.km || c.nextDueKm || c.nextDueDate || c.vin || c.filter ? `<div style="background:#eef1f6;border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6">
+   <div style="font-weight:700;margin-bottom:4px">Service record</div>
+   ${c.vin ? `<div><strong>VIN:</strong> ${esc(c.vin)}</div>` : ""}
+   ${c.km ? `<div><strong>Odometer:</strong> ${c.km.toLocaleString("en-CA")} km</div>` : ""}
+   ${c.oil ? `<div><strong>Oil:</strong> ${esc(c.oil)}</div>` : ""}
+   ${c.filter ? `<div><strong>Oil filter:</strong> ${esc(c.filter)}</div>` : ""}
+   ${c.nextDueKm || c.nextDueDate ? `<div><strong>Next oil change:</strong> ${c.nextDueKm ? `${c.nextDueKm.toLocaleString("en-CA")} km` : ""}${c.nextDueKm && c.nextDueDate ? " or " : ""}${c.nextDueDate ? esc(c.nextDueDate) : ""}, whichever comes first</div>` : ""}
+  </div>` : ""}
+  ${c.note ? `<div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6;background:#fff6dd;border:1px solid #f2b01e">
+   <div style="font-weight:700;margin-bottom:4px">Notes from your technician</div>
+   <div style="white-space:pre-wrap">${esc(c.note)}</div>
+  </div>` : ""}
+  ${c.checks && (c.checks.now.length || c.checks.soon.length || c.checks.ok.length) ? `<div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6;border:1px solid #c8d0e0">
+   <div style="font-weight:700;margin-bottom:4px">What we checked</div>
+   ${c.checks.now.length ? `<div style="color:#9b1c1c"><strong>Needs doing now:</strong> ${esc(c.checks.now.join(", "))}</div>` : ""}
+   ${c.checks.soon.length ? `<div style="color:#8a5a00"><strong>Coming up soon:</strong> ${esc(c.checks.soon.join(", "))}</div>` : ""}
+   ${c.checks.ok.length ? `<div style="color:#1d6b3a"><strong>Good:</strong> ${esc(c.checks.ok.join(", "))}</div>` : ""}
+   ${[...c.checks.now, ...c.checks.soon].some((x) => !/\btires?\b/i.test(x)) ? `<div style="margin-top:6px;color:#4a5878">We can take care of ${[...c.checks.now, ...c.checks.soon].some((x) => /\btires?\b/i.test(x)) ? "everything except the tires" : "these"} on your next visit. Reply or text ${esc(BUSINESS.phone)} and we'll add them.</div>` : ""}
+   ${[...c.checks.now, ...c.checks.soon].some((x) => /\btires?\b/i.test(x)) ? `<div style="margin-top:6px;color:#4a5878">For the tires, we recommend a tire shop.</div>` : ""}
+  </div>` : ""}`;
+}
+
 export function receiptText(r: ReceiptData): string {
   return [
     `${BUSINESS.short} receipt #${r.receiptNo}, ${r.date}`, r.car, "",
     ...r.lines.map((l) => `${l.label}: ${money(l.amount)}`), `HST 14%: ${money(r.hst)}`, `Total: ${money(r.total)}`,
     r.tip ? `Tip, thank you!: ${money(r.tip)}` : "",
     r.paidWith ? `Paid: ${METHOD_NAMES[r.paidWith] || r.paidWith}, ${money(r.total + (r.tip || 0))}` : "",
-    r.vin ? `VIN: ${r.vin}` : "", r.km ? `Odometer: ${r.km} km` : "", r.oil ? `Oil: ${r.oil}` : "", r.filter ? `Oil filter: ${r.filter}` : "",
-    r.nextDueKm ? `Next oil change: ${r.nextDueKm} km${r.nextDueDate ? ` or ${r.nextDueDate}` : ""}` : "",
-    r.customerNote ? `Notes from your technician: ${r.customerNote}` : "",
-    r.checks?.now.length ? `Needs doing now: ${r.checks.now.join(", ")}` : "", r.checks?.soon.length ? `Coming up soon: ${r.checks.soon.join(", ")}` : "",
+    ...(r.cars?.length ? r.cars : [{ vin: r.vin, km: r.km, oil: r.oil, filter: r.filter, nextDueKm: r.nextDueKm, nextDueDate: r.nextDueDate, checks: r.checks, note: r.customerNote } as CarRecord]).flatMap((c) => [
+      c.name ? `\n${c.name}` : "",
+      c.vin ? `VIN: ${c.vin}` : "", c.km ? `Odometer: ${c.km} km` : "", c.oil ? `Oil: ${c.oil}` : "", c.filter ? `Oil filter: ${c.filter}` : "",
+      c.nextDueKm || c.nextDueDate ? `Next oil change: ${[c.nextDueKm ? `${c.nextDueKm} km` : "", c.nextDueDate ?? ""].filter(Boolean).join(" or ")}` : "",
+      c.note ? `Notes from your technician: ${c.note}` : "",
+      c.checks?.now.length ? `Needs doing now: ${c.checks.now.join(", ")}` : "", c.checks?.soon.length ? `Coming up soon: ${c.checks.soon.join(", ")}` : ""]),
     ...(r.late ?? []).map((l) => `${l.label}: ${money(l.amount)}`),
     r.due && r.due > 0 ? `Amount due${r.dueBy ? ` by ${r.dueBy}` : ""}: ${money(r.due)}${r.payUrl ? `. Pay here: ${r.payUrl}` : ""} (or e-transfer to ${BUSINESS.email} with #${r.receiptNo} in the message)${r.lateTerms ? ` ${r.lateTerms}` : ""}` : "",
     r.referUrl ? `Refer a friend, get $5 off your next oil change: ${r.referUrl}` : "",
