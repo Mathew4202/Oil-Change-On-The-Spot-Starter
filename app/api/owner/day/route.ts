@@ -53,8 +53,10 @@ export async function GET(req: NextRequest) {
   const filters: Record<string, number> = {};
   for (const r of rows) {
     const s = r.vehicles?.vehicle_specs;
+    if (["done", "no_show", "cancelled"].includes(r.status)) continue;   // finished: its oil and filter are already used (and off the shelf)
     if (!s || r.services?.own === "both" || (r.services?.job && !["oil_change", "seasonal"].includes(r.services.job))) continue;
-    if (r.services?.own !== "oil") oil[s.oil_grade] = Math.round(((oil[s.oil_grade] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
+    const g = s.oil_grade.toUpperCase().replace(/^(\d+|O)W/, (m) => m.replace("O", "0")).replace(/^EURO /, "Euro ");   // "Ow-20" and "0W-20" are the same oil
+    if (r.services?.own !== "oil") oil[g] = Math.round(((oil[g] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
     if (s.oil_filter_part && r.services?.own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
   }
   // then everything that needs the day's jobs, also all at once
