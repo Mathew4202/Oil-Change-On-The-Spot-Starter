@@ -10,13 +10,13 @@ import Script from "next/script";
 import HideOnOwner from '@/components/HideOnOwner';
 
 export const metadata = {
-  metadataBase: new URL('https://oilchangeonthespot.ca'),
+  metadataBase: new URL('https://www.oilchangeonthespot.ca'),
   title: {
-    default: 'Oil Change On The Spot | Mobile Auto Service HRM',
+    default: 'Oil Change On The Spot | Mobile Oil Change in HRM',
     template: '%s | Oil Change On The Spot'
   },
   description:
-    'Full synthetic oil changes done in your driveway or at work, anywhere in HRM. See your exact price and book in under a minute.',
+    'Full synthetic oil changes and seasonal tire swaps at your home or work across Halifax, Dartmouth, Bedford and Sackville. See your price and book online.',
     icons: {
     icon: [
       { url: '/favicon.ico' },
@@ -30,15 +30,12 @@ export const metadata = {
   },
    manifest: "/site.webmanifest",
   themeColor: "#0d1b3e",
-  alternates: {
-    canonical: 'https://oilchangeonthespot.ca',
-  },
   openGraph: {
     type: 'website',
-    url: 'https://oilchangeonthespot.ca',
-    title: 'Oil Change On The Spot | Mobile Auto Service HRM',
+    url: 'https://www.oilchangeonthespot.ca',
+    title: 'Mobile Oil Change in Halifax and Dartmouth | Oil Change On The Spot',
     description:
-      'Full synthetic oil changes done in your driveway or at work, anywhere in HRM. See your exact price and book in under a minute.',
+      'Full synthetic oil changes and seasonal tire swaps at your home or work across Halifax, Dartmouth, Bedford and Sackville. See your price and book online.',
     images: [{ url: '/og.jpg', width: 1200, height: 630, alt: 'Oil Change On The Spot' }],
   },
 };

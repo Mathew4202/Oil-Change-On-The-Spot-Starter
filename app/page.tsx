@@ -10,7 +10,8 @@ import { NAVY, GOLD, MUTED, LIGHT, PHONE, PHONE_TEL } from "@/components/site/br
 export const revalidate = 3600;
 export const metadata = {
   title: { absolute: "Mobile Oil Change in Halifax and Dartmouth | Oil Change On The Spot" },
-  description: "Full synthetic oil change done in your driveway or at work, anywhere in HRM. See your exact price and book a time in under a minute.",
+  description: "Full synthetic oil changes and seasonal tire swaps at your home or work across Halifax, Dartmouth, Bedford and Sackville. See your price and book online.",
+  alternates: { canonical: "https://www.oilchangeonthespot.ca/" },
 };
 
 const H2 = "text-[34px] sm:text-[44px] leading-[0.95] font-extrabold";
