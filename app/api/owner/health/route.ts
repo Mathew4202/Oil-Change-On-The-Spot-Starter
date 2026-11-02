@@ -25,6 +25,7 @@ export async function GET() {
     cron: !!process.env.CRON_SECRET,
     site: process.env.SITE_URL || null,
     email: { ready: !!process.env.RESEND_API_KEY && !/resend\.dev/i.test(email) && !!email, from: email.replace(/^.*</, "").replace(/>$/, "") || null },
+    etransfer: { secret: !!process.env.ETRANSFER_SECRET },
     webhookUrl: `${process.env.SITE_URL || "https://oilchangeonthespot.ca"}/api/quo/webhook`,
   });
 }
