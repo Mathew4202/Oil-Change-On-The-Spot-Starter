@@ -50,7 +50,21 @@ export async function payTarget(token: string): Promise<PayTarget | null> {
     const paid = r2((await paidSoFar(j.booking_id)) - Number(j.tip ?? 0));
     // a late pay-later bill: the late fee and interest are part of what's owed (no HST on them)
     const late = [Number(j.late_fee) > 0 ? { label: "Late fee", amount: Number(j.late_fee) } : null, Number(j.late_interest) > 0 ? { label: "Interest on late payment", amount: Number(j.late_interest) } : null].filter(Boolean) as { label: string; amount: number }[];
-    const total = r2(Number(j.total) + late.reduce((t, l) => t + l.amount, 0));
+    const total0 = r2(Number(j.total) + late.reduce((t, l) => t + l.amount, 0));
+    // several cars on one visit: this link pays for all of them
+    const { visitGroup, owedOn } = await import("@/lib/os/jobs");
+    const visit = (await visitGroup(j.booking_id).catch(() => [])).filter((c) => c.job);
+    if (visit.length > 1) {
+      const vLines = visit.flatMap((c) => (c.job!.lines ?? []).map((l) => ({ label: `${c.job!.vehicle_text || c.car}: ${l.label}`, amount: l.amount })));
+      const vLate = visit.flatMap((c) => [Number(c.job!.late_fee) > 0 ? { label: "Late fee", amount: Number(c.job!.late_fee) } : null, Number(c.job!.late_interest) > 0 ? { label: "Interest on late payment", amount: Number(c.job!.late_interest) } : null].filter(Boolean) as { label: string; amount: number }[]);
+      const vTotal = r2(visit.reduce((t, c) => t + Number(c.job!.total) + Number(c.job!.late_fee ?? 0) + Number(c.job!.late_interest ?? 0), 0));
+      const due = r2(visit.reduce((t, c) => t + owedOn(c), 0));
+      return { kind: "job", bookingId: j.booking_id, jobId: j.id, token, title: "Your service", car: visit.map((c) => c.job!.vehicle_text || c.car).join(" + "), when: null,
+        lines: [...vLines, ...vLate], subtotal: r2(visit.reduce((t, c) => t + Number(c.job!.subtotal), 0)), hst: r2(visit.reduce((t, c) => t + Number(c.job!.hst), 0)), total: vTotal,
+        paid: r2(vTotal - due), due, firstName: j.customers?.first_name ?? null, lastName: j.customers?.last_name ?? null, email: j.customers?.email ?? null,
+        receiptUrl: `/receipt/${token}`, ref: j.receipt_no ? String(j.receipt_no) : null };
+    }
+    const total = total0;
     return { kind: "job", bookingId: j.booking_id, jobId: j.id, token, title: j.service === "cancellation_fee" ? "Same-day cancellation fee" : "Your service",
       car: j.vehicle_text || "", when: null, lines: [...(j.lines ?? []), ...late], subtotal: Number(j.subtotal), hst: Number(j.hst), total, paid: Math.max(0, paid), due: amountDue(total, paid),
       firstName: j.customers?.first_name ?? null, lastName: j.customers?.last_name ?? null, email: j.customers?.email ?? null, receiptUrl: `/receipt/${token}`, ref: j.receipt_no ? String(j.receipt_no) : null };
@@ -197,7 +211,8 @@ async function recordOnline(p: OnlineRow, txnId: string, last4: string | null) {
     await Promise.race([pushToOwners({ title: `Invoice #${i?.invoice_no ?? ""} paid online`, body: `$${amount.toFixed(2)} by card`, url: "/owner/fleets", tag: `paid-${p.id}` }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
     return;
   } else if (p.kind === "job") {
-    await recordPayment(p.booking_id, r2(amount - tip), "card_online", "online", tip);
+    const { payVisit } = await import("@/lib/os/jobs");
+    if (!(await payVisit(p.booking_id, "card_online", "online", tip).catch(() => false))) await recordPayment(p.booking_id, r2(amount - tip), "card_online", "online", tip);   // several cars: each car's share
     // recordPayment writes "recorded by online"; put the Converge reference on it
     const [pay] = await sbGet<{ id: string }>(`payments?select=id&booking_id=eq.${p.booking_id}&method=eq.card_online&order=paid_at.desc&limit=1`);
     if (pay) await sbPatch("payments", `id=eq.${pay.id}`, { processor_ref: `${ref}${tip ? `, includes $${tip.toFixed(2)} tip` : ""}` });

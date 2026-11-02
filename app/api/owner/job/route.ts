@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { currentOwner } from "@/lib/os/auth";
 import { sbPatch } from "@/lib/os/db";
-import { jobContext, startJob, finishJob, recordPayment, sendReceipt, setCustomerNote } from "@/lib/os/jobs";
+import { jobContext, startJob, finishJob, recordPayment, sendReceipt, setCustomerNote, payVisit } from "@/lib/os/jobs";
 import { payReady } from "@/lib/os/payments";
 import { payLink, textCustomer } from "@/lib/os/customer-texts";
 
@@ -55,7 +55,8 @@ export async function POST(req: NextRequest) {
       if (ctx.job.imported_from === "job_tracker") return NextResponse.json({ error: "This job is already in your Job Tracker sheet, so it's already counted." }, { status: 400 });
       const tip = Math.min(1000, Math.max(0, Number(body.tip) || 0));
       const due = Math.max(0, Math.round((Number(ctx.job.total) + Number(ctx.job.late_fee ?? 0) + Number(ctx.job.late_interest ?? 0) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100);   // late charges included
-      await recordPayment(id, due, method.data, owner, tip);
+      // several cars on one visit: every car gets paid the same way
+      if (!(ctx.group && await payVisit(id, method.data, owner, tip))) await recordPayment(id, due, method.data, owner, tip);
       const receipt = body.sendReceipt === false ? null : await sendReceipt(String(ctx.job.id), body.email || null);
       return NextResponse.json({ ok: true, receipt });
     }

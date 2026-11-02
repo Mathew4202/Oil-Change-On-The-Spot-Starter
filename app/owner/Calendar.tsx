@@ -17,7 +17,8 @@ type Job = {
   oil: { grade: string; litres: number; filter: string | null; spec: string | null; engine?: string | null; diesel?: boolean; wix?: string | null;
     checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterCost?: number | null; filterNote?: string | null } | null;
   partNos?: string[];
-  lastTime?: { now: string[]; soon: string[]; note: string | null } | null;   // what we flagged on this car last visit
+  lastTime?: { now: string[]; soon: string[]; note: string | null } | null;
+  groupId?: string | null;   // several cars on one visit   // what we flagged on this car last visit
   lines: { label: string; amount: number }[]; total: number | null; profit: number | null; costs?: { subtotal: number; litres: number; perL: number; oil: number; filter: number; filterGuess: boolean; supplies: number; grade: string } | null;
   notes: string | null; checks: string[]; imported: boolean; photos?: string[]; vin?: string | null; vinCar?: string | null; job?: string; addons?: string[];
 };
@@ -217,7 +218,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
         )}
 
         {day && [...day.timeOff.map((t) => ({ at: t.starts_at, off: t, job: null as Job | null })),
-                 ...day.jobs.map((j) => ({ at: j.start, off: null, job: j }))]
+                 ...day.jobs.filter((j) => !j.groupId || day.jobs.find((x) => x.groupId === j.groupId)!.id === j.id).map((j) => ({ at: j.start, off: null, job: j }))]
           .sort((x, y) => x.at.localeCompare(y.at))
           .map(({ off: t, job }) => t ? (
           <div key={t.id} className="rounded-xl bg-white/70 border border-dashed border-[#c8d0e0] p-3 flex items-center justify-between gap-2">
@@ -225,7 +226,18 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
             {can.timeOff && <button onClick={async () => { await fetch(`/api/owner/time-off?id=${t.id}`, { method: "DELETE" }); load(date); }}
               className="h-10 px-3 rounded-lg border border-[#c8d0e0] text-sm font-bold">Remove</button>}
           </div>
-        ) : ((j: Job) => {
+        ) : ((first: Job) => {
+          // several cars on one visit: one card. The buttons act on the next car still to do (or the last one, for its receipt).
+          const members = first.groupId ? day.jobs.filter((x) => x.groupId === first.groupId) : [first];
+          const many = members.length > 1;
+          const j: Job = many ? (() => {
+            const nextUp = members.find((m) => m.status !== "done") ?? members[members.length - 1];
+            const sumN = (f: (m: Job) => number | null | undefined) => members.every((m) => f(m) == null) ? null : Math.round(members.reduce((t, m) => t + (f(m) ?? 0), 0) * 100) / 100;
+            return { ...nextUp, start: first.start, car: members.map((m) => m.car).filter(Boolean).join(" + "), cars: members.length,
+              status: members.every((m) => m.status === "done") ? "done" : members.some((m) => m.status === "in_progress" || m.status === "done") ? "in_progress" : nextUp.status,
+              paid: members.every((m) => m.paid), lines: members.flatMap((m) => m.lines.map((l) => ({ ...l, label: `${m.car || "Car"}: ${l.label}` }))),
+              total: sumN((m) => m.total), profit: sumN((m) => m.profit), finalTotal: sumN((m) => m.finalTotal), costs: null };
+          })() : first;
           const expanded = open === j.id;
           const paid = j.payMode === "online";
           return (
@@ -239,6 +251,11 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   </span>
                 </div>
                 <p className="font-bold text-[17px]">{j.name}{j.car ? ` · ${j.car}` : ""}{j.cars > 1 ? ` (${j.cars} cars)` : ""}</p>
+                {many && (
+                  <div className="text-[14px] rounded-lg bg-[#f4f6fa] px-3 py-2 flex flex-col gap-0.5">
+                    {members.map((m) => <p key={m.id}><span className="font-semibold">{m.car || "Car"}</span>: {m.oil ? `${m.oil.grade.replace(/^Euro /, "")}, ${m.oil.litres} L · filter ${m.oil.filter ? `NAPA ${m.oil.filter}` : "find on site"}` : "oil not on file"}{m.status === "done" ? " · done" : ""}</p>)}
+                  </div>
+                )}
                 {j.job && j.job !== "oil_change" && (
                   <p className="text-[15px] font-semibold text-[#c98a00]">
                     {j.job === "diagnostic" ? "Diagnostic" : j.job === "tires" ? "Tire change (on rims)" : j.job === "seasonal" ? "Seasonal package: oil + tires" : `Parts visit: ${(j.addons ?? []).map((a) => ({ wipers: "wipers", cabin_filter: "cabin filter", engine_filter: "engine air filter", battery: "battery", coolant: "coolant", washer_fluid: "washer fluid" } as Record<string, string>)[a] ?? a).join(", ")}`}
@@ -247,7 +264,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 {(!j.job || j.job === "oil_change" || j.job === "seasonal") && (j.addons ?? []).length > 0 && (
                   <p className="text-[15px] font-semibold text-[#c98a00]">+ {(j.addons ?? []).map((a) => ({ wipers: "wipers", cabin_filter: "cabin filter", engine_filter: "engine air filter", battery: "battery", coolant: "coolant", washer_fluid: "washer fluid", tires: "tires" } as Record<string, string>)[a] ?? a).join(", ")}</p>
                 )}
-                {j.oil && (
+                {!many && j.oil && (
                   <div className="rounded-lg bg-[#f4f6fa] px-3 py-2 text-[14px] leading-snug grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
                     <span className="text-[#4a5878]">Engine</span><span className="font-semibold">{j.engine || j.oil.engine || "not on file"}{j.oil.diesel ? " (diesel)" : ""}</span>
                     <span className="text-[#4a5878]">Oil</span><span className="font-semibold">{j.oil.grade.replace(/^Euro /, "")}{j.oil.diesel ? " diesel oil" : " full synthetic"}, {j.oil.litres} L</span>

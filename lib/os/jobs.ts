@@ -27,7 +27,25 @@ export type JobContext = {
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null } | null } | null;
   job: Record<string, unknown> | null;
   paid: number;   // all payments on this booking so far (a booking paid online when booked, tips included)
+  group?: { cars: { bookingId: string; car: string; done: boolean }[]; index: number; open: number; othersOwed: number; othersTotal: number; allTotal: number; allOwed: number } | null;   // several cars, one visit
 };
+
+/** Several cars booked together (one visit): every booking in it, its job once finished, and what's been paid on it. Empty for a single car or a fleet visit. */
+export type VisitCar = { bookingId: string; status: string; car: string; paid: number;
+  job: { id: string; total: number; tip: number | null; late_fee: number | null; late_interest: number | null; receipt_token: string; receipt_no: number;
+    lines: { label: string; amount: number }[] | null; subtotal: number; hst: number; vehicle_text: string | null; oil_grade: string | null; oil_litres: number | null; filter_part: string | null; review_requested: boolean | null; customer_note?: string | null } | null };
+export async function visitGroup(bookingId: string): Promise<VisitCar[]> {
+  const [me] = await sbGet<{ group_id: string | null; pay_mode: string }>(`bookings?select=group_id,pay_mode&id=eq.${enc(bookingId)}`).catch(() => []);
+  if (!me?.group_id || me.pay_mode === "fleet_invoice") return [];
+  const rows = await sbGet<{ id: string; status: string; vehicles: { year: number | null; make: string | null; model: string | null } | null; jobs: NonNullable<VisitCar["job"]>[] }>(
+    `bookings?select=id,status,vehicles(year,make,model),jobs(*)&group_id=eq.${me.group_id}&status=not.in.(cancelled,no_show)&order=starts_at`);
+  if (rows.length < 2) return [];
+  const pays = await sbGet<{ booking_id: string; amount: number }>(`payments?select=booking_id,amount&booking_id=in.(${rows.map((r) => r.id).join(",")})`);
+  return rows.map((r) => ({ bookingId: r.id, status: r.status, car: [r.vehicles?.year, r.vehicles?.make, r.vehicles?.model].filter(Boolean).join(" ") || "Car",
+    paid: r2(pays.filter((p) => p.booking_id === r.id).reduce((t, p) => t + Number(p.amount), 0)), job: r.jobs?.[0] ?? null }));
+}
+/** What's still owed on one finished car of a visit (late charges in, tips out). */
+export const owedOn = (c: VisitCar) => !c.job ? 0 : Math.max(0, r2(Number(c.job.total) + Number(c.job.late_fee ?? 0) + Number(c.job.late_interest ?? 0) - (c.paid - Number(c.job.tip ?? 0))));
 
 export async function jobContext(bookingId: string): Promise<JobContext | null> {
   const id = enc(bookingId);
@@ -39,11 +57,20 @@ export async function jobContext(bookingId: string): Promise<JobContext | null> 
     sbGet<Record<string, unknown>>(`jobs?select=*&booking_id=eq.${id}&order=done_at.desc&limit=1`),
     sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${id}`),
   ]);
-  return { booking: b, customer: customer ?? null, vehicle: vehicle ?? null, job: job ?? null, paid: r2(pays.reduce((t, p) => t + Number(p.amount), 0)) };
+  const g = await visitGroup(bookingId).catch(() => [] as VisitCar[]);
+  const others = g.filter((c) => c.bookingId !== bookingId);
+  const group = g.length ? {
+    cars: g.map((c) => ({ bookingId: c.bookingId, car: c.car, done: !!c.job })), index: g.findIndex((c) => c.bookingId === bookingId),
+    open: others.filter((c) => !c.job).length, othersOwed: r2(others.reduce((t, c) => t + owedOn(c), 0)), othersTotal: r2(others.reduce((t, c) => t + Number(c.job?.total ?? 0), 0)),
+    allTotal: r2(g.reduce((t, c) => t + Number(c.job?.total ?? 0), 0)), allOwed: r2(g.reduce((t, c) => t + owedOn(c), 0)),
+  } : null;
+  return { booking: b, customer: customer ?? null, vehicle: vehicle ?? null, job: job ?? null, paid: r2(pays.reduce((t, p) => t + Number(p.amount), 0)), group };
 }
 
 export async function startJob(bookingId: string) {
-  return sbPatch("bookings", `id=eq.${enc(bookingId)}`, { status: "in_progress", started_at: new Date().toISOString() });
+  // one visit with several cars: starting it starts them all
+  const ids = [bookingId, ...(await visitGroup(bookingId).catch(() => [] as VisitCar[])).filter((c) => c.bookingId !== bookingId && ["confirmed", "requested"].includes(c.status)).map((c) => c.bookingId)];
+  return sbPatch("bookings", `id=in.(${ids.map(enc).join(",")})&status=in.(confirmed,requested)`, { status: "in_progress", started_at: new Date().toISOString() });
 }
 
 export type FinishInput = {
@@ -158,6 +185,14 @@ export async function finishJob(input: FinishInput, owner: string) {
   // Gloves and shop towels used on every car (pricing rules: gloves_per_car 2, gloves_per_box 100, towels_per_car 2)
   await useSupplies(ctx.booking.cars || 1, rules, job.data!.id).catch(() => null);
 
+  // Several cars on one visit: payment, the bill, the receipt and the review text come once, after the last car
+  const visit = fleet ? [] : await visitGroup(ctx.booking.id).catch(() => [] as VisitCar[]);
+  const others = visit.filter((c) => c.bookingId !== ctx.booking.id);
+  const nextCar = others.find((c) => !c.job);
+  if (nextCar) return { ok: true as const, jobId: job.data!.id, receiptNo, total, prepaid: 0, refund: 0, receipt: { sent: false, reason: "after the last car" }, reviewText: null, billText: null,
+    profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)), partial: true, nextBookingId: nextCar.bookingId, nextCar: nextCar.car, carsLeft: others.filter((c) => !c.job).length };
+  const othersOwed = r2(others.reduce((t, c) => t + owedOn(c), 0));
+
   // Paid online when they booked? Only the difference (if anything was added on site) is still owed.
   const prepaid = r2((await sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${ctx.booking.id}`)).reduce((t, p) => t + Number(p.amount), 0));
   const tip = input.tip ?? 0;
@@ -174,17 +209,12 @@ export async function finishJob(input: FinishInput, owner: string) {
       paidNow = true;
     }
   } else if (input.payMethod) await recordPayment(ctx.booking.id, total, input.payMethod, owner, tip);
+  // the other cars of the visit are paid the same way, with this one
+  if (input.payMethod && input.payMethod !== "card_online") for (const c of others) { const o = owedOn(c); if (o > 0) await recordPayment(c.bookingId, o, input.payMethod, owner, 0); }
+  else if (others.length && othersOwed > 0) paidNow = false;
 
-  // Review text goes out as soon as the job is complete
-  let reviewText: { sent: boolean; status: string } | null = null;
-  if (firstTime && ctx.customer?.phone) {
-    const body = await template("review_request");
-    if (body) {
-      reviewText = await sendSms(ctx.customer.phone, fill(body, { first_name: ctx.customer.first_name?.trim() || "there", review_link: await reviewLink() }),
-        { kind: "review_request", customerId: ctx.customer.id, bookingId: ctx.booking.id });
-    }
-  }
-  if (firstTime && ctx.customer) await sbPatch("customers", `id=eq.${ctx.customer.id}`, { review_asked_at: now });
+  // The thank-you / review text goes out once they've paid (a pay-later bill: when it's marked paid), never before the bill
+  const reviewText = paidNow ? await reviewIfDue(ctx.booking.id) : null;
 
   // The receipt goes out once they've paid (if not paid yet, it's sent when you mark it paid)
   let receipt: { sent: boolean; reason?: string } = { sent: false, reason: fleet ? "fleet invoice" : paidNow ? "not requested" : "waiting for payment" };
@@ -194,14 +224,15 @@ export async function finishJob(input: FinishInput, owner: string) {
     // due in 48 hours (setting bill_due_hours); after that the late fee, then monthly interest (bill-late.ts). They're told up front.
     const lr = lateRules(rules);
     const dueAt = new Date(Date.now() + lr.dueHours * 3600000).toISOString();
-    await sbPatch("jobs", `id=eq.${job.data!.id}`, { bill_sent_at: now, bill_due_at: dueAt }).catch(() => null);
-    receipt = await sendReceipt(job.data!.id, input.email ?? null);   // shows what's owed, the due date and a Pay button
-    const due = r2(total - prepaid);
+    await sbPatch("jobs", `id=eq.${job.data!.id}`, { bill_sent_at: now, bill_due_at: dueAt }).catch(() => null);   // the due date (and any late fee) sits on one car of the visit, so it's charged once
+    for (const c of others) if (c.job) await sbPatch("jobs", `id=eq.${c.job.id}`, { bill_sent_at: now }).catch(() => null);
+    receipt = await sendReceipt(job.data!.id, input.email ?? null);   // shows what's owed, the due date and a Pay button (every car of the visit)
+    const due = r2(total - prepaid + othersOwed);
     const body = (await template("bill_sent")) || "Hi {first_name}, thanks for having us! Your total is {total}, due by {due_by}. Pay here (card or e-transfer): {pay_link}\n{late_terms}\n- {signer}, Oil Change On The Spot";
     billText = ctx.customer ? await textCustomer("bill_sent", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }, ctx.booking.id)
       .then((x) => (x.status === "template_off" && body ? sendSms(ctx.customer!.phone || "", fill(body, { first_name: ctx.customer!.first_name?.trim() || "there", total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }), { kind: "bill_sent", customerId: ctx.customer!.id, bookingId: ctx.booking.id }) : x)).catch(() => null) : null;
   }
-  return { ok: true as const, jobId: job.data!.id, receiptNo, total, prepaid, refund, receipt, reviewText, billText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
+  return { ok: true as const, jobId: job.data!.id, receiptNo, total: r2(total + others.reduce((t, c) => t + Number(c.job?.total ?? 0), 0)), cars: visit.length || 1, prepaid, refund, receipt, reviewText, billText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
 }
 
 /** amount = the receipt total (with HST). A tip is added on top: it's income, but it never gets HST. */
@@ -212,6 +243,33 @@ export async function recordPayment(bookingId: string, amount: number, method: s
   const [j] = await sbGet<{ subtotal: number | null; late_fee?: number | null; late_interest?: number | null }>(`jobs?select=*&booking_id=eq.${enc(bookingId)}&limit=1`);
   const late = Number(j?.late_fee ?? 0) + Number(j?.late_interest ?? 0);   // late charges are income too (no HST on them)
   await sbPatch("jobs", `booking_id=eq.${enc(bookingId)}`, { payment_method: method, tip: t, ...(j?.subtotal != null ? { revenue: r2(Number(j.subtotal) + t + late) } : {}) });
+  // a pay-later bill just got paid: now the thank-you / review text goes out (once, and not for a visit with cars still unpaid)
+  if ((j as { bill_sent_at?: string | null } | undefined)?.bill_sent_at) await reviewIfDue(bookingId).catch(() => null);
+}
+
+/** Pay everything still owed on a visit (every car), the same way. The tip goes on the car you're looking at. */
+export async function payVisit(bookingId: string, method: string, owner: string, tip = 0) {
+  const visit = await visitGroup(bookingId);
+  const [b] = await sbGet<{ id: string }>(`bookings?select=id&id=eq.${enc(bookingId)}`);
+  if (!b) return;
+  const cars = visit.length ? visit.filter((c) => c.job) : [];
+  if (!cars.length) return false;
+  for (const c of cars) { const o = owedOn(c); const t = c.bookingId === bookingId ? tip : 0; if (o > 0 || t > 0) await recordPayment(c.bookingId, o, method, owner, t); }
+  return true;
+}
+
+/** The thank-you with the Google review link, for a first-time customer, once they've paid (every car of the visit). Sent once. */
+export async function reviewIfDue(bookingId: string): Promise<{ sent: boolean; status: string } | null> {
+  const [j] = await sbGet<{ review_requested: boolean | null; customer_id: string | null }>(`jobs?select=review_requested,customer_id&booking_id=eq.${enc(bookingId)}&limit=1`);
+  if (!j?.review_requested || !j.customer_id) return null;
+  const visit = await visitGroup(bookingId).catch(() => [] as VisitCar[]);
+  if (visit.some((c) => !c.job || owedOn(c) > 0.009)) return null;   // a car still to finish or pay
+  const [c] = await sbGet<{ id: string; first_name: string | null; phone: string | null; review_asked_at: string | null }>(`customers?select=id,first_name,phone,review_asked_at&id=eq.${j.customer_id}`);
+  if (!c?.phone || c.review_asked_at) return null;
+  await sbPatch("customers", `id=eq.${c.id}`, { review_asked_at: new Date().toISOString() });   // first, so two payments at once can't send it twice
+  const body = await template("review_request");
+  if (!body) return null;
+  return sendSms(c.phone, fill(body, { first_name: c.first_name?.trim() || "there", review_link: await reviewLink() }), { kind: "review_request", customerId: c.id, bookingId });
 }
 
 const siteUrl = () => process.env.SITE_URL || (process.env.VERCEL_BRANCH_URL ? `https://${process.env.VERCEL_BRANCH_URL}` : process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://oilchangeonthespot.ca");
@@ -228,19 +286,29 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
   const [v] = j.vehicle_id ? await sbGet<{ vin: string | null; vehicle_specs: { oil_spec: string | null } | null }>(`vehicles?select=vin,vehicle_specs(oil_spec)&id=eq.${j.vehicle_id}`) : [];
   const [fp] = j.filter_part ? await sbGet<{ brand: string | null }>(`parts?select=brand&part_number=eq.${enc(j.filter_part)}&limit=1`) : [];
   const spec = v?.vehicle_specs?.oil_spec && !/^API\s*S/i.test(v.vehicle_specs.oil_spec) ? v.vehicle_specs.oil_spec : null;
+  // several cars on one visit: one receipt for all of them (each car's lines under its name)
+  const visit = j.booking_id ? (await visitGroup(j.booking_id).catch(() => [] as VisitCar[])).filter((c) => c.job) : [];
+  const many = visit.length > 1;
+  const sum = (f: (c: VisitCar) => number) => r2(visit.reduce((t, c) => t + f(c), 0));
   return {
     jobId: j.id, email: c?.email ?? null, customerId: j.customer_id, reviewAsked: !!c?.review_asked_at,
     data: {
       receiptNo: j.receipt_no, date: nice(new Date(j.done_at)), customer: [c?.first_name, c?.last_name].filter(Boolean).join(" ") || "Customer",
-      car: j.vehicle_text || "", address: b?.address ?? null, lines: j.lines ?? [], subtotal: Number(j.subtotal), hst: Number(j.hst), total: Number(j.total), tip: Number(j.tip ?? 0),
-      paidWith: j.payment_method, km: j.km, nextDueKm: j.next_due_km, nextDueDate: j.next_due_date ? nice(new Date(`${j.next_due_date}T12:00:00Z`)) : null,
-      oil: j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${spec ? ` (meets ${spec})` : ""}${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
-      filter: j.filter_part ? `${fp?.brand || "NAPA ProFormer"} ${j.filter_part}` : null,
-      vin: v?.vin ?? null, customerNote: j.customer_note ?? null,
+      car: many ? visit.map((c) => c.job!.vehicle_text || c.car).join(" + ") : j.vehicle_text || "", address: b?.address ?? null,
+      lines: many ? visit.flatMap((c) => (c.job!.lines ?? []).map((l) => ({ label: `${c.job!.vehicle_text || c.car}: ${l.label}`, amount: l.amount }))) : j.lines ?? [],
+      subtotal: many ? sum((c) => Number(c.job!.subtotal)) : Number(j.subtotal), hst: many ? sum((c) => Number(c.job!.hst)) : Number(j.hst), total: many ? sum((c) => Number(c.job!.total)) : Number(j.total),
+      tip: many ? sum((c) => Number(c.job!.tip ?? 0)) : Number(j.tip ?? 0),
+      paidWith: j.payment_method, km: many ? null : j.km, nextDueKm: many ? null : j.next_due_km,   // several cars: each car's km is in its own history
+      nextDueDate: j.next_due_date ? nice(new Date(`${j.next_due_date}T12:00:00Z`)) : null,
+      oil: many ? visit.filter((c) => c.job!.oil_grade).map((c) => `${c.job!.vehicle_text || c.car}: ${c.job!.oil_grade!.replace(/^Euro /, "")} full synthetic${c.job!.oil_litres ? `, ${Number(c.job!.oil_litres)} L` : ""}`).join("; ") || null
+        : j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${spec ? ` (meets ${spec})` : ""}${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
+      filter: many ? visit.filter((c) => c.job!.filter_part).map((c) => `${c.job!.vehicle_text || c.car}: ${fp?.brand || "NAPA ProFormer"} ${c.job!.filter_part}`).join("; ") || null
+        : j.filter_part ? `${fp?.brand || "NAPA ProFormer"} ${j.filter_part}` : null,
+      vin: many ? null : v?.vin ?? null, customerNote: many ? visit.map((c) => c.job!.customer_note ? `${c.job!.vehicle_text || c.car}: ${c.job!.customer_note}` : "").filter(Boolean).join("\n") || null : j.customer_note ?? null,
       ...(await (async () => {
         const paid = j.booking_id ? (await sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${j.booking_id}`).catch(() => [])).reduce((t, p) => t + Number(p.amount), 0) - Number(j.tip ?? 0) : 0;
         const x = j as unknown as { late_fee?: number | null; late_interest?: number | null; bill_due_at?: string | null };
-        const due = owing({ total: Number(j.total), paid, lateFee: Number(x.late_fee ?? 0), lateInterest: Number(x.late_interest ?? 0) });
+        const due = many ? sum(owedOn) : owing({ total: Number(j.total), paid, lateFee: Number(x.late_fee ?? 0), lateInterest: Number(x.late_interest ?? 0) });
         const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value").catch(() => [])).map((y) => [y.key, Number(y.value)]));
         return { due: j.payment_method === "invoice" ? 0 : due, payUrl: due > 0 && j.payment_method !== "invoice" ? payLink(j.receipt_token) : null,
           late: [Number(x.late_fee) > 0 ? { label: "Late fee", amount: Number(x.late_fee) } : null, Number(x.late_interest) > 0 ? { label: "Interest on late payment", amount: Number(x.late_interest) } : null].filter(Boolean) as { label: string; amount: number }[],

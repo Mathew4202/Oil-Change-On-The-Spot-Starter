@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 type Row = {
   id: string; starts_at: string; ends_at: string; status: string; pay_mode: string; address: string | null; paid_at: string | null;
   jobs: { receipt_no: number | null; total: number | null }[] | null;
-  quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; profit?: number | null } | null; needs_review: string[] | null; notes: string | null; cars: number; vehicle_id?: string | null;
+  quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; profit?: number | null } | null; needs_review: string[] | null; notes: string | null; cars: number; vehicle_id?: string | null; group_id?: string | null;
   services: { job?: string; own?: "both" | "oil" | "filter" | null; addons?: string[] } | null; source: string | null;
   customers: { first_name: string | null; last_name: string | null; phone: string | null; address: string | null } | null;
   vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null;
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "bad date" }, { status: 400 });
   const from = halifaxToDate(date, 0).toISOString(), to = halifaxToDate(date, 24 * 60).toISOString();
 
-  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,vehicle_id,` +
+  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,vehicle_id,group_id,` +
       `customers(first_name,last_name,phone,address),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,verified,source,confidence${extra}))` +
       `&starts_at=gte.${from}&starts_at=lt.${to}&status=neq.cancelled&order=starts_at`);
   // everything that only needs the date goes out at once (each trip to the database is a wait, so never one after another)
@@ -120,6 +120,7 @@ export async function GET(req: NextRequest) {
       ...(() => { const c = costsOf(r, s); const live = !(r.services?.addons ?? []).length ? estimate(c) : null;
         return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? estimate(c), r) : null, costs: money && live != null ? c : null }; })(), notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       lastTime: lastTimeFor(r),
+      groupId: r.pay_mode !== "fleet_invoice" ? r.group_id ?? null : null,   // several cars on one visit: one card in HQ
       vin: (r.services as { vin?: string } | null)?.vin ?? null, vinCar: (r.services as { vinCar?: string } | null)?.vinCar ?? null,
     };
   });

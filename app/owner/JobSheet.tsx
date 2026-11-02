@@ -13,6 +13,7 @@ type Ctx = {
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null } | null } | null;
   job: { receipt_no: number; total: number; tip?: number | null; late_fee?: number | null; late_interest?: number | null; bill_due_at?: string | null; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null; customer_note?: string | null } | null;
   paid: number; payOnline: boolean;
+  group?: { cars: { bookingId: string; car: string; done: boolean }[]; index: number; open: number; othersOwed: number; othersTotal: number; allTotal: number; allOwed: number } | null;   // several cars, one visit
 };
 const CHECKS: [string, string][] = [
   ["coolant", "Coolant"], ["brake_fluid", "Brake fluid"], ["washer_fluid", "Washer fluid"], ["engine_filter", "Engine air filter"],
@@ -22,8 +23,15 @@ const PAY: [string, string][] = [["card_terminal", "Card"], ["cash", "Cash"], ["
 const money = (n: number) => `${n < 0 ? "−" : ""}$${Math.abs(n).toFixed(2)}`;
 const field = "h-12 rounded-xl border px-3 text-base w-full bg-white";
 
-export default function JobSheet({ bookingId, owner, onClose }: { bookingId: string; owner: string; onClose: (changed: boolean) => void }) {
+export default function JobSheet(props: { bookingId: string; owner: string; onClose: (changed: boolean) => void }) {
+  // several cars on one visit: finishing a car moves straight on to the next one (a fresh form each time)
+  const [bid, setBid] = useState(props.bookingId); const [changed, setChanged] = useState(false);
+  return <OneCar key={bid} bookingId={bid} owner={props.owner} onClose={(c) => props.onClose(c || changed)} onNext={(id) => { setChanged(true); setBid(id); }} />;
+}
+
+function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owner: string; onClose: (changed: boolean) => void; onNext: (bookingId: string) => void }) {
   const [ctx, setCtx] = useState<Ctx | null>(null);
+  const [next, setNext] = useState<{ id: string; car: string; left: number } | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string>("");
@@ -59,10 +67,14 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
   const subtotal = Math.round(lines.reduce((t, l) => t + l.amount, 0) * 100) / 100;
   const hst = Math.round(subtotal * 14) / 100;
   const total = Math.round((subtotal + hst) * 100) / 100;
+  const g = ctx?.group ?? null;
+  const notLastCar = !!g && !ctx?.job && g.open > 0;                // payment comes after the last car of the visit
+  const others = g && !notLastCar ? g.othersOwed : 0;              // the visit's other cars, still to pay with this one
   const prepaid = ctx && !ctx.job ? ctx.paid : 0;                    // paid online when they booked
-  const balance = Math.max(0, Math.round((total - prepaid) * 100) / 100);
+  const balance = Math.max(0, Math.round((total - prepaid + others) * 100) / 100);
   const late = ctx?.job ? Number(ctx.job.late_fee ?? 0) + Number(ctx.job.late_interest ?? 0) : 0;   // a late pay-later bill
-  const owedAfter = ctx?.job ? Math.max(0, Math.round((Number(ctx.job.total) + late - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100) : 0;
+  const owedAfter = ctx?.job ? (g ? g.allOwed : Math.max(0, Math.round((Number(ctx.job.total) + late - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100)) : 0;
+  const shownTotal = ctx?.job && g ? g.allTotal : Number(ctx?.job?.total ?? 0);
   const fleetJob = ctx?.booking.pay_mode === "fleet_invoice";   // billed on the fleet's invoice
   const payChoices = prepaid > 0 ? PAY.filter(([k]) => k !== "card_online") : PAY;
 
@@ -90,9 +102,10 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined, customerNote: custNote.trim() || undefined,
       payMethod: pay && pay !== "bill" ? pay : null, tip: pay && pay !== "bill" && Number(tip) > 0 ? Number(tip) : null, email: email.trim() || null, sendReceipt: true, bill: pay === "bill",
     });
+    if (j?.partial) { setNext({ id: j.nextBookingId, car: j.nextCar, left: j.carsLeft }); setResult(`Car done (${money(j.total)}). Next: ${j.nextCar}. Payment, the receipt and the texts come after the last car.`); return; }
     const paidLine = j?.prepaid > 0 ? (j.refund > 0 ? `, paid online. They paid ${money(j.refund)} too much, refund it in Converge` : balance > 0 && !pay ? `, ${money(balance)} still owed` : ", paid online") : pay ? ", paid" : ", not paid yet";
     const billLine = pay === "bill" ? ` Bill sent: ${[j?.receipt?.sent ? "emailed" : null, j?.billText?.sent ? "texted the pay link" : null].filter(Boolean).join(" and ") || "nothing went out (no email or texts on file), send the pay link from the job later"}. It's marked paid by itself when they pay online, or when the e-transfer shows on the bank statement.` : "";
-    if (j) setResult(`Job done. Receipt #${j.receiptNo}, ${money(j.total)}${pay === "bill" ? ", not paid yet." + billLine : paidLine + "." + receiptMsg(j.receipt)}${
+    if (j) setResult(`Job done${j.cars > 1 ? ` (${j.cars} cars)` : ""}. Receipt #${j.receiptNo}, ${money(j.total)}${pay === "bill" ? ", not paid yet." + billLine : paidLine + "." + receiptMsg(j.receipt)}${
       j.reviewText ? (j.reviewText.sent ? " Review text sent." : j.reviewText.status === "not_set_up" ? " Review text not sent (texting isn't set up yet)." : " Review text failed, check the number.") : ""}`);
   }
   async function markPaid() {
@@ -122,7 +135,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
         <div className="flex items-center justify-between gap-3 p-4 text-white pt-[max(16px,env(safe-area-inset-top))]" style={{ background: NAVY }}>
           <div className="min-w-0">
             <h2 className="text-2xl font-extrabold truncate" style={{ fontFamily: "var(--font-condensed)" }}>{name || "Job"}</h2>
-            <p className="text-sm text-[#c9d3ea] truncate">{car}{ctx?.booking.address ? ` · ${ctx.booking.address}` : ""}</p>
+            <p className="text-sm text-[#c9d3ea] truncate">{g ? `Car ${g.index + 1} of ${g.cars.length}: ` : ""}{car}{ctx?.booking.address ? ` · ${ctx.booking.address}` : ""}</p>
           </div>
           <button onClick={() => onClose(!!result)} className="h-10 px-3 rounded-lg border border-[#3b4d7a] font-bold text-sm shrink-0">Close</button>
         </div>
@@ -133,7 +146,8 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
           {result && (
             <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: "#dff3e6", border: "1px solid #9fd3b2" }} role="status">
               <p className="font-bold text-[17px] text-[#1d6b3a]">{result}</p>
-              <button onClick={() => onClose(true)} className="h-11 rounded-lg font-extrabold" style={{ background: NAVY, color: "#fff" }}>Back to calendar</button>
+              {next ? <button onClick={() => onNext(next.id)} className="h-12 rounded-lg font-extrabold" style={{ background: GOLD, color: NAVY }}>Next car: {next.car}</button>
+                : <button onClick={() => onClose(true)} className="h-11 rounded-lg font-extrabold" style={{ background: NAVY, color: "#fff" }}>Back to calendar</button>}
             </div>
           )}
 
@@ -148,10 +162,10 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
 
           {ctx && finished && !fromSheet && !result && (
             <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
-              <h3 className="font-extrabold text-lg">Receipt #{ctx.job!.receipt_no} · {money(Number(ctx.job!.total))}</h3>
+              <h3 className="font-extrabold text-lg">Receipt #{ctx.job!.receipt_no} · {money(shownTotal)}{g ? ` · ${g.cars.length} cars` : ""}</h3>
               {fleetJob ? <p className="font-semibold">On the fleet&apos;s invoice{ctx.job!.payment_method === "invoice" ? " (invoiced)" : " (not invoiced yet)"}.</p> : owedAfter <= 0 ? <p className="font-semibold text-[#1d6b3a]">Paid{ctx.job!.payment_method ? ` (${PAY.find(([k]) => k === ctx.job!.payment_method)?.[1] ?? ctx.job!.payment_method})` : ""}</p> : (
                 <>
-                  <p className="font-semibold text-[#8a5a00]">{late > 0 ? `${money(owedAfter)} owed, including ${money(late)} in late charges.` : owedAfter < Number(ctx.job!.total) ? `${money(owedAfter)} still owed (${money(Number(ctx.job!.total) - owedAfter)} paid online).` : ctx.job!.bill_due_at ? `Bill sent, due ${new Date(ctx.job!.bill_due_at).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "short", hour: "numeric", minute: "2-digit" })}.` : "Not paid yet."} How did they pay?</p>
+                  <p className="font-semibold text-[#8a5a00]">{late > 0 ? `${money(owedAfter)} owed, including ${money(late)} in late charges.` : owedAfter < shownTotal ? `${money(owedAfter)} still owed (${money(shownTotal - owedAfter)} paid).` : ctx.job!.bill_due_at ? `Bill sent, due ${new Date(ctx.job!.bill_due_at).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "short", hour: "numeric", minute: "2-digit" })}.` : "Not paid yet."} How did they pay?</p>
                   <div className="grid grid-cols-2 gap-2">{PAY.filter(([k]) => k !== "bill").map(([k, n]) => <button key={k} onClick={() => setPay(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
                   {pay && <TipBox tip={tip} setTip={setTip} total={owedAfter} />}
                   {ctx.customer?.phone && (
@@ -244,7 +258,10 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${people.length}, minmax(0, 1fr))` }}>{people.map(([k, n]) => <button key={k} onClick={() => setDoneBy(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(doneBy === k)}>{n}</button>)}</div>
                 {fleetJob ? (
                   <p className="rounded-lg p-3 text-[15px] font-semibold" style={{ background: "#e6ecf8", color: "#0d1b3e" }}>Fleet vehicle: this goes on the fleet&apos;s invoice. Nothing to collect on site.</p>
+                ) : notLastCar ? (
+                  <p className="rounded-lg p-3 text-[15px] font-semibold" style={{ background: "#e6ecf8", color: "#0d1b3e" }}>Car {g!.index + 1} of {g!.cars.length} on this visit. You take payment once, after the last car ({g!.cars.filter((c) => !c.done && c.bookingId !== bookingId).map((c) => c.car).join(", ")}), and they get one receipt.</p>
                 ) : <>
+                {g && others > 0 && <p className="rounded-lg p-3 text-[15px]" style={{ background: "#f4f6fa" }}>This car {money(total)} + the other {g.cars.length - 1 === 1 ? "car" : `${g.cars.length - 1} cars`} {money(others)} = <strong>{money(total + others)}</strong> for the visit.</p>}
                 {prepaid > 0 && (
                   <p className="rounded-lg p-3 text-[15px] font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }}>
                     Paid {money(prepaid)} online when they booked.{balance > 0 ? ` ${money(balance)} still owed for what was added.` : total < prepaid ? ` That's ${money(prepaid - total)} more than the total, refund it in Converge.` : " Nothing left to pay."}
@@ -252,7 +269,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 )}
                 <h3 className="font-extrabold text-lg mt-1">{prepaid > 0 ? (balance > 0 ? "How did they pay the rest?" : "Did they tip? Pick how") : "How did they pay?"}</h3>
                 <div className="grid grid-cols-2 gap-2">{payChoices.map(([k, n]) => <button key={k} onClick={() => setPay(pay === k ? "" : k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
-                {pay && pay !== "bill" && <TipBox tip={tip} setTip={setTip} total={prepaid > 0 ? balance : total} />}
+                {pay && pay !== "bill" && <TipBox tip={tip} setTip={setTip} total={prepaid > 0 || others > 0 ? balance : total} />}
                 {pay === "bill" && <p className="text-sm rounded-lg bg-[#f4f6fa] p-2">They get the receipt by email with a Pay button, and the pay link by text. They can pay by card online (once it&apos;s on) or e-transfer.</p>}
                 {!pay && (prepaid === 0 || balance > 0) && <p className="text-sm text-[#8a5a00]">Paying later? Pick &quot;Pay later: send bill&quot; and they get the receipt with a pay link.</p>}
                 </>}
@@ -269,7 +286,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
             <div className="max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto flex flex-col gap-2">
               {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
               <button onClick={finish} disabled={busy} className="py-3.5 rounded-xl font-extrabold text-base disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>
-                {busy ? "Saving…" : fleetJob ? `Finish job · ${money(total)} on the invoice` : prepaid > 0 ? `Finish job · ${balance > 0 ? `${money(balance)} ${pay ? "paid" : "owed"}` : "paid online"}` : pay === "bill" ? `Finish job · send bill for ${money(total)}` : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
+                {busy ? "Saving…" : fleetJob ? `Finish job · ${money(total)} on the invoice` : notLastCar ? `Finish this car · next: ${g!.cars.find((c) => !c.done && c.bookingId !== bookingId)?.car ?? "next car"}` : others > 0 ? (pay === "bill" ? `Finish job · send bill for ${money(balance)}` : pay ? `Finish job · ${money(balance + (Number(tip) || 0))} paid` : `Finish job · ${money(balance)}`) : prepaid > 0 ? `Finish job · ${balance > 0 ? `${money(balance)} ${pay ? "paid" : "owed"}` : "paid online"}` : pay === "bill" ? `Finish job · send bill for ${money(total)}` : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
               </button>
               <p className="text-xs text-center text-[#4a5878]">Signed in as {owner}</p>
             </div>
