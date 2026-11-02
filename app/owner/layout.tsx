@@ -1,6 +1,7 @@
 import { Barlow, Barlow_Condensed } from "next/font/google";
 import { currentStaff } from "@/lib/os/auth";
 import { RoleProvider } from "./RoleContext";
+import PressedMark from "./PressedMark";
 
 const barlow = Barlow({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-barlow" });
 const condensed = Barlow_Condensed({ subsets: ["latin"], weight: ["700", "800"], variable: "--font-condensed" });
@@ -18,6 +19,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   return (
     <div className={`${barlow.variable} ${condensed.variable} ocots-owner min-h-dvh bg-[#eef1f6]`} style={{ fontFamily: "var(--font-barlow), system-ui, sans-serif" }}>
       <RoleProvider name={s?.name ?? null} role={s?.role ?? "owner"}>{children}</RoleProvider>
+      <PressedMark />
     </div>
   );
 }

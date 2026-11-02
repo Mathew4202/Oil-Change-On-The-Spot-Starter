@@ -29,3 +29,7 @@ html { scroll-behavior: smooth; }
 /* HQ on tablets and computers: same grey on both sides of the column, and the navy header runs edge to edge */
 body:has(.ocots-owner) { background: #eef1f6; }
 .ocots-owner header.sticky { box-shadow: 0 0 0 100vmax #0d1b3e; clip-path: inset(0 -100vmax); }
+
+/* HQ: a tap that makes several buttons wait at once only dims the one you tapped (the others stay as they were) */
+html[data-pressing] .ocots-owner button:disabled:not([data-pressed]):not([data-was-off]) { opacity: 1 !important; }
+html[data-pressing] .ocots-owner button[data-pressed]:disabled { opacity: .55 !important; }

@@ -6,7 +6,8 @@ import { useRole } from "./RoleContext";
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type X = { name: string | null; year: number | null; make: string | null; model: string | null; job: string | null; cars: number; notes: string | null; wantsBooking: boolean } | null;
 export type Call = { id: string; phone: string | null; status: string | null; at: string; summary: string[] | null; extract: X; suggested: string | null; suggestedText: string | null; wanted?: string | null;
-  channel?: string; texts?: { at: string; from: "them" | "us"; body: string; by?: string | null }[] };
+  channel?: string; texts?: { at: string; from: "them" | "us"; body: string; by?: string | null }[];
+  booked?: { at: string; car: string; id: string; text: string } | null };   // they already have a visit with us
 // quick replies, signed like every customer text
 const QUICK = [
   ["On a job", "Hi, thanks for your message! We're on a job right now, we'll get back to you shortly.\n- {signer}, Oil Change On The Spot"],
@@ -27,6 +28,12 @@ export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: s
   useEffect(() => { if (focus && calls.some((c) => c.id === focus)) document.getElementById(`call-${focus}`)?.scrollIntoView({ block: "center" }); }, [focus, calls]);
 
   async function act(c: Call, action: string, start?: string, body?: string) {
+    if (action === "done") {   // gone right away, so the next card doesn't slide under your finger looking tapped
+      setCalls((cs) => cs.filter((x) => x.id !== c.id));
+      fetch("/api/owner/calls", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: c.id, action }) })
+        .then(() => onChanged()).catch(() => load());
+      return;
+    }
     setBusy(c.id);
     const r = await fetch("/api/owner/calls", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: c.id, action, start, body }) });
     const j = await r.json().catch(() => ({})); setBusy(null);
@@ -42,7 +49,8 @@ export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: s
     <section data-tour="calls" className="flex flex-col gap-2" aria-label="Calls to follow up">
       <h2 className="font-extrabold text-lg">{calls.some((c) => c.channel === "text") ? "Calls and texts to follow up" : "Calls to follow up"}</h2>
       {calls.map((c) => {
-        const x = c.extract; const car = x ? [x.year, x.make, x.model].filter(Boolean).join(" ") : "";
+        const x = c.booked ? null : c.extract; const car = x ? [x.year, x.make, x.model].filter(Boolean).join(" ") : "";
+        const bookedDay = c.booked ? new Date(c.booked.at).toLocaleDateString("en-CA", { timeZone: "America/Halifax" }) : null;
         const missed = c.status === "unanswered" || c.status === "abandoned";
         return (
           <div key={c.id} id={`call-${c.id}`} className="bg-white rounded-2xl p-4 flex flex-col gap-2 border-2" style={{ borderColor: focus === c.id ? GOLD : "transparent" }}>
@@ -57,6 +65,7 @@ export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: s
                 ))}
               </div>
             )}
+            {c.booked && <p className="text-[15px] rounded-lg bg-[#dff3e6] text-[#1d6b3a] px-3 py-2 font-semibold">Already booked: {c.booked.text}{c.booked.car ? ` · ${c.booked.car}` : ""}. This is about that visit.</p>}
             {x ? <p className="text-[15px]">{[x.job ? JOB[x.job] : null, car || null, x.cars > 1 ? `${x.cars} cars` : null].filter(Boolean).join(" · ") || "Wants to book"}{x.notes ? <span className="text-[#4a5878]"> · {x.notes}</span> : null}</p>
               : null}
             {x && c.summary?.length ? <p className="text-[14px] text-[#4a5878]">{c.summary.join(" ")}</p>
@@ -67,7 +76,9 @@ export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: s
             {!c.suggested && c.wanted && <p className="text-[14px] font-semibold text-[#8a5a00]">They asked for {c.wanted}: that time isn&apos;t open. The link lets them pick another.</p>}
             {msg[c.id] && <p className="text-sm font-semibold text-[#1d6b3a] break-all">{msg[c.id]}</p>}
             <div className="flex flex-wrap gap-2">
-              {c.suggested ? <>
+              {c.booked ? <>
+                <a href={`/owner?date=${bookedDay}`} className="h-11 px-3 rounded-lg border font-bold text-sm bg-white flex items-center no-underline text-[#0d1b3e]" style={{ borderColor: LINE }}>See their booking</a>
+              </> : c.suggested ? <>
                 <button disabled={busy === c.id} onClick={() => act(c, "hold")} className="h-11 px-3 rounded-lg font-extrabold text-[15px] disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Hold {c.suggestedText} + text link</button>
                 <button disabled={busy === c.id} onClick={() => act(c, "link")} className="h-11 px-3 rounded-lg border font-bold text-sm bg-white" style={{ borderColor: LINE }}>Text the booking link instead</button>
               </> : <>

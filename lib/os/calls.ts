@@ -51,6 +51,7 @@ export async function handleCallEvent(ev: CallEvent) {
   else { const r = await sbInsert<CallRow>("calls", { provider_id: ev.callId, ...patch }); row = r.data; if (!r.ok && r.status === 409) [row] = await sbGet<CallRow>(`calls?select=${COLS}&provider_id=eq.${enc(ev.callId)}`); }
   if (!row) return { error: "couldn't save the call" };
 
+  const booked = row.phone ? (await bookedFor([row.phone]))[row.phone] : undefined;
   // Every incoming call buzzes the phones once, when Quo says it ended (a retry or a late transcript doesn't buzz again).
   // Missed: one tap texts them the booking link. Answered: what they wanted follows when Quo's summary is in.
   const firstEnd = ev.kind === "completed" && !(existing?.status && existing.status !== "ai-handled");
@@ -58,7 +59,7 @@ export async function handleCallEvent(ev: CallEvent) {
     await alert(row, `Missed call from ${await who(row)}`, "Tap to text them the booking link.");
     return { ok: true, action: "missed" };
   }
-  if (firstEnd) await alert(row, `Call from ${await who(row)}`, row.extract ? "Tap to see what they wanted." : "What they wanted shows in HQ when Quo's summary is in.");
+  if (firstEnd) await alert(row, `Call from ${await who(row)}${booked ? ` (booked ${whenText(booked.at)})` : ""}`, booked ? "Already booked with us. Tap to see the call." : row.extract ? "Tap to see what they wanted." : "What they wanted shows in HQ when Quo's summary is in.");
   // We have words: read them once
   const text = [...(row.summary ?? []), ...(row.next_steps ?? []).map((s) => `Next step: ${s}`), ...Object.entries(ev.aiFields).map(([k, v]) => `${k}: ${v}`), row.transcript ?? ""].join("\n").trim();
   if ((ev.kind === "summary" || ev.kind === "transcript") && text && !row.extract) {
@@ -66,7 +67,7 @@ export async function handleCallEvent(ev: CallEvent) {
     if (x) {
       const suggested = x.wantsBooking ? await suggestStart(x) : null;
       [row] = await sbPatchRows<CallRow>("calls", `id=eq.${row.id}`, { extract: x, suggested_start: suggested });
-      if (row && x.wantsBooking) {
+      if (row && x.wantsBooking && !booked) {
         const car = [x.year, x.make, x.model].filter(Boolean).join(" ");
         const what = [x.job ? JOB_NAME[x.job] : null, car || null, x.cars > 1 ? `${x.cars} cars` : null].filter(Boolean).join(", ");
         await alert(row, `${x.name || (await who(row))} wants ${what || "to book"}`,
@@ -95,11 +96,11 @@ const PROMPT = (today: string, text: string) => `Today is ${today} (Halifax, Nov
 ${text.slice(0, 12000)}
 ---
 Reply with ONLY this JSON:
-{"name":"caller's first name or null","lastName":"last name or null","address":"street address where the car will be, with town, or null","email":"email or null","year":2019,"make":"Honda","model":"Civic","engine":"2.0L or null","job":"oil_change|seasonal|tires|rotation|parts|diagnostic|null",
+{"name":"caller's first name or null","lastName":"last name or null","address":"street address where the car will be, with town, or null","email":"email or null","year":"4-digit number or null","make":"car make or null","model":"car model or null","engine":"e.g. 2.0L, or null","job":"oil_change|seasonal|tires|rotation|parts|diagnostic|null",
  "cars":1,"date":"YYYY-MM-DD they want, or null","time":"HH:MM 24h if they named a time, or null","part":"morning|afternoon|evening|null",
  "addons":["any of: wipers, cabin_filter, engine_filter, battery, coolant, washer_fluid, tires"],"problem":"for a diagnostic: what's wrong with the car, or null",
  "wantsBooking":true,"notes":"anything else useful in one short line (gate code, parking), or null"}
-Rules: "tires" = swapping tires already on rims. Work out real dates from words like "Wednesday" or "tomorrow" (the next one after today). If they did not want to book anything (wrong number, spam, a supplier), wantsBooking is false. Use null for anything not said.`;
+Rules: "tires" = swapping tires already on rims. Work out real dates from words like "Wednesday" or "tomorrow" (the next one after today). If they did not want to book anything (wrong number, spam, a supplier), wantsBooking is false. Use null for anything not said. Never guess a car: if they didn't say the make or model, year/make/model are null.`;
 
 /** Ask Claude to read the call (same key as the receipt reader). */
 export async function readCall(text: string): Promise<Extract | null> {
@@ -110,11 +111,31 @@ export async function readCall(text: string): Promise<Extract | null> {
   const a = await askAI({ prompt: PROMPT(today, clean), maxTokens: 400 }).catch(() => null);
   if (a) {
     const out = a.text;
-    try { return cleanExtract(JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1))); } catch { /* fall through to the rules */ }
+    try { return onlySaid(cleanExtract(JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1))), text); } catch { /* fall through to the rules */ }
   }
   // no AI (not set up, or today's free limit used): plain rules still get the car, service and day
   const b = basicExtract(text, MAKES, halifaxDate(new Date()));
   return b ? cleanExtract(b) : null;
+}
+
+/** Their next booking with us (today or later), if they have one: a booked customer texting is about that visit, not a new booking. */
+export async function bookedFor(phones: string[]) {
+  const ps = Array.from(new Set(phones.filter(Boolean)));
+  if (!ps.length) return {} as Record<string, { at: string; car: string; id: string }>;
+  const rows = await sbGet<{ id: string; starts_at: string; customers: { phone: string | null } | null; vehicles: { year: number | null; make: string | null; model: string | null } | null }>(
+    `bookings?select=id,starts_at,customers!inner(phone),vehicles(year,make,model)&customers.phone=in.(${ps.map((p) => enc(p)).join(",")})&status=in.(confirmed,requested)` +
+    `&starts_at=gte.${new Date(Date.now() - 3 * 3600000).toISOString()}&order=starts_at`).catch(() => []);
+  const out: Record<string, { at: string; car: string; id: string }> = {};
+  for (const b of rows) { const p = b.customers?.phone; if (p && !out[p]) out[p] = { at: b.starts_at, id: b.id, car: [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model].filter(Boolean).join(" ") }; }
+  return out;
+}
+
+/** A car the AI "read" that nobody said (the model isn't anywhere in what they said) is dropped, never shown. */
+export function onlySaid(x: Extract, text: string): Extract {
+  const t = text.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  const word = (w: string | null) => !!w && w.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").some((p) => p.length > 1 && t.includes(p));
+  if (x.model && !word(x.model) && !(x.make && word(x.make))) return { ...x, year: null, make: null, model: null, engine: null };
+  return x;
 }
 
 const JOBS = ["oil_change", "seasonal", "tires", "rotation", "parts", "diagnostic"];
@@ -173,6 +194,13 @@ export async function handleTextIn(input: { phone: string; text: string; message
     row = r.data!;
   }
   // read everything they've texted so far
+  const booked = (await bookedFor([phone]))[phone];
+  const who0 = c?.first_name || phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3");
+  if (booked) {
+    // already booked with us: this is about that visit ("running late", "kk"), so no booking suggestion
+    await alert(row, `${who0} (booked ${whenText(booked.at)}) texted`, input.text.slice(0, 140));
+    return { ok: true, id: row.id };
+  }
   const said = (row.texts ?? []).filter((t) => t.from === "them").map((t) => `Customer texted: ${t.body}`).join("\n");
   const x = await readCall(said).catch(() => null);
   let suggested: string | null = null;
@@ -180,7 +208,7 @@ export async function handleTextIn(input: { phone: string; text: string; message
     suggested = x.wantsBooking ? await suggestStart(x).catch(() => null) : null;
     await sbPatch("calls", `id=eq.${row.id}`, { extract: x, suggested_start: suggested });
   }
-  const who = x?.name || c?.first_name || phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3");
+  const who = x?.name || who0;
   await alert(row, `Text from ${who}`, input.text.slice(0, 140) + (suggested ? ` · Tap to hold ${whenText(suggested)}` : ""));
   return { ok: true, id: row.id };
 }
