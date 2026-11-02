@@ -29,9 +29,16 @@ test("a booking at 12:00 blocks the full 1 h 15 min, and nobody can overlap it",
   assert.ok(times.includes("13:30"));   // starts after 1:15
 });
 
-test("same day needs 2 hours notice", () => {
+test("same day needs 1 hour notice", () => {
   const r = slotsForDay({ date: "2026-10-24", now: at("2026-10-24T10:05:00-03:00"), busy: [] });
-  assert.equal(r.slots[0].label, "12:30 pm");
+  assert.equal(r.slots[0].label, "11:30 am");
+});
+
+test("a gap after a 10:00 job is bookable at 11:30 when it's 9:45 (Nov 2)", () => {
+  const ten = { start: at("2026-11-02T10:00:00-04:00"), end: at("2026-11-02T11:15:00-04:00") };
+  const r = slotsForDay({ date: "2026-11-02", now: at("2026-11-02T09:45:00-04:00"), busy: [ten] });
+  const times = r.slots.map((s) => s.time);
+  assert.ok(times.includes("11:30") && !times.includes("10:30") && !times.includes("11:00"));
 });
 
 test("public holiday: no same-day booking unless the filter is in stock", () => {

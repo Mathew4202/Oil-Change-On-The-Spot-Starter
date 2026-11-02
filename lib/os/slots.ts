@@ -10,11 +10,11 @@ export type Busy = { start: Date; end: Date };
 export type SlotRules = {
   jobMinutes: number;        // 75: 1 h 15 min per car, including travel to the next job
   stepMinutes: number;       // 30: start times offered every half hour
-  minNoticeMinutes: number;  // 120: earliest start is 2 hours from now
+  minNoticeMinutes: number;  // 60: earliest start is 1 hour from now (changed from 2 h, Nov 2)
   maxDaysAhead: number;      // 30
 };
 
-export const DEFAULT_SLOT_RULES: SlotRules = { jobMinutes: 75, stepMinutes: 30, minNoticeMinutes: 120, maxDaysAhead: 30 };
+export const DEFAULT_SLOT_RULES: SlotRules = { jobMinutes: 75, stepMinutes: 30, minNoticeMinutes: 60, maxDaysAhead: 30 };
 
 // Same hours as the current website (last start, not closing time)
 export const DEFAULT_HOURS: Hours[] = [
