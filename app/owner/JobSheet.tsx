@@ -87,8 +87,8 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
     return j;
   }
 
-  const receiptMsg = (rc?: { sent: boolean; reason?: string } | null) =>
-    !rc ? "" : rc.sent ? ` Receipt emailed${email ? ` to ${email}` : ""}.` : rc.reason === "no email on file" ? " No email on file, so no receipt was sent."
+  const receiptMsg = (rc?: { sent: boolean; reason?: string; by?: string } | null) =>
+    !rc ? "" : rc.sent ? (rc.by === "text" ? " Receipt texted to them (no email on file)." : ` Receipt emailed${email ? ` to ${email}` : ""}.`) : rc.reason === "no email on file" ? " No email or phone on file, so no receipt was sent."
       : rc.reason === "waiting for payment" ? " The receipt goes out when you mark it paid." : ` Receipt not sent (${rc.reason}).`;
 
   async function finish() {

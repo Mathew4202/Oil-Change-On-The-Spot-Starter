@@ -214,11 +214,12 @@ export async function finishJob(input: FinishInput, owner: string) {
   else if (others.length && othersOwed > 0) paidNow = false;
 
   // The thank-you / review text goes out once they've paid (a pay-later bill: when it's marked paid), never before the bill
-  const reviewText = paidNow ? await reviewIfDue(ctx.booking.id) : null;
+  let reviewText: { sent: boolean; status: string } | null = null;   // sent below, after the receipt
 
   // The receipt goes out once they've paid (if not paid yet, it's sent when you mark it paid)
   let receipt: { sent: boolean; reason?: string } = { sent: false, reason: fleet ? "fleet invoice" : paidNow ? "not requested" : "waiting for payment" };
   if (paidNow && input.sendReceipt !== false) receipt = await sendReceipt(job.data!.id, input.email ?? null);
+  if (paidNow) reviewText = await reviewIfDue(ctx.booking.id);   // receipt first, then the thank-you
   let billText: { sent: boolean; status?: string } | null = null;
   if (!paidNow && !fleet && input.bill) {
     // due in 48 hours (setting bill_due_hours); after that the late fee, then monthly interest (bill-late.ts). They're told up front.
@@ -226,7 +227,7 @@ export async function finishJob(input: FinishInput, owner: string) {
     const dueAt = new Date(Date.now() + lr.dueHours * 3600000).toISOString();
     await sbPatch("jobs", `id=eq.${job.data!.id}`, { bill_sent_at: now, bill_due_at: dueAt }).catch(() => null);   // the due date (and any late fee) sits on one car of the visit, so it's charged once
     for (const c of others) if (c.job) await sbPatch("jobs", `id=eq.${c.job.id}`, { bill_sent_at: now }).catch(() => null);
-    receipt = await sendReceipt(job.data!.id, input.email ?? null);   // shows what's owed, the due date and a Pay button (every car of the visit)
+    receipt = await sendReceipt(job.data!.id, input.email ?? null, { textIfNoEmail: false });   // shows what's owed, the due date and a Pay button (every car of the visit)
     const due = r2(total - prepaid + othersOwed);
     const body = (await template("bill_sent")) || "Hi {first_name}, thanks for having us! Your total is {total}, due by {due_by}. Pay here (card or e-transfer): {pay_link}\n{late_terms}\n- {signer}, Oil Change On The Spot";
     billText = ctx.customer ? await textCustomer("bill_sent", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }, ctx.booking.id)
@@ -325,12 +326,23 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
 }
 
 /** Email the receipt. (The review request is its own message, sent separately.) */
-export async function sendReceipt(jobId: string, emailOverride: string | null): Promise<{ sent: boolean; reason?: string }> {
+export async function sendReceipt(jobId: string, emailOverride: string | null, opts: { textIfNoEmail?: boolean } = {}): Promise<{ sent: boolean; reason?: string; by?: "email" | "text" }> {
   const r = await receiptFor(`id=eq.${enc(jobId)}`);
   if (!r) return { sent: false, reason: "job not found" };
   const to = (emailOverride || r.email || "").trim();
-  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return { sent: false, reason: "no email on file" };
-  if (!process.env.RESEND_API_KEY) return { sent: false, reason: "email service not set up" };
+  // no email (or email isn't working): text them the receipt link instead
+  const byText = async (why: string) => {
+    if (opts.textIfNoEmail === false || !r.customerId || !r.data.receiptUrl) return { sent: false, reason: why };
+    const [c] = await sbGet<{ id: string; first_name: string | null; phone: string | null; sms_opt_out: boolean | null }>(`customers?select=id,first_name,phone,sms_opt_out&id=eq.${r.customerId}`);
+    if (!c?.phone || c.sms_opt_out) return { sent: false, reason: why };
+    const body = (await template("receipt_text")) || "Hi {first_name}, here's your receipt from Oil Change On The Spot (#{receipt_no}): {receipt_link}\n- {signer}, Oil Change On The Spot";
+    const sms = await sendSms(c.phone, fill(body, { first_name: c.first_name?.trim() || "there", receipt_no: String(r.data.receiptNo), receipt_link: r.data.receiptUrl }), { kind: "receipt_text", customerId: c.id }).catch(() => null);
+    if (!sms?.sent) return { sent: false, reason: why };
+    await sbPatch("jobs", `id=eq.${r.jobId}`, { receipt_sent_at: new Date().toISOString() });
+    return { sent: true, by: "text" as const };
+  };
+  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return byText("no email on file");
+  if (!process.env.RESEND_API_KEY) return byText("email service not set up");
   const data = r.data;
   try {
     await new Resend(process.env.RESEND_API_KEY).emails.send({
@@ -339,9 +351,9 @@ export async function sendReceipt(jobId: string, emailOverride: string | null): 
       subject: data.due && data.due > 0 ? `Your bill from Oil Change On The Spot (#${data.receiptNo}): $${data.due.toFixed(2)} to pay` : `Your receipt from Oil Change On The Spot (#${data.receiptNo})`,
       html: receiptHtml(data), text: receiptText(data),
     });
-  } catch (e) { return { sent: false, reason: String(e).slice(0, 120) }; }
+  } catch (e) { return byText(String(e).slice(0, 120)); }
   await sbPatch("jobs", `id=eq.${r.jobId}`, { receipt_sent_at: new Date().toISOString() });
-  return { sent: true };
+  return { sent: true, by: "email" };
 }
 
 /** Take the gloves (counted in boxes) and shop towels a visit uses off the shelf. Never below zero; nothing if they aren't in stock yet. */
