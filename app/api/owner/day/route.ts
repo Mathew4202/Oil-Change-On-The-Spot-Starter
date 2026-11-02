@@ -2,6 +2,7 @@
 import { activeHolds, holdLink } from "@/lib/os/holds";
 import { dayRoute } from "@/lib/os/route";
 import { bookingPhotoLink } from "@/lib/os/vin-photo";
+import { lastVisit } from "@/lib/os/last-visit";
 import { NextRequest, NextResponse } from "next/server";
 import { currentStaff } from "@/lib/os/auth";
 import { canOf } from "@/lib/os/roles";
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 type Row = {
   id: string; starts_at: string; ends_at: string; status: string; pay_mode: string; address: string | null; paid_at: string | null;
   jobs: { receipt_no: number | null; total: number | null }[] | null;
-  quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; profit?: number | null } | null; needs_review: string[] | null; notes: string | null; cars: number;
+  quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; profit?: number | null } | null; needs_review: string[] | null; notes: string | null; cars: number; vehicle_id?: string | null;
   services: { job?: string; own?: "both" | "oil" | "filter" | null; addons?: string[] } | null; source: string | null;
   customers: { first_name: string | null; last_name: string | null; phone: string | null; address: string | null } | null;
   vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null;
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "bad date" }, { status: 400 });
   const from = halifaxToDate(date, 0).toISOString(), to = halifaxToDate(date, 24 * 60).toISOString();
 
-  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,` +
+  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,vehicle_id,` +
       `customers(first_name,last_name,phone,address),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,verified,source,confidence${extra}))` +
       `&starts_at=gte.${from}&starts_at=lt.${to}&status=neq.cancelled&order=starts_at`);
   // everything that only needs the date goes out at once (each trip to the database is a wait, so never one after another)
@@ -60,6 +61,9 @@ export async function GET(req: NextRequest) {
   const fl = Object.keys(filters);
   const photoLinks: Record<string, string[]> = {};
   const filterCosts: Record<string, number> = {};
+  // what we flagged on each car last visit ("tires coming up soon"), to offer it on this visit
+  const vids = Array.from(new Set(rows.map((r) => r.vehicle_id).filter(Boolean))) as string[];
+  const prevJobs: { vehicle_id: string; booking_id: string | null; done_at: string; inspection: Record<string, { status?: string }> | null; customer_note?: string | null }[] = [];
   const [parts, , , route] = await Promise.all([
     fl.length ? sbGet<{ part_number: string; on_hand: number }>(`parts?select=part_number,on_hand&part_number=in.(${fl.join(",")})`) : Promise.resolve([]),
     fl.length ? sbGet<{ our_cost: number; parts: { part_number: string } | null }>(`part_quotes?select=our_cost,parts!inner(part_number)&parts.part_number=in.(${fl.join(",")})&order=checked_at.desc`)
@@ -69,7 +73,9 @@ export async function GET(req: NextRequest) {
       .then((w) => Promise.all(w.map(async (b) => { photoLinks[b.id] = (await Promise.all((b.photo_paths ?? []).map((p) => bookingPhotoLink(p)))).filter(Boolean) as string[]; })))
       .catch(() => null) : null,   // migration 0019 not run yet
     dayRoute(date, rows).catch(() => null),
+    vids.length ? sbGet<(typeof prevJobs)[number]>(`jobs?select=*&vehicle_id=in.(${vids.join(",")})&order=done_at.desc&limit=300`).then((x) => { prevJobs.push(...x); }).catch(() => null) : null,
   ]);
+  const lastTimeFor = (r: Row) => { const p = prevJobs.find((j) => j.vehicle_id === r.vehicle_id && j.booking_id !== r.id && j.done_at < r.starts_at); return p ? lastVisit(p.inspection, p.customer_note) : null; };
   const stock = Object.fromEntries(parts.map((p) => [p.part_number, Number(p.on_hand)]));
 
   // No profit on the booking yet (priced before the oil was looked up, a Square job, a price typed in): estimate it
@@ -113,6 +119,7 @@ export async function GET(req: NextRequest) {
       // plain oil changes: worked out live from today's oil and filter prices; with add-ons, the profit the quote worked out
       ...(() => { const c = costsOf(r, s); const live = !(r.services?.addons ?? []).length ? estimate(c) : null;
         return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? estimate(c), r) : null, costs: money && live != null ? c : null }; })(), notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
+      lastTime: lastTimeFor(r),
       vin: (r.services as { vin?: string } | null)?.vin ?? null, vinCar: (r.services as { vinCar?: string } | null)?.vinCar ?? null,
     };
   });

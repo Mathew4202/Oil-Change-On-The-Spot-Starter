@@ -8,6 +8,7 @@ import { fillSlowDay } from "@/lib/os/fill-ins";
 import { backupNow } from "@/lib/os/backup";
 import { syncSquare, squareReady } from "@/lib/os/square-sync";
 import { chargeLateBills } from "@/lib/os/bills";
+import { lastVisit, lastVisitText } from "@/lib/os/last-visit";
 import { NextRequest, NextResponse } from "next/server";
 import { sbGet, sbPatch, sbDelete } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
@@ -34,23 +35,26 @@ export async function GET(req: NextRequest) {
 
   // 1) Day-before reminders
   const from = halifaxToDate(tomorrow, 0).toISOString(), to = halifaxToDate(tomorrow, 24 * 60).toISOString();
-  const tomorrows = await sbGet<{ id: string; starts_at: string; address: string | null; manage_token: string | null; customers: Who | null;
+  const tomorrows = await sbGet<{ id: string; starts_at: string; address: string | null; manage_token: string | null; vehicle_id: string | null; customers: Who | null;
     vehicles: { year: number | null; make: string | null; model: string | null } | null }>(
-    `bookings?select=id,starts_at,address,manage_token,customers(id,first_name,phone,sms_opt_out),vehicles(year,make,model)` +
+    `bookings?select=id,starts_at,address,manage_token,vehicle_id,customers(id,first_name,phone,sms_opt_out),vehicles(year,make,model)` +
     `&status=in.(confirmed,requested)&reminder_sent_at=is.null&starts_at=gte.${from}&starts_at=lt.${to}` +
     `&or=(source.is.null,source.neq.square_import)`);   // booked in Square: Square reminds them (HQ can't move a Square booking)
   for (const b of tomorrows) {
     const car = [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model].filter(Boolean).join(" ") || "car";
+    // what we flagged on this car last time ("tires coming up soon"), so they can add it to tomorrow's visit
+    const [prev] = b.vehicle_id ? await sbGet<{ inspection: Record<string, { status?: string }> | null; customer_note?: string | null }>(
+      `jobs?select=*&vehicle_id=eq.${b.vehicle_id}&order=done_at.desc&limit=1`).catch(() => []) : [];
     const r = await textCustomer("day_before", b.customers, { time: timeOnly(b.starts_at), car, address: b.address || "your address",
-      manage_link: b.manage_token ? manageLink(b.manage_token) : `call or text ${PHONE}` }, b.id);
+      manage_link: b.manage_token ? manageLink(b.manage_token) : `call or text ${PHONE}` }, b.id, prev ? lastVisitText(lastVisit(prev.inspection, prev.customer_note)) : "");
     if (r.sent) { out.reminders++; await sbPatch("bookings", `id=eq.${b.id}`, { reminder_sent_at: new Date().toISOString() }); } else out.reminderSkipped++;
   }
 
   // 2) Oil change due soon (latest job per car, nothing already booked)
   const until = new Date(halifaxToDate(today, 0).getTime() + (rules.due_reminder_days_before ?? 3) * 86400000).toISOString().slice(0, 10);
-  const due = await sbGet<{ id: string; vehicle_id: string | null; customer_id: string | null; done_at: string; customers: Who | null;
+  const due = await sbGet<{ id: string; vehicle_id: string | null; customer_id: string | null; done_at: string; inspection: Record<string, { status?: string }> | null; customer_note?: string | null; customers: Who | null;
     vehicles: { year: number | null; make: string | null; model: string | null; fleet_account_id: string | null } | null }>(
-    `jobs?select=id,vehicle_id,customer_id,done_at,customers(id,first_name,phone,sms_opt_out),vehicles(year,make,model,fleet_account_id)` +
+    `jobs?select=*,customers(id,first_name,phone,sms_opt_out),vehicles(year,make,model,fleet_account_id)` +
     `&due_reminder_sent_at=is.null&next_due_date=lte.${until}&next_due_date=gte.${addDays(today, -30)}&order=done_at.desc`);
   for (const j of due) {
     if (!j.vehicle_id || !j.customer_id || j.vehicles?.fleet_account_id) { out.dueSkipped++; continue; }   // fleets: due list is on the Fleets screen
@@ -58,7 +62,7 @@ export async function GET(req: NextRequest) {
     const [upcoming] = await sbGet<{ id: string }>(`bookings?select=id&customer_id=eq.${j.customer_id}&status=in.(confirmed,requested)&starts_at=gt.${new Date().toISOString()}&limit=1`);
     if (newer || upcoming) { out.dueSkipped++; await sbPatch("jobs", `id=eq.${j.id}`, { due_reminder_sent_at: new Date().toISOString() }); continue; }
     const car = [j.vehicles?.year, j.vehicles?.make, j.vehicles?.model].filter(Boolean).join(" ") || "car";
-    const r = await textCustomer("oil_due", j.customers, { car, book_link: `${siteUrl()}/booking` });
+    const r = await textCustomer("oil_due", j.customers, { car, book_link: `${siteUrl()}/booking` }, null, lastVisitText(lastVisit(j.inspection, j.customer_note)));
     if (r.sent) { out.due++; await sbPatch("jobs", `id=eq.${j.id}`, { due_reminder_sent_at: new Date().toISOString() }); } else out.dueSkipped++;
   }
   // 3) Maintenance plans: this month's pay link on each plan's bill day, and plans that finished their year

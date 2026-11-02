@@ -15,12 +15,13 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 
 type Who = { id: string; first_name: string | null; phone: string | null; sms_opt_out?: boolean | null };
 
-export async function textCustomer(key: string, who: Who | null | undefined, vars: Record<string, string>, bookingId?: string | null) {
+export async function textCustomer(key: string, who: Who | null | undefined, vars: Record<string, string>, bookingId?: string | null, extraLine?: string) {
   if (!who?.phone) return { sent: false, status: "no_phone" };
   if (who.sms_opt_out) return { sent: false, status: "opted_out" };
   const body = await template(key);
   if (!body) return { sent: false, status: "template_off" };
-  return sendSms(who.phone, fill(body, { first_name: who.first_name?.trim() || "there", phone: PHONE, ...vars }), { kind: key, customerId: who.id, bookingId });
+  const { beforeSignoff } = await import("@/lib/os/last-visit");
+  return sendSms(who.phone, beforeSignoff(fill(body, { first_name: who.first_name?.trim() || "there", phone: PHONE, ...vars }), extraLine || ""), { kind: key, customerId: who.id, bookingId });
 }
 
 /** Booking confirmation (sent right after any booking, website or phone). */

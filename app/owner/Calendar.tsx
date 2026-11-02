@@ -17,6 +17,7 @@ type Job = {
   oil: { grade: string; litres: number; filter: string | null; spec: string | null; engine?: string | null; diesel?: boolean; wix?: string | null;
     checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterCost?: number | null; filterNote?: string | null } | null;
   partNos?: string[];
+  lastTime?: { now: string[]; soon: string[]; note: string | null } | null;   // what we flagged on this car last visit
   lines: { label: string; amount: number }[]; total: number | null; profit: number | null; costs?: { subtotal: number; litres: number; perL: number; oil: number; filter: number; filterGuess: boolean; supplies: number; grade: string } | null;
   notes: string | null; checks: string[]; imported: boolean; photos?: string[]; vin?: string | null; vinCar?: string | null; job?: string; addons?: string[];
 };
@@ -262,6 +263,13 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 {(() => { const o = day?.route?.offers.find((x) => x.booking_id === j.id); if (!o) return null;
                   const t = time(o.to_start); const txt = o.status === "sent" ? `Asked to move to ${t} to group the day by area, waiting for their answer` : o.status === "yes_waiting" ? `Said yes to ${t}, waiting on the other customer in the switch` : o.status === "accepted" ? `Moved to ${t} to group the day by area` : o.status === "declined" ? `Asked to move to ${t}: they're keeping their time` : null;
                   return txt ? <p className="text-[13px] font-semibold rounded-lg px-2 py-1" style={{ background: "#eef1f6", color: "#4a5878" }}>{txt}</p> : null; })()}
+                {j.lastTime && j.status !== "done" && (
+                  <div className="text-[14px] rounded-lg bg-[#fff6dd] border border-[#f2b01e] px-3 py-2">
+                    <span className="font-bold">Last visit: </span>
+                    {[j.lastTime.note, j.lastTime.now.length ? `needs doing now: ${j.lastTime.now.join(", ")}` : "", j.lastTime.soon.length ? `coming up soon: ${j.lastTime.soon.join(", ")}` : ""].filter(Boolean).join(" · ")}
+                    <span className="text-[#4a5878]">. Offer it on this visit.</span>
+                  </div>
+                )}
                 {j.checks.length > 0 && <p className="text-[13px] font-semibold text-[#8a5a00] bg-[#fff6dd] rounded-lg px-2 py-1">{j.checks.join(" · ")}</p>}
                 {j.vin && <p className="text-[14px]"><span className="font-semibold">VIN</span> <span className="font-mono select-all">{j.vin}</span>{j.vinCar ? <span className="text-[#4a5878]"> · {j.vinCar}</span> : null}</p>}
                 {(j.photos ?? []).length > 0 && (

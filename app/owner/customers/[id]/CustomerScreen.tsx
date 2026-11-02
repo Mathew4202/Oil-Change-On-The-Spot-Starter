@@ -14,7 +14,8 @@ type Detail = {
   stats: { visits: number; spent: number; average: number; lastVisit: string | null; nextDue: string | null; nextDueKm: number | null; due: string; cancelled: number; noShows: number };
   vehicles: { id: string; name: string; year?: number | null; make?: string | null; model?: string | null; engine: string | null; vin: string | null; lastKm: number | null; oil: string | null; filter: string | null; parts?: string | null }[];
   upcoming: { id: string; date: string; at: string; status: string; total: number | null; job: string | null }[];
-  jobs: { id: string; date: string; car: string | null; service: string | null; amount: number; tip: number; paidWith: string | null; receipt: string | null; receiptNo: number | null; fromSheet: boolean; km: number | null; oil: string | null; notes: string | null }[];
+  jobs: { id: string; date: string; car: string | null; service: string | null; amount: number; tip: number; paidWith: string | null; receipt: string | null; receiptNo: number | null; fromSheet: boolean; km: number | null; oil: string | null; notes: string | null;
+    flagged?: { now: string[]; soon: string[]; note: string | null } | null }[];
   texts: { kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null; direction: string | null }[];
 };
 type Found = { id: string; first_name: string | null; last_name: string | null; phone: string | null; vehicles: { year: number | null; make: string | null; model: string | null }[] };
@@ -105,6 +106,9 @@ export default function CustomerScreen({ id }: { id: string }) {
               {[j.paidWith ? PAID[j.paidWith] ?? j.paidWith : "", j.tip ? `incl. ${money(j.tip)} tip` : "", j.km ? `${j.km.toLocaleString()} km` : "", j.fromSheet ? "from Job Tracker" : ""].filter(Boolean).join(" · ")}
               {j.receipt && <> · <a href={j.receipt} target="_blank" rel="noreferrer" className="font-bold underline" style={{ color: NAVY }}>Receipt #{j.receiptNo}</a></>}
             </p>
+            {j.flagged?.now.length ? <p className="text-sm mt-0.5 font-semibold text-[#9b1c1c]">Needs doing now: {j.flagged.now.join(", ")}</p> : null}
+            {j.flagged?.soon.length ? <p className="text-sm mt-0.5 font-semibold text-[#8a5a00]">Coming up soon: {j.flagged.soon.join(", ")}</p> : null}
+            {j.flagged?.note && <p className="text-sm mt-0.5">Told them: {j.flagged.note}</p>}
             {j.notes && <p className="text-xs mt-0.5 italic" style={{ color: MUTED }}>{j.notes}</p>}
           </div>
         ))}

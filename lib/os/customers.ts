@@ -1,6 +1,7 @@
 // Customers tab: list, one customer's full picture, edits, and merging duplicates.
 import { sbGet, sbPatch, sbHeaders, enc } from "@/lib/os/db";
 import { halifaxDate } from "@/lib/os/slots";
+import { lastVisit } from "@/lib/os/last-visit";
 import { e164 } from "@/lib/os/booking";
 import { summarizeCustomers, fullName, dueState, type CustRow, type JobLite, type BookLite } from "@/lib/os/customer-summary";
 
@@ -27,8 +28,9 @@ export async function customerDetail(id: string) {
       .catch(() => sbGet<never>(`vehicles?select=id,year,make,model,engine,vin,last_km,vehicle_specs(oil_grade,capacity_l,oil_filter_part)&customer_id=eq.${i}&order=created_at.desc`)),   // before migration 0026
     sbGet<{ id: string; done_at: string; revenue: number | null; hst: number | null; tip: number | null; total: number | null; service: string | null; vehicle_text: string | null;
       payment_method: string | null; receipt_token: string | null; receipt_no: number | null; imported_from: string | null; km: number | null;
-      next_due_date: string | null; next_due_km: number | null; oil_grade: string | null; notes: string | null }>(
-      `jobs?select=id,done_at,revenue,hst,tip,total,service,vehicle_text,payment_method,receipt_token,receipt_no,imported_from,km,next_due_date,next_due_km,oil_grade,notes&customer_id=eq.${i}&order=done_at.desc&limit=200`),
+      next_due_date: string | null; next_due_km: number | null; oil_grade: string | null; notes: string | null;
+      inspection: Record<string, { status?: string }> | null; customer_note?: string | null }>(
+      `jobs?select=*&customer_id=eq.${i}&order=done_at.desc&limit=200`),
     sbGet<{ id: string; starts_at: string; status: string; quoted_total: number | null; services: { job?: string } | null; source: string | null }>(
       `bookings?select=id,starts_at,status,quoted_total,services,source&customer_id=eq.${i}&order=starts_at.desc&limit=100`),
     sbGet<{ kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null; direction: string | null }>(
@@ -55,7 +57,7 @@ export async function customerDetail(id: string) {
     upcoming: upcoming.map((b) => ({ id: b.id, date: day(b.starts_at), at: b.starts_at, status: b.status, total: b.quoted_total, job: b.services?.job ?? null })),
     jobs: jobs.map((j) => ({ id: j.id, date: day(j.done_at), car: j.vehicle_text, service: j.service, amount: Number(j.revenue ?? 0), tip: Number(j.tip ?? 0),
       paidWith: j.payment_method, receipt: j.receipt_token ? `/receipt/${j.receipt_token}` : null, receiptNo: j.receipt_no, fromSheet: j.imported_from === "job_tracker",
-      km: j.km, oil: j.oil_grade, notes: j.notes })),
+      km: j.km, oil: j.oil_grade, notes: j.notes, flagged: lastVisit(j.inspection, j.customer_note) })),
     texts,
   };
 }
