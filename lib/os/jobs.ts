@@ -55,6 +55,7 @@ export type FinishInput = {
   extraLines?: { label: string; amount: number }[];     // things added on site (negative = discount)
   doneBy?: string;   // "both", "mathew", "harsh", or a staff login
   notes?: string;
+  customerNote?: string;   // shows on their receipt ("front tires are getting low")
   payMethod?: "card_terminal" | "cash" | "etransfer" | "card_online" | null;   // null = not paid yet
   tip?: number | null;                                                          // no HST on tips
   email?: string | null;
@@ -114,7 +115,7 @@ export async function finishJob(input: FinishInput, owner: string) {
   const now = new Date().toISOString();
   const carText = ctx.vehicle ? [ctx.vehicle.year, ctx.vehicle.make, ctx.vehicle.model].filter(Boolean).join(" ") : null;
 
-  const job = await sbInsert<{ id: string }>("jobs", {
+  const jobRow = {
     booking_id: ctx.booking.id, vehicle_id: ctx.vehicle?.id ?? null, customer_id: ctx.customer?.id ?? null,
     done_at: now, km, oil_grade: withOil ? grade : null, oil_litres: withOil ? litres : null, filter_part: withOil ? filterPart : null,
     revenue: subtotal, cost_oil: costOil, cost_parts: costParts, cost_other: withOil ? (rules.consumables ?? 1) : 0,
@@ -123,7 +124,10 @@ export async function finishJob(input: FinishInput, owner: string) {
     notes: input.notes?.slice(0, 1000) || null, vehicle_text: carText,
     receipt_no: receiptNo, receipt_token: token, lines, subtotal, hst, total,
     review_requested: firstTime,
-  });
+  };
+  const note = input.customerNote?.trim().slice(0, 600) || null;
+  let job = await sbInsert<{ id: string }>("jobs", { ...jobRow, ...(note ? { customer_note: note } : {}) });
+  if (!job.ok && note) job = await sbInsert<{ id: string }>("jobs", { ...jobRow, notes: [jobRow.notes, `For the customer: ${note}`].filter(Boolean).join("\n") });   // migration 0046 not run yet
   if (!job.ok) return { ok: false as const, error: `Couldn't save the job: ${JSON.stringify(job.error)}` };
 
   await sbPatch("bookings", `id=eq.${ctx.booking.id}`, { status: "done", finished_at: now });
@@ -216,7 +220,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
   const [j] = await sbGet<{ id: string; receipt_no: number; receipt_token: string; done_at: string; lines: { label: string; amount: number }[];
     subtotal: number; hst: number; total: number; payment_method: string | null; km: number | null; next_due_km: number | null; next_due_date: string | null;
     oil_grade: string | null; oil_litres: number | null; vehicle_text: string | null; customer_id: string | null; booking_id: string | null;
-    filter_part: string | null; vehicle_id: string | null; review_requested: boolean | null; tip: number | null; service: string | null; inspection: Record<string, { status?: string }> | null }>(`jobs?select=*&${where}&limit=1`);
+    filter_part: string | null; vehicle_id: string | null; review_requested: boolean | null; tip: number | null; service: string | null; inspection: Record<string, { status?: string }> | null; customer_note?: string | null }>(`jobs?select=*&${where}&limit=1`);
   if (!j) return null;
   const [c] = j.customer_id ? await sbGet<{ first_name: string | null; last_name: string | null; email: string | null; review_asked_at: string | null }>(
     `customers?select=first_name,last_name,email,review_asked_at&id=eq.${j.customer_id}`) : [];
@@ -232,7 +236,7 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       paidWith: j.payment_method, km: j.km, nextDueKm: j.next_due_km, nextDueDate: j.next_due_date ? nice(new Date(`${j.next_due_date}T12:00:00Z`)) : null,
       oil: j.oil_grade ? `${j.oil_grade.replace(/^Euro /, "")} full synthetic${spec ? ` (meets ${spec})` : ""}${j.oil_litres ? `, ${Number(j.oil_litres)} L` : ""}` : null,
       filter: j.filter_part ? `${fp?.brand || "NAPA ProFormer"} ${j.filter_part}` : null,
-      vin: v?.vin ?? null,
+      vin: v?.vin ?? null, customerNote: j.customer_note ?? null,
       ...(await (async () => {
         const paid = j.booking_id ? (await sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${j.booking_id}`).catch(() => [])).reduce((t, p) => t + Number(p.amount), 0) - Number(j.tip ?? 0) : 0;
         const x = j as unknown as { late_fee?: number | null; late_interest?: number | null; bill_due_at?: string | null };
@@ -284,4 +288,9 @@ async function useSupplies(cars: number, rules: Record<string, number | undefine
     await sbPatch("parts", `id=eq.${p.id}`, { on_hand: Math.round((Number(p.on_hand) - used) * 100) / 100 });
     await sbInsert("stock_moves", { part_id: p.id, qty: -used, reason: "job", job_id: jobId });
   }
+}
+
+/** The note for the customer on a finished job's receipt (needs migration 0046). */
+export async function setCustomerNote(jobId: string, note: string) {
+  await sbPatch("jobs", `id=eq.${enc(jobId)}`, { customer_note: note.trim().slice(0, 600) || null }).catch(() => null);
 }

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { currentOwner } from "@/lib/os/auth";
 import { sbPatch } from "@/lib/os/db";
-import { jobContext, startJob, finishJob, recordPayment, sendReceipt } from "@/lib/os/jobs";
+import { jobContext, startJob, finishJob, recordPayment, sendReceipt, setCustomerNote } from "@/lib/os/jobs";
 import { payReady } from "@/lib/os/payments";
 import { payLink, textCustomer } from "@/lib/os/customer-texts";
 
@@ -19,7 +19,7 @@ const Finish = z.object({
   filterPart: z.string().max(20).nullable().optional(),
   inspection: z.record(z.string(), Check).optional(),
   extraLines: z.array(z.object({ label: z.string().max(80), amount: z.number().min(-2000).max(5000) })).max(10).optional(),
-  doneBy: z.string().regex(/^[a-z0-9_-]{2,30}$/).optional(), notes: z.string().max(1000).optional(),
+  doneBy: z.string().regex(/^[a-z0-9_-]{2,30}$/).optional(), notes: z.string().max(1000).optional(), customerNote: z.string().max(600).optional(),
   payMethod: z.enum(["card_terminal", "cash", "etransfer", "card_online"]).nullable().optional(),
   tip: z.number().min(0).max(1000).nullable().optional(),
   email: z.string().email().nullable().optional().or(z.literal("")), sendReceipt: z.boolean().optional(),
@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
     if (body.action === "resend") {
       const ctx = await jobContext(id);
       if (!ctx?.job) return NextResponse.json({ error: "No receipt yet" }, { status: 400 });
+      if (typeof body.customerNote === "string") await setCustomerNote(String(ctx.job.id), body.customerNote);
       return NextResponse.json({ ok: true, receipt: await sendReceipt(String(ctx.job.id), body.email || null) });
     }
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

@@ -18,6 +18,7 @@ export type ReceiptData = {
   reviewUrl?: string | null; receiptUrl?: string | null; logoUrl?: string | null;
   referUrl?: string | null;   // their own referral link: a friend books with it, they get $5 off
   checks?: { now: string[]; soon: string[]; ok: string[] } | null;   // the OK / Soon / Now taps from the job
+  customerNote?: string | null;   // what we noticed, written on the job ("front tires are getting low")
   due?: number;              // still to pay (they're paying later)
   late?: { label: string; amount: number }[];   // late fee / interest (no HST)
   dueBy?: string | null; lateTerms?: string | null;
@@ -71,6 +72,10 @@ export function receiptHtml(r: ReceiptData): string {
    ${r.filter ? `<div><strong>Oil filter:</strong> ${esc(r.filter)}</div>` : ""}
    ${r.nextDueKm || r.nextDueDate ? `<div><strong>Next oil change:</strong> ${r.nextDueKm ? `${r.nextDueKm.toLocaleString("en-CA")} km` : ""}${r.nextDueKm && r.nextDueDate ? " or " : ""}${r.nextDueDate ? esc(r.nextDueDate) : ""}, whichever comes first</div>` : ""}
   </div>` : ""}
+  ${r.customerNote ? `<div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6;background:#fff6dd;border:1px solid #f2b01e">
+   <div style="font-weight:700;margin-bottom:4px">Notes from your technician</div>
+   <div style="white-space:pre-wrap">${esc(r.customerNote)}</div>
+  </div>` : ""}
   ${r.checks && (r.checks.now.length || r.checks.soon.length || r.checks.ok.length) ? `<div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.6;border:1px solid #c8d0e0">
    <div style="font-weight:700;margin-bottom:4px">What we checked</div>
    ${r.checks.now.length ? `<div style="color:#9b1c1c"><strong>Needs doing now:</strong> ${esc(r.checks.now.join(", "))}</div>` : ""}
@@ -99,6 +104,7 @@ export function receiptText(r: ReceiptData): string {
     r.paidWith ? `Paid: ${METHOD_NAMES[r.paidWith] || r.paidWith}, ${money(r.total + (r.tip || 0))}` : "",
     r.vin ? `VIN: ${r.vin}` : "", r.km ? `Odometer: ${r.km} km` : "", r.oil ? `Oil: ${r.oil}` : "", r.filter ? `Oil filter: ${r.filter}` : "",
     r.nextDueKm ? `Next oil change: ${r.nextDueKm} km${r.nextDueDate ? ` or ${r.nextDueDate}` : ""}` : "",
+    r.customerNote ? `Notes from your technician: ${r.customerNote}` : "",
     r.checks?.now.length ? `Needs doing now: ${r.checks.now.join(", ")}` : "", r.checks?.soon.length ? `Coming up soon: ${r.checks.soon.join(", ")}` : "",
     ...(r.late ?? []).map((l) => `${l.label}: ${money(l.amount)}`),
     r.due && r.due > 0 ? `Amount due${r.dueBy ? ` by ${r.dueBy}` : ""}: ${money(r.due)}${r.payUrl ? `. Pay here: ${r.payUrl}` : ""} (or e-transfer to ${BUSINESS.email} with #${r.receiptNo} in the message)${r.lateTerms ? ` ${r.lateTerms}` : ""}` : "",

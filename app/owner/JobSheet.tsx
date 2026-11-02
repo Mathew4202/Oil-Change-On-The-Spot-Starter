@@ -11,7 +11,7 @@ type Ctx = {
   customer: { first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
   vehicle: { year: number | null; make: string | null; model: string | null; engine?: string | null; last_km: number | null; vin: string | null;
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null } | null } | null;
-  job: { receipt_no: number; total: number; tip?: number | null; late_fee?: number | null; late_interest?: number | null; bill_due_at?: string | null; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null } | null;
+  job: { receipt_no: number; total: number; tip?: number | null; late_fee?: number | null; late_interest?: number | null; bill_due_at?: string | null; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null; customer_note?: string | null } | null;
   paid: number; payOnline: boolean;
 };
 const CHECKS: [string, string][] = [
@@ -36,7 +36,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
   // who did it: the owners, plus whoever is signed in (a technician gets their own name, picked already)
   const people: [string, string][] = [["both", "Both"], ["mathew", "Mathew"], ["harsh", "Harsh"], ...(["both", "mathew", "harsh"].includes(owner) ? [] : [[owner, owner[0].toUpperCase() + owner.slice(1)] as [string, string]])];
   const [doneBy, setDoneBy] = useState<string>(["both", "mathew", "harsh"].includes(owner) ? "both" : owner);
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(""); const [custNote, setCustNote] = useState("");
   const [pay, setPay] = useState<string>(""); const [tip, setTip] = useState("");
   const [email, setEmail] = useState("");
 
@@ -45,7 +45,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       setCtx(c);
       const s = c.vehicle?.vehicle_specs;
       if (s) { setGrade(s.oil_grade); setLitres(String(Number(s.capacity_l) * (c.booking.cars || 1))); setFilter(s.oil_filter_part || ""); }
-      setEmail(c.customer?.email || ""); setVin(c.vehicle?.vin || "");
+      setEmail(c.customer?.email || ""); setVin(c.vehicle?.vin || ""); setCustNote(c.job?.customer_note || "");
       if (!(c.booking.quote_breakdown?.lines ?? []).length) setExtras([{ label: "Oil change", amount: "" }]);
       if (c.booking.pay_mode === "online" && !c.paid) setPay("card_online");   // you marked it "Already paid" when booking
     }).catch(() => setErr("Couldn't load this job"));
@@ -87,7 +87,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
       action: "finish", km: km ? Number(km.replace(/\D/g, "")) : null, vin: vin.trim() || null,
       oilGrade: withOil ? grade || null : null, oilLitres: withOil && litres ? Number(litres) : null, filterPart: withOil ? filter || null : null,
       inspection: withOil ? Object.fromEntries(Object.entries(checks).map(([k, v]) => [k, { status: v }])) : undefined,
-      extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined,
+      extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined, customerNote: custNote.trim() || undefined,
       payMethod: pay && pay !== "bill" ? pay : null, tip: pay && pay !== "bill" && Number(tip) > 0 ? Number(tip) : null, email: email.trim() || null, sendReceipt: true, bill: pay === "bill",
     });
     const paidLine = j?.prepaid > 0 ? (j.refund > 0 ? `, paid online. They paid ${money(j.refund)} too much, refund it in Converge` : balance > 0 && !pay ? `, ${money(balance)} still owed` : ", paid online") : pay ? ", paid" : ", not paid yet";
@@ -105,7 +105,7 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
     if (j) setResult(j.sms?.sent ? "Pay link texted. You'll get a notice when they pay." : j.sms?.status === "not_set_up" ? "Texting isn't set up yet, so the pay link wasn't sent." : j.sms?.status === "opted_out" ? "They turned texts off, so the link wasn't sent." : "The text didn't go through. Check the number.");
   }
   async function resend() {
-    const j = await post({ action: "resend", email: email.trim() || null });
+    const j = await post({ action: "resend", email: email.trim() || null, ...(custNote.trim() ? { customerNote: custNote.trim() } : {}) });
     if (j) setResult(receiptMsg(j.receipt).trim() || "Done.");
   }
 
@@ -159,6 +159,8 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                   )}
                 </>
               )}
+              {!fleetJob && owedAfter <= 0 && <label className="flex flex-col gap-1 text-sm font-semibold">Note for the customer <span className="font-normal text-xs text-[#4a5878]">Added to their receipt when you send it again</span>
+                <textarea value={custNote} onChange={(e) => setCustNote(e.target.value)} rows={2} placeholder="e.g. Front tires are getting bald" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>}
               {!fleetJob && <label className="flex flex-col gap-1 text-sm font-semibold">Customer email<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="For the receipt" className={field} style={{ borderColor: LINE }} /></label>}
               {fleetJob ? <a href="/owner/fleets" className="h-12 rounded-xl border font-bold flex items-center justify-center no-underline text-[#0d1b3e]" style={{ borderColor: LINE }}>Go to Fleets to invoice it</a> : owedAfter > 0
                 ? <button onClick={markPaid} disabled={busy} className="h-12 rounded-xl font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Saving…" : "Mark paid and send receipt"}</button>
@@ -255,7 +257,8 @@ export default function JobSheet({ bookingId, owner, onClose }: { bookingId: str
                 {!pay && (prepaid === 0 || balance > 0) && <p className="text-sm text-[#8a5a00]">Paying later? Pick &quot;Pay later: send bill&quot; and they get the receipt with a pay link.</p>}
                 </>}
                 <label className="flex flex-col gap-1 text-sm font-semibold">Customer email (for the receipt)<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Optional" className={field} style={{ borderColor: LINE }} /></label>
-                <label className="flex flex-col gap-1 text-sm font-semibold">Notes (optional)<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Anything for next time" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>
+                <label className="flex flex-col gap-1 text-sm font-semibold">Note for the customer <span className="font-normal text-xs text-[#4a5878]">Shows on their receipt</span><textarea value={custNote} onChange={(e) => setCustNote(e.target.value)} rows={2} placeholder="e.g. Front tires are getting bald, plan to replace them before winter" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>
+                <label className="flex flex-col gap-1 text-sm font-semibold">Notes for us <span className="font-normal text-xs text-[#4a5878]">Only you and Harsh see these</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Anything for next time" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>
               </section>
             </>
           )}
