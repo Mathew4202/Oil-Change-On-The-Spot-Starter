@@ -20,7 +20,7 @@ export async function applyEtransfer(e: { id: string; subject: string; body: str
   const p = parseInterac(e.subject || "", e.body || "");
   await sbInsert("webhook_log", { type: key, body: { subject: e.subject, amount: p.amount, sender: p.sender, message: p.message, refs: p.refs } }).catch(() => null);
   if (!p.amount) return { ok: false, reason: "no amount in the email" };
-  if (!/sent you|deposit|e-?transfer/i.test(`${e.subject} ${e.body}`)) return { ok: false, reason: "not a received e-transfer" };
+  if (!p.incoming) return { ok: true, skipped: "not money coming in" };   // our own transfers out, reminders, etc.
 
   const { visitGroup, owedOn, payVisit, recordPayment, sendReceipt, reviewIfDue } = await import("@/lib/os/jobs");
   const visitKey: Record<string, string> = {};   // several cars on one visit count as one bill
