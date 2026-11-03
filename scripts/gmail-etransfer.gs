@@ -1,5 +1,6 @@
 // Paste this into script.google.com while signed in as oilchangeonthespot@gmail.com (free, runs in your own Google account).
-// Every 5 minutes it sends new Interac e-Transfer emails to HQ, which marks the right bill paid (and any extra as a tip).
+// Every 5 minutes it sends new Interac e-Transfer emails to HQ, which marks the right bill paid (and any extra as a tip),
+// and gives HQ a nudge so it can text people who haven't finished booking through their link yet.
 // 1) Put your ETRANSFER_SECRET (the password you added in Vercel) between the quotes below. Don't share it.
 // 2) Run setup() once and allow access when Google asks. That's it (it replaces any timer you made before).
 const HQ_URL = 'https://www.oilchangeonthespot.ca/api/etransfer';
@@ -13,6 +14,10 @@ function setup() {
 }
 
 function checkTransfers() {
+  // also lets HQ send its quick reminders (people who haven't filled in the booking link yet)
+  try {
+    UrlFetchApp.fetch(HQ_URL.replace('/api/etransfer', '/api/cron/tick'), { method: 'post', muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + SECRET } });
+  } catch (e) { console.log('tick: ' + e); }
   const label = GmailApp.getUserLabelByName(DONE_LABEL) || GmailApp.createLabel(DONE_LABEL);
   const isInterac = (t) => t.getMessages().some((m) => /payments\.interac\.ca/i.test(m.getFrom()));
   const notDone = (t) => !t.getLabels().some((l) => l.getName() === DONE_LABEL);
