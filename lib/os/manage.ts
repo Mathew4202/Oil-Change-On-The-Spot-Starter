@@ -186,3 +186,64 @@ export async function setPrice(id: string, subtotalIn: number, by: string) {
   const ok = await sbPatch("bookings", `id=eq.${enc(id)}`, { quoted_total: breakdown.total, quote_breakdown: breakdown });
   return ok ? { ok: true as const, total: breakdown.total, profit } : { ok: false as const, error: "Couldn't save the price" };
 }
+
+export type BookingEdit = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; notes?: string;
+  car?: { year?: unknown; make?: unknown; model?: unknown; engine?: unknown } };
+
+/** Everything the edit screen shows for one booking. */
+export async function bookingForEdit(id: string) {
+  const [b] = await sbGet<{ id: string; address: string | null; notes: string | null; vehicle_id: string | null; fleet_account_id: string | null;
+    customers: { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
+    vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null } | null }>(
+    `bookings?select=id,address,notes,vehicle_id,fleet_account_id,customers(id,first_name,last_name,phone,email),vehicles(year,make,model,engine)&id=eq.${enc(id)}`);
+  if (!b) return null;
+  const c = b.customers, v = b.vehicles;
+  return { firstName: c?.first_name ?? "", lastName: c?.last_name ?? "", phone: (c?.phone ?? "").replace(/^\+1/, ""), email: c?.email ?? "",
+    address: b.address ?? "", notes: b.notes ?? "", hasCustomer: !!c, fleet: !!b.fleet_account_id,
+    car: { year: v?.year ? String(v.year) : "", make: v?.make ?? "", model: v?.model ?? "", engine: v?.engine ?? "" } };
+}
+
+/**
+ * Owners fix a booking's details: the customer's name, phone and email, where to go, the car, and the note.
+ * Name/phone/email are the customer's own (so they're right everywhere). A car with finished jobs on it that's
+ * changed to a different make/model becomes a new car on their file, so the old car's history stays true.
+ */
+export async function editBooking(id: string, e: BookingEdit, by: string) {
+  const [b] = await sbGet<{ id: string; status: string; customer_id: string | null; vehicle_id: string | null; address: string | null;
+    vehicles: { year: number | null; make: string | null; model: string | null } | null }>(
+    `bookings?select=id,status,customer_id,vehicle_id,address,vehicles(year,make,model)&id=eq.${enc(id)}`);
+  if (!b) return { ok: false as const, error: "Booking not found" };
+  if (b.customer_id && [e.firstName, e.lastName, e.phone, e.email].some((x) => x !== undefined)) {
+    const { updateCustomer } = await import("@/lib/os/customers");
+    const r = await updateCustomer(b.customer_id, { firstName: e.firstName, lastName: e.lastName, phone: e.phone, email: e.email }, by);
+    if (!r.ok) return r;
+  }
+  const patch: Record<string, unknown> = {};
+  if (e.address !== undefined) {
+    const a = e.address.trim().slice(0, 200);
+    if (!a) return { ok: false as const, error: "Add the address we're going to" };
+    patch.address = a;
+  }
+  if (e.notes !== undefined) patch.notes = e.notes.trim().slice(0, 1000) || null;
+  if (e.car && b.customer_id) {
+    const t = (x: unknown) => (typeof x === "string" ? x.trim() : x == null ? "" : String(x));
+    const year = t(e.car.year), make = t(e.car.make), model = t(e.car.model), engine = t(e.car.engine);
+    if (year && !(Number(year) >= 1980 && Number(year) <= new Date().getFullYear() + 2)) return { ok: false as const, error: "Check the car's year" };
+    const now = b.vehicles, low = (s: unknown) => String(s ?? "").trim().toLowerCase();
+    const differentCar = !!now && (low(now.make) !== low(make) || low(now.model) !== low(model));
+    const [history] = b.vehicle_id && differentCar ? await sbGet<{ id: string }>(`jobs?select=id&vehicle_id=eq.${enc(b.vehicle_id)}&limit=1`).catch(() => []) : [];
+    if (b.vehicle_id && !history) {
+      const { updateCar } = await import("@/lib/os/customers");
+      const r = await updateCar(b.customer_id, b.vehicle_id, { year: year || undefined, make, model, engine });
+      if (!r.ok) return r;
+    } else if (make || model) {
+      const r = await sbInsert<{ id: string }>("vehicles", { customer_id: b.customer_id, year: year ? Math.round(Number(year)) : null, make: make || null, model: model || null, engine: engine || null });
+      if (!r.ok || !r.data) return { ok: false as const, error: "Couldn't save the car" };
+      const { updateCar } = await import("@/lib/os/customers");
+      await updateCar(b.customer_id, r.data.id, { year: year || undefined, make, model, engine }).catch(() => null);   // links the oil/filter spec
+      patch.vehicle_id = r.data.id;
+    }
+  }
+  if (Object.keys(patch).length && !(await sbPatch("bookings", `id=eq.${enc(id)}`, patch))) return { ok: false as const, error: "Couldn't save" };
+  return { ok: true as const };
+}

@@ -5,6 +5,7 @@ import PushToggle from "./PushToggle";
 import Tour from "./Tour";
 import JobSheet from "./JobSheet";
 import ChangeBooking from "./ChangeBooking";
+import EditBooking from "./EditBooking";
 import HoldTime, { type HoldPreset } from "./HoldTime";
 import CallsPanel from "./CallsPanel";
 import OwnerNav from "./OwnerNav";
@@ -76,6 +77,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
   }, [bookFor]);
   const [jobOpen, setJobOpen] = useState<string | null>(null);
   const [changing, setChanging] = useState<{ id: string; name: string } | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
 
   // days already loaded show straight away (then refresh), and the days either side load in the background,
   // so tapping to the next day doesn't wait on the internet
@@ -318,7 +320,10 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   {j.notes && <p className="text-[#4a5878] mt-1">Note: {j.notes}</p>}
                   {j.imported && <p className="text-xs text-[#4a5878] mt-1">Imported from Square</p>}
                   {["confirmed", "requested", "in_progress"].includes(j.status) && can.book && (
-                    <EditPrice id={j.id} subtotal={Math.round(j.lines.reduce((t, l) => t + Number(l.amount), 0) * 100) / 100} onSaved={() => load(date)} />
+                    <div className="flex flex-wrap gap-2 items-start">
+                      <button onClick={() => setEditing(j.id)} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Edit details</button>
+                      <EditPrice id={j.id} subtotal={Math.round(j.lines.reduce((t, l) => t + Number(l.amount), 0) * 100) / 100} onSaved={() => load(date)} />
+                    </div>
                   )}
                   {(j.status === "confirmed" || j.status === "requested") && can.book && (
                     <button onClick={() => setChanging({ id: j.id, name: j.name.split(" ")[0] })} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Move or cancel</button>
@@ -390,7 +395,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
       )}
 
       {/* New booking (phone customers) */}
-      {can.book && !booking && !showAlerts && !blocking && !holding && !jobOpen && !changing && (
+      {can.book && !booking && !showAlerts && !blocking && !holding && !jobOpen && !changing && !editing && (
         <button data-tour="new-booking" onClick={() => setBooking(true)} aria-label="New booking"
           className="fixed z-20 right-[max(16px,calc(50vw_-_24rem_+_16px))] lg:right-[max(16px,calc(50vw_-_28rem_+_16px))] bottom-[calc(84px+env(safe-area-inset-bottom))] h-14 px-5 rounded-full shadow-lg font-extrabold text-base flex items-center gap-2"
           style={{ background: GOLD, color: NAVY }}>
@@ -399,6 +404,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
       )}
       {booking && <NewBooking date={date} customer={bookCustomer ?? undefined} onClose={(d) => { setBooking(false); setBookCustomer(null); if (d) { if (d === date) load(date); else setDate(d); loadAlerts(); } }} />}
 
+      {editing && <EditBooking bookingId={editing} onClose={(saved) => { setEditing(null); if (saved) load(date); }} />}
       {changing && <ChangeBooking bookingId={changing.id} name={changing.name} date={date}
         onClose={(nd) => { setChanging(null); if (nd === undefined) return; if (nd && nd !== date) setDate(nd); else load(date); loadAlerts(); }} />}
       {jobOpen && <JobSheet bookingId={jobOpen} owner={owner} onClose={(changed) => { setJobOpen(null); if (changed) load(date); }} />}
@@ -445,7 +451,7 @@ function EditPrice({ id, subtotal, onSaved }: { id: string; subtotal: number; on
   if (!open) return <button onClick={() => { setVal(subtotal ? subtotal.toFixed(2) : ""); setOpen(true); }} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Edit price</button>;
   const n = Number(val.replace(/[^\d.]/g, ""));
   return (
-    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-[#c8d0e0] p-2">
+    <div className="mt-2 w-full flex flex-col gap-2 rounded-lg border border-[#c8d0e0] p-2">
       <label className="text-sm font-semibold flex flex-col gap-1">Price before HST
         <input value={val} onChange={(e) => setVal(e.target.value)} inputMode="decimal" autoFocus className="h-11 rounded-lg border border-[#c8d0e0] px-2 text-base" /></label>
       {val && Number.isFinite(n) && <p className="text-sm text-[#4a5878]">${(n * 1.14).toFixed(2)} with HST{subtotal ? ` (was $${(subtotal * 1.14).toFixed(2)})` : ""}</p>}
