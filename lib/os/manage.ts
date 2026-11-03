@@ -259,7 +259,7 @@ export async function editBooking(id: string, e: BookingEdit, by: string) {
     if (!r.ok) return r;
     // the "oil not found online" note on the card is answered now
     const [nb] = await sbGet<{ needs_review: string[] | null }>(`bookings?select=needs_review&id=eq.${enc(id)}`).catch(() => []);
-    if (nb?.needs_review?.length) await sbPatch("bookings", `id=eq.${enc(id)}`, { needs_review: nb.needs_review.filter((n) => !/^Oil spec not found online/.test(n)) }).catch(() => null);
+    if (nb?.needs_review?.length) await sbPatch("bookings", `id=eq.${enc(id)}`, { needs_review: nb.needs_review.filter((n) => !/^(Oil spec not found online|Oil from our )/.test(n)) }).catch(() => null);
   }
   return { ok: true as const };
 }

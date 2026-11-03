@@ -13,7 +13,9 @@ import { detectClassFromModel } from "@/data/vehicleClass";
 
 export type Spec = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_grade: string;
   capacity_l: number; oil_filter_part: string | null; verified: boolean; source: string; confidence: string | null; oil_spec: string | null; fuel?: string | null;
-  cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null; filter_note?: string | null };
+  cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null; filter_note?: string | null;
+  /** not this exact year: borrowed from the same model a few years off (our own records first), to check on arrival */
+  near?: number };
 
 const SPEC_COLS = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec,fuel,wix_filter,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger,filter_note";
 const SPEC_COLS_OLD = "id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,verified,source,confidence,oil_spec,fuel";   // before migration 0026
@@ -103,11 +105,15 @@ export async function findSpecs(year: number, make: string, model: string, engin
       rows = withParts(await specsFor(year, make, model));
     }
   }
-  // Last resort (lookup unavailable): same model within 4 years
-  if (!rows.length) {
-    const near = withParts(sameCar(await specRows(`year_from=gte.${year - 4}&year_from=lte.${year + 4}`), make, model));
-    near.sort((a, b) => Math.abs(a.year_from - year) - Math.abs(b.year_from - year));
-    rows = near.length ? near.filter((r) => r.year_from === near[0].year_from) : [];
+  // Last resort (nothing for this exact year, or not this engine): the same model within 4 years, our own records first
+  // (we did a 2019 and a 2024 Civic, so a 2022 Civic isn't a blank). Marked `near` so the card says to check it on arrival.
+  const engineMissing = !!engine && rows.length > 0 && !rows.some((r) => engineMatches(engine, r.engine));
+  if (!rows.length || engineMissing) {
+    let near = withParts(sameCar(await specRows(`year_from=gte.${year - 4}&year_from=lte.${year + 4}`), make, model)).filter(hasOil);
+    if (engine) near = near.filter((r) => engineMatches(engine, r.engine));
+    const ours = (r: Spec) => r.source === "sheet" || r.source === "job_history";
+    near.sort((a, b) => Math.abs(a.year_from - year) - Math.abs(b.year_from - year) || Number(ours(b)) - Number(ours(a)));
+    if (near.length) rows = near.filter((r) => r.year_from === near[0].year_from && ours(r) === ours(near[0])).map((r) => ({ ...r, near: r.year_from }));
   }
   // an engine was picked: never price it with a different engine's oil (the quote shows it as "not on file" instead)
   if (engine && rows.length && !rows.some((r) => engineMatches(engine, r.engine)) && rows.some((r) => r.engine)) rows = rows.filter((r) => !r.engine);
@@ -116,6 +122,10 @@ export async function findSpecs(year: number, make: string, model: string, engin
   if (mine.length && (!engine || mine.some((r) => engineMatches(engine, r.engine)))) rows = mine;
   return { rows, lookedUp, down };
 }
+
+/** The card note for oil borrowed from a nearby year. */
+export const nearNote = (s: Pick<Spec, "near" | "make" | "model" | "engine">) =>
+  `Oil from our ${s.near} ${s.make} ${s.model}${s.engine ? ` ${s.engine}` : ""} (not this exact year): check the oil and filter under the hood`;
 
 export async function filterInStock(part: string | null | undefined): Promise<boolean> {
   if (!part) return false;
@@ -227,6 +237,7 @@ export async function buildQuote(req: QuoteRequest) {
   // Notes for the job card (not admin work): only when we truly couldn't find the oil.
   quote.needsReview = quote.needsReview.filter((n) => !/^Filter price not on file/.test(n));
   if (!spec) quote.needsReview = ["Oil spec not found online: check under the hood on arrival"];
+  else if (spec.near) quote.needsReview.push(nearNote(spec));
   else if (spec.source === "ai_lookup" && spec.confidence === "low") quote.needsReview.push("Oil spec found online with low confidence: check the cap or manual on arrival");
 
   // Every engine we know for this car (the booking page always asks; "Not sure" prices the safest one)

@@ -64,7 +64,9 @@ export async function attachSpec(bookingId: string, opts: { retry?: boolean } = 
       : down ? "The lookup isn't answering right now. Try again in a few minutes." : "Still not found online. Check under the hood and write it on the job: it's saved for next time." };
   }
   await sbPatch("vehicles", `id=eq.${v.id}`, { spec_id: pick.id });
-  await sbPatch("bookings", `id=eq.${b.id}`, { needs_review: (b.needs_review ?? []).filter((n) => !NOT_FOUND.test(n)) });
+  const { nearNote } = await import("@/lib/os/quote-service");
+  const kept = (b.needs_review ?? []).filter((n) => !NOT_FOUND.test(n) && !/^Oil from our /.test(n));
+  await sbPatch("bookings", `id=eq.${b.id}`, { needs_review: pick.near ? [...kept, nearNote(pick)] : kept });
   return { ok: true as const, spec: pick };
 }
 
