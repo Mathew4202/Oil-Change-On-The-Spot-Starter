@@ -7,7 +7,9 @@ const field = "h-12 rounded-xl border px-3 text-base w-full bg-white font-normal
 const lbl = "flex flex-col gap-1 text-sm font-semibold min-w-0";
 
 type Car = { year: string; make: string; model: string; engine: string };
-type Details = { firstName: string; lastName: string; phone: string; email: string; address: string; notes: string; hasCustomer: boolean; fleet: boolean; car: Car };
+type Oil = { grade: string; litres: string; filter: string };
+type Details = { firstName: string; lastName: string; phone: string; email: string; address: string; notes: string; hasCustomer: boolean; fleet: boolean; car: Car;
+  withOil: boolean; cars: number; oil: Oil; stock: { filter: number | null; oil: number | null } };
 
 export default function EditBooking({ bookingId, onClose }: { bookingId: string; onClose: (saved: boolean) => void }) {
   const [d, setD] = useState<Details | null>(null); const [start, setStart] = useState<Details | null>(null);
@@ -20,6 +22,7 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
   }, [bookingId]);
   const set = (k: keyof Details, v: string) => setD((x) => (x ? { ...x, [k]: v } : x));
   const setCar = (k: keyof Car, v: string) => setD((x) => (x ? { ...x, car: { ...x.car, [k]: v } } : x));
+  const setOil = (k: keyof Oil, v: string) => setD((x) => (x ? { ...x, oil: { ...x.oil, [k]: v } } : x));
 
   async function save() {
     if (!d || !start) return;
@@ -28,6 +31,7 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
     const edit: Record<string, unknown> = {};
     for (const k of ["firstName", "lastName", "phone", "email", "address", "notes"] as const) if (d[k] !== start[k]) edit[k] = d[k];
     if (JSON.stringify(d.car) !== JSON.stringify(start.car)) edit.car = d.car;
+    if (JSON.stringify(d.oil) !== JSON.stringify(start.oil)) edit.oil = d.oil;
     if (!Object.keys(edit).length) return onClose(false);
     setBusy(true);
     const r = await fetch("/api/owner/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId, action: "edit", edit }) });
@@ -67,8 +71,22 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
               </>
             )}
             {d.fleet && <p className="text-xs text-[#4a5878]">Fleet booking: change the van itself under Fleets.</p>}
+            {d.withOil && (
+              <>
+                <p className="text-sm font-bold mt-1" style={{ color: NAVY }}>Oil and filter</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className={lbl}>Oil<input id="eb-grade" value={d.oil.grade} onChange={(e) => setOil("grade", e.target.value)} placeholder="0W-20" autoCapitalize="characters" className={field} style={{ borderColor: LINE }} /></label>
+                  <label className={lbl}>{d.cars > 1 ? "Litres each" : "Litres"}<input id="eb-litres" value={d.oil.litres} onChange={(e) => setOil("litres", e.target.value)} inputMode="decimal" placeholder="4.4" className={field} style={{ borderColor: LINE }} /></label>
+                  <label className={lbl}>Filter<input id="eb-filter" value={d.oil.filter} onChange={(e) => setOil("filter", e.target.value)} placeholder="27356" autoCapitalize="characters" className={field} style={{ borderColor: LINE }} /></label>
+                </div>
+                {start?.oil.grade && (d.stock.filter != null || d.stock.oil != null) && JSON.stringify(d.oil) === JSON.stringify(start.oil) && (
+                  <p className="text-xs text-[#4a5878]">In Stock: {d.stock.filter != null ? `${d.stock.filter} of filter ${start.oil.filter}` : `filter ${start.oil.filter || "?"} not in Stock`}{d.stock.oil != null ? `, ${d.stock.oil} L of ${start.oil.grade}` : ""}</p>
+                )}
+                {!start?.oil.grade && <p className="text-xs font-semibold" style={{ color: "#8a5a00" }}>No oil on file for this car yet. Add it and it&apos;s saved for this car and every one like it.</p>}
+              </>
+            )}
             <label className={lbl}>Note (just for you two)<textarea id="eb-notes" value={d.notes} onChange={(e) => set("notes", e.target.value)} rows={3} className="rounded-xl border px-3 py-2 text-base w-full font-normal" style={{ borderColor: LINE }} /></label>
-            <p className="text-xs text-[#4a5878]">Name, phone and email change on their customer file too. Changing the car updates the oil and filter we bring. The price stays the same, so use Edit price if the new car costs more or less.</p>
+            <p className="text-xs text-[#4a5878]">Name, phone and email change on their customer file too. Oil, litres and filter are saved for this car (and the same car for other customers), so the bring list, the job sheet and the profit use them. Stock comes off when you finish the job. The price stays the same, so use Edit price if the new car costs more or less.</p>
             {err && <p className="text-sm font-semibold text-[#9b1c1c]" role="alert">{err}</p>}
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => onClose(false)} className="h-12 rounded-xl border font-bold" style={{ borderColor: LINE }}>Back</button>

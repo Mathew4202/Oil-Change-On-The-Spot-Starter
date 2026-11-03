@@ -188,17 +188,23 @@ export async function setPrice(id: string, subtotalIn: number, by: string) {
 }
 
 export type BookingEdit = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; notes?: string;
-  car?: { year?: unknown; make?: unknown; model?: unknown; engine?: unknown } };
+  car?: { year?: unknown; make?: unknown; model?: unknown; engine?: unknown }; oil?: { grade?: string; litres?: string | number; filter?: string } };
 
 /** Everything the edit screen shows for one booking. */
 export async function bookingForEdit(id: string) {
   const [b] = await sbGet<{ id: string; address: string | null; notes: string | null; vehicle_id: string | null; fleet_account_id: string | null;
     customers: { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
-    vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null } | null }>(
-    `bookings?select=id,address,notes,vehicle_id,fleet_account_id,customers(id,first_name,last_name,phone,email),vehicles(year,make,model,engine)&id=eq.${enc(id)}`);
+    services: { job?: string } | null; cars: number | null;
+    vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null;
+      vehicle_specs: { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null } | null } | null }>(
+    `bookings?select=id,address,notes,vehicle_id,fleet_account_id,services,cars,customers(id,first_name,last_name,phone,email),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part))&id=eq.${enc(id)}`);
   if (!b) return null;
-  const c = b.customers, v = b.vehicles;
-  return { firstName: c?.first_name ?? "", lastName: c?.last_name ?? "", phone: (c?.phone ?? "").replace(/^\+1/, ""), email: c?.email ?? "",
+  const c = b.customers, v = b.vehicles, sp = v?.vehicle_specs;
+  const { stockFor } = await import("@/lib/os/spec-learn");
+  const job = b.services?.job;
+  return { withOil: !job || job === "oil_change" || job === "seasonal", cars: b.cars || 1,
+    oil: { grade: sp?.oil_grade ?? "", litres: sp?.capacity_l != null ? String(Number(sp.capacity_l)) : "", filter: sp?.oil_filter_part ?? "" },
+    stock: await stockFor(sp?.oil_filter_part ?? null, sp?.oil_grade ?? null), firstName: c?.first_name ?? "", lastName: c?.last_name ?? "", phone: (c?.phone ?? "").replace(/^\+1/, ""), email: c?.email ?? "",
     address: b.address ?? "", notes: b.notes ?? "", hasCustomer: !!c, fleet: !!b.fleet_account_id,
     car: { year: v?.year ? String(v.year) : "", make: v?.make ?? "", model: v?.model ?? "", engine: v?.engine ?? "" } };
 }
@@ -245,5 +251,15 @@ export async function editBooking(id: string, e: BookingEdit, by: string) {
     }
   }
   if (Object.keys(patch).length && !(await sbPatch("bookings", `id=eq.${enc(id)}`, patch))) return { ok: false as const, error: "Couldn't save" };
+  if (e.oil) {
+    const carId = (patch.vehicle_id as string | undefined) ?? b.vehicle_id;
+    if (!carId) return { ok: false as const, error: "Add the car first, then the oil" };
+    const { setCarOil } = await import("@/lib/os/spec-learn");
+    const r = await setCarOil(carId, e.oil);
+    if (!r.ok) return r;
+    // the "oil not found online" note on the card is answered now
+    const [nb] = await sbGet<{ needs_review: string[] | null }>(`bookings?select=needs_review&id=eq.${enc(id)}`).catch(() => []);
+    if (nb?.needs_review?.length) await sbPatch("bookings", `id=eq.${enc(id)}`, { needs_review: nb.needs_review.filter((n) => !/^Oil spec not found online/.test(n)) }).catch(() => null);
+  }
   return { ok: true as const };
 }

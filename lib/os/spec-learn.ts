@@ -80,3 +80,51 @@ export async function attachUpcoming(days = 4) {
   }
   return fixed;
 }
+
+export const cleanFilter = (x: string | null | undefined) => (x ? x.toUpperCase().trim().replace(/^(PPF|NAPA|PFG)\s*/, "").replace(/\s+/g, "") || null : null);
+export const cleanGrade = (g: string) => g.trim().toUpperCase().replace(/\s+/g, " ").replace(/^(\d)W(\d)/, "$1W-$2").replace(/^EURO /, "Euro ").replace(/^DIESEL /, "Diesel ");
+
+/**
+ * Owners type in the oil, litres and filter for a car (on a booking, before the job): saved as ours, like a finished job,
+ * so the bring list, the cost estimate and the job sheet use it, and every car of the same year/make/model/engine knows it.
+ */
+export async function setCarOil(vehicleId: string, o: { grade?: string | null; litres?: number | string | null; filter?: string | null }) {
+  const [v] = await sbGet<{ id: string; year: number | null; make: string | null; model: string | null; engine: string | null;
+    spec: { id: string; source: string | null; oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; oil_spec: string | null; fuel: string | null } | null }>(
+    `vehicles?select=id,year,make,model,engine,spec:vehicle_specs(id,source,oil_grade,capacity_l,oil_filter_part,oil_spec,fuel)&id=eq.${enc(vehicleId)}`);
+  if (!v) return { ok: false as const, error: "Car not found" };
+  if (!v.year || !v.make || !v.model) return { ok: false as const, error: "Add the car's year, make and model first" };
+  const grade = o.grade?.trim() ? cleanGrade(o.grade) : v.spec?.oil_grade ?? null;
+  const litres = o.litres === undefined || o.litres === null || o.litres === "" ? (v.spec?.capacity_l != null ? Number(v.spec.capacity_l) : null) : Math.round(Number(o.litres) * 10) / 10;
+  const filter = o.filter === undefined ? v.spec?.oil_filter_part ?? null : cleanFilter(o.filter);
+  if (!grade) return { ok: false as const, error: "Add the oil, like 0W-20" };
+  if (!/^(Euro |Diesel )?\d{1,2}W-\d{1,2}$/.test(grade)) return { ok: false as const, error: "Write the oil like 0W-20 or 5W-30" };
+  if (!(litres && litres > 0 && litres < 30)) return { ok: false as const, error: "Add how many litres it takes (like 4.4)" };
+  const fields = { oil_grade: grade, capacity_l: litres, oil_filter_part: filter };
+  let id: string | null = null;
+  if (v.spec && (v.spec.source === "job_history" || v.spec.source === "sheet")) {
+    id = v.spec.id;   // ours already: correct it (every car linked to it gets the fix)
+    if (!(await sbPatch("vehicle_specs", `id=eq.${id}`, fields))) return { ok: false as const, error: "Couldn't save the oil" };
+  } else {
+    const rows = sameCar(await sbGet<OurRow>(`vehicle_specs?select=id,year_from,make,model,engine,oil_grade,capacity_l,oil_filter_part,source,times_done&source=in.(sheet,job_history)&year_from=lte.${v.year}&year_to=gte.${v.year}&oil_grade=not.is.null`).catch(() => []), v.make, v.model);
+    const mine = v.engine ? rows.find((r) => engineMatches(v.engine!, r.engine)) : rows.find((r) => !r.engine) ?? (rows.length === 1 ? rows[0] : undefined);
+    if (mine) { id = mine.id; await sbPatch("vehicle_specs", `id=eq.${id}`, fields); }
+    else {
+      const keep = v.spec && v.spec.oil_grade?.toUpperCase() === grade.toUpperCase() ? { oil_spec: v.spec.oil_spec, fuel: v.spec.fuel } : {};
+      const r = await sbInsert<{ id: string }>("vehicle_specs", { year_from: v.year, year_to: v.year, make: v.make, model: v.model, engine: v.engine || null,
+        ...fields, source: "job_history", verified: true, times_done: 0, ...keep });
+      if (!r.ok || !r.data) return { ok: false as const, error: "Couldn't save the oil" };
+      id = r.data.id;
+    }
+  }
+  await sbPatch("vehicles", `id=eq.${enc(v.id)}`, { spec_id: id });
+  return { ok: true as const, specId: id, grade, litres, filter };
+}
+
+/** What's in Stock for a filter and an oil (shown next to them on the edit screen). */
+export async function stockFor(filter: string | null, grade: string | null) {
+  const [f] = filter ? await sbGet<{ on_hand: number }>(`parts?select=on_hand&part_number=eq.${enc(filter)}&order=on_hand.desc&limit=1`).catch(() => []) : [];
+  const pn = grade ? `OIL-${grade.replace(/^Euro /i, "").toUpperCase()}` : null;
+  const [o] = pn ? await sbGet<{ on_hand: number }>(`parts?select=on_hand&part_number=eq.${enc(pn)}&order=on_hand.desc&limit=1`).catch(() => []) : [];
+  return { filter: f ? Number(f.on_hand) : null, oil: o ? Number(o.on_hand) : null };
+}
