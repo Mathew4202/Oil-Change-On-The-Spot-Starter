@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
       case "vehicle": { if (!okId(acct)) break; const r = await saveVehicle(acct, b.vehicle || {}); return NextResponse.json(r, { status: r.ok ? 200 : 400 }); }
       case "book": {
         if (!okId(acct)) break;
-        const r = await bookFleetVisit(acct, (b.vehicleIds || []).filter(okId), String(b.start || ""), owner, String(b.note || "").slice(0, 300));
+        const r = await bookFleetVisit(acct, (b.vehicleIds || []).filter(okId), String(b.start || ""), owner, String(b.note || "").slice(0, 300), typeof b.address === "string" ? b.address.slice(0, 200) : undefined);
         return NextResponse.json(r, { status: r.ok ? 200 : 400 });
       }
       case "invoice": { if (!okId(acct)) break; const r = await makeInvoices(acct, (b.jobIds || []).filter(okId)); return NextResponse.json(r, { status: r.ok ? 200 : 400 }); }

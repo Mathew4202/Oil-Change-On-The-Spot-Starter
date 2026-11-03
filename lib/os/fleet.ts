@@ -26,6 +26,7 @@ export type Account = {
 export type FleetVehicle = {
   id: string; unit_number: string | null; year: number | null; make: string | null; model: string | null; engine: string | null; vin: string | null;
   plate: string | null; fleet_price: number | null; last_km: number | null; notes: string | null; active: boolean;
+  parked_at?: string | null;   // where it usually sits if not the yard (a driver who takes it home)
 };
 const ACC = "id,business_name,contact_name,phone,email,invoice_email,address,billing,terms_days,service_every_months,via,notes,active";
 const VEH = "id,unit_number,year,make,model,engine,vin,plate,fleet_price,last_km,notes,active";
@@ -54,7 +55,8 @@ type JobRow = { id: string; done_at: string; km: number | null; service: string 
 export async function accountDetail(id: string, known?: Account) {
   const [[a], vehicles, invoices] = await Promise.all([
     known ? Promise.resolve([known]) : sbGet<Account>(`fleet_accounts?select=${ACC}&id=eq.${enc(id)}`),
-    sbGet<FleetVehicle>(`vehicles?select=${VEH}&fleet_account_id=eq.${enc(id)}&order=unit_number.asc.nullslast,year.desc`),
+    sbGet<FleetVehicle>(`vehicles?select=${VEH},parked_at&fleet_account_id=eq.${enc(id)}&order=unit_number.asc.nullslast,year.desc`)
+      .catch(() => sbGet<FleetVehicle>(`vehicles?select=${VEH}&fleet_account_id=eq.${enc(id)}&order=unit_number.asc.nullslast,year.desc`)),   // before migration 0050
     sbGet<{ id: string; invoice_no: number; token: string; period_start: string | null; period_end: string | null; issued_at: string; due_at: string | null;
       total: number; status: string; sent_at: string | null; paid_at: string | null; paid_method: string | null }>(
       `invoices?select=id,invoice_no,token,period_start,period_end,issued_at,due_at,total,status,sent_at,paid_at,paid_method&fleet_account_id=eq.${enc(id)}&order=issued_at.desc&limit=50`).catch(() => []),
@@ -110,6 +112,7 @@ export async function saveVehicle(accountId: string, input: Record<string, unkno
     engine: clean(input.engine, 60) ?? (d?.engineL ? `${d.engineL}L${/diesel/i.test(d.fuel || "") ? " diesel" : ""}` : null),
     fleet_price: input.fleet_price === "" || input.fleet_price == null ? null : r2(Number(input.fleet_price)),
     notes: clean(input.notes, 500), active: input.active !== false,
+    ...(input.parked_at !== undefined ? { parked_at: clean(input.parked_at, 200) } : {}),
   };
   if (!row.year || !row.make || !row.model) return { ok: false as const, error: "Add the year, make and model, or a VIN we can read them from" };
   if (input.id) { await sbPatch("vehicles", `id=eq.${enc(String(input.id))}&fleet_account_id=eq.${accountId}`, row); return { ok: true as const, id: String(input.id), decoded: d }; }
@@ -143,11 +146,12 @@ export async function bookFleetVisit(accountId: string, vehicleIds: string[], st
   const d = await accountDetail(accountId);
   if (!d) return { ok: false as const, error: "Account not found" };
   const a = d.account;
-  const where = addressIn?.trim() || a.address;   // a visit can be at another site than the yard
-  if (!where) return { ok: false as const, error: "Add the yard address to the account first" };
+  // where each vehicle gets done: an address picked for this visit, else where that vehicle is usually parked (a driver's home), else the yard
+  const placeOf = (v: FleetVehicle) => addressIn?.trim() || v.parked_at?.trim() || a.address;
   if (!a.phone) return { ok: false as const, error: "Add the contact's phone number to the account first" };
   const picked = vehicleIds.map((id) => d.vehicles.find((v) => v.id === id)).filter(Boolean) as typeof d.vehicles;
   if (!picked.length) return { ok: false as const, error: "Pick at least one vehicle" };
+  if (picked.some((v) => !placeOf(v))) return { ok: false as const, error: "Add the yard address to the account first (or where the vehicle is parked)" };
   if (picked.length > 12) return { ok: false as const, error: "Book 12 vehicles or fewer per visit" };
   const [first, ...rest] = (a.contact_name || a.business_name).split(/\s+/);
   // the contact person is the customer record, tied to the account
@@ -165,7 +169,7 @@ export async function bookFleetVisit(accountId: string, vehicleIds: string[], st
   let next = new Date(startIso).toISOString();
   for (const v of picked) {
     const r = await createBooking({
-      firstName: first || a.business_name, lastName: rest.join(" "), phone: a.phone, email: a.email || "", address: where,
+      firstName: first || a.business_name, lastName: rest.join(" "), phone: a.phone, email: a.email || "", address: placeOf(v)!,
       car: { year: v.year!, make: v.make!, model: v.model!, ...(v.engine ? { engine: v.engine } : {}) }, job: "oil_change", addons: [], own: null,
       start: next, cars: 1, payMode: "after", notes: [v.unit_number ? `Unit ${v.unit_number}` : "", note || ""].filter(Boolean).join(" · ") || undefined,
     }, { source: owner === "fleet" ? "website" : "phone", bookedBy: owner === "fleet" ? undefined : owner, anyTime: true, customerId: cust.id, priceOverride: v.fleet_price ?? null, groupId, noTravel: true, silent: true,
@@ -179,7 +183,7 @@ export async function bookFleetVisit(accountId: string, vehicleIds: string[], st
   }
   const title = owner === "fleet" ? `${a.business_name} booked online: ${picked.length} vehicle${picked.length > 1 ? "s" : ""}`
     : `${owner[0].toUpperCase()}${owner.slice(1)} booked ${a.business_name}: ${picked.length} vehicle${picked.length > 1 ? "s" : ""}`;
-  const body = `${new Date(startIso).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} at ${where}`;
+  const body = `${new Date(startIso).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} at ${new Set(picked.map(placeOf)).size > 1 ? `${new Set(picked.map(placeOf)).size} addresses (where each van is parked)` : placeOf(picked[0])}`;
   try { await sbInsert("notifications", { kind: "new_booking", booking_id: made[0], title, body }); } catch { /* best effort */ }
   await Promise.race([pushToOwners({ title, body, url: `/owner?date=${halifaxDate(new Date(startIso))}`, tag: made[0] }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
   return { ok: true as const, bookings: made, ends: next };

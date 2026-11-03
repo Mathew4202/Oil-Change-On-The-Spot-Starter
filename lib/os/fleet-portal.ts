@@ -76,7 +76,7 @@ export async function portalView(accountId: string) {
     account: { name: a.business_name, contact: a.contact_name, phone: a.phone, email: a.email, invoiceEmail: (a as { invoice_email?: string | null }).invoice_email ?? null,
       address: a.address, billing: a.billing, terms: a.terms_days, every: a.service_every_months },
     vehicles: d.vehicles.filter((v) => v.active !== false).map((v) => ({ id: v.id, unit: v.unit_number, car: [v.year, v.make, v.model].filter(Boolean).join(" "), engine: v.engine,
-      year: v.year, make: v.make, model: v.model,
+      year: v.year, make: v.make, model: v.model, parkedAt: v.parked_at ?? null,
       plate: v.plate, vin: v.vin, price: v.fleet_price, lastService: v.lastService, lastKm: v.lastKm, booked: v.booked, due: v.due,
       // what we found on the last visit (Now / Soon), so the fleet knows before it becomes a breakdown
       checks: checksFrom(d.history.find((j) => j.vehicle_id === v.id && j.service !== "cancellation_fee")?.inspection ?? null) })),
@@ -203,7 +203,7 @@ export async function portalEditVehicle(accountId: string, vehicleId: string, f:
   const year = f.year === undefined || f.year === "" ? undefined : Number(f.year);
   if (year !== undefined && !(year >= 1980 && year <= new Date().getFullYear() + 2)) return { ok: false as const, error: "Check the year" };
   const patch: Record<string, unknown> = {};
-  for (const [k, n] of [["unit_number", 30], ["make", 40], ["model", 60], ["engine", 60]] as const) { const x = txt(f[k], n); if (x !== undefined) patch[k] = x || null; }
+  for (const [k, n] of [["unit_number", 30], ["make", 40], ["model", 60], ["engine", 60], ["parked_at", 200]] as const) { const x = txt(f[k], n); if (x !== undefined) patch[k] = x || null; }
   const plate = txt(f.plate, 15); if (plate !== undefined) patch.plate = plate.toUpperCase() || null;
   if (vinIn !== undefined) patch.vin = vinIn ? cleanVin(vinIn) : null;
   if (year !== undefined) patch.year = year;

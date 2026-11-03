@@ -10,7 +10,7 @@ const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878";
 type Due = { state: "ok" | "soon" | "due" | "booked" | "new"; date: string | null };
 type Checks = { now: string[]; soon: string[]; ok: string[] } | null;
 type Vehicle = { id: string; unit: string | null; car: string; engine: string | null; plate: string | null; vin: string | null; price: number | null;
-  year?: number | null; make?: string | null; model?: string | null;
+  year?: number | null; make?: string | null; model?: string | null; parkedAt?: string | null;
   lastService: string | null; lastKm: number | null; booked: string | null; due: Due; checks?: Checks };
 type Data = {
   account: { name: string; contact: string | null; phone?: string | null; email?: string | null; invoiceEmail?: string | null; address: string | null; billing: string; terms: number; every: number };
@@ -134,6 +134,7 @@ export default function FleetPortal({ token }: { token: string }) {
                   <input type="checkbox" checked={on} disabled={v.due.state === "booked"} onChange={() => setPick((p) => on ? p.filter((x) => x !== v.id) : [...p, v.id])} className="mt-1 w-5 h-5 accent-[#0d1b3e]" />
                   <span className="flex-1 min-w-0">
                     <span className="block font-bold">{name(v)}</span>
+                    {v.parkedAt && <span className="block text-sm" style={{ color: MUTED }}>Parked at {v.parkedAt}</span>}
                     <span className="block text-sm" style={{ color: MUTED }}>{[v.plate, v.lastService ? `last done ${day(v.lastService)}${v.lastKm ? ` at ${v.lastKm.toLocaleString()} km` : ""}` : null].filter(Boolean).join(" · ")}</span>
                     {s.text(v) && <span className="inline-block mt-1 text-[12px] font-bold rounded-full px-2 py-0.5" style={{ background: s.bg, color: s.fg }}>{s.text(v)}</span>}
                     <CheckLine c={v.checks} />
@@ -159,7 +160,11 @@ export default function FleetPortal({ token }: { token: string }) {
               </div>
               <div className="flex flex-col gap-1 text-sm font-semibold" style={{ color: MUTED }}>Where
                 {where == null
-                  ? <p className="text-[15px] font-normal text-[#0d1b3e]">{a.address || "Your yard"} <button type="button" onClick={() => setWhere("")} className="underline font-semibold ml-1">Somewhere else?</button></p>
+                  ? <div className="text-[15px] font-normal text-[#0d1b3e]">
+                      {d.vehicles.some((v) => pick.includes(v.id) && v.parkedAt)
+                        ? d.vehicles.filter((v) => pick.includes(v.id)).map((v) => <p key={v.id}>{name(v)}: {v.parkedAt || a.address || "your yard"}</p>)
+                        : <p>{a.address || "Your yard"}</p>}
+                      <button type="button" onClick={() => setWhere("")} className="underline font-semibold">{d.vehicles.some((v) => pick.includes(v.id) && v.parkedAt) ? "All at one place instead?" : "Somewhere else?"}</button></div>
                   : <input value={where} onChange={(e) => setWhere(e.target.value)} placeholder="Street address, town" className={field} style={{ borderColor: LINE }} autoFocus />}
               </div>
               <label className="flex flex-col gap-1 text-sm font-semibold" style={{ color: MUTED }}>Anything we should know? (optional)
@@ -270,7 +275,7 @@ function Details({ a, field, save }: { a: Data["account"]; field: string; save: 
 
 /** Fix one vehicle (unit, plate, VIN, year, make, model, engine) or take it off the list. */
 function VehicleEdit({ v, field, onSave, onCancel }: { v: Vehicle; field: string; onSave: (f: Record<string, string | boolean>) => Promise<string | null>; onCancel: () => void }) {
-  const [f, setF] = useState({ unit_number: v.unit ?? "", plate: v.plate ?? "", vin: v.vin ?? "", year: v.year ? String(v.year) : "", make: v.make ?? "", model: v.model ?? "", engine: v.engine ?? "" });
+  const [f, setF] = useState({ unit_number: v.unit ?? "", plate: v.plate ?? "", vin: v.vin ?? "", year: v.year ? String(v.year) : "", make: v.make ?? "", model: v.model ?? "", engine: v.engine ?? "", parked_at: v.parkedAt ?? "" });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [sure, setSure] = useState(false);
   const go = async (body: Record<string, string | boolean>) => { setBusy(true); setErr(""); const e = await onSave(body); setBusy(false); if (e) setErr(e); };
   const box = (k: keyof typeof f, ph: string, extra: Record<string, string> = {}) =>
@@ -282,6 +287,8 @@ function VehicleEdit({ v, field, onSave, onCancel }: { v: Vehicle; field: string
       {box("vin", "VIN (17 characters)")}
       <div className="grid grid-cols-[90px_1fr_1fr] gap-2">{box("year", "Year", { inputMode: "numeric" })}{box("make", "Make")}{box("model", "Model")}</div>
       {box("engine", "Engine, e.g. 6.6L")}
+      <label className="flex flex-col gap-1 text-sm font-semibold" style={{ color: MUTED }}>Usually parked at <span className="font-normal text-xs">Only if it&apos;s not at your yard, like a driver who takes it home. We&apos;ll do it there.</span>
+        {box("parked_at", "Street address, town (blank = the yard)")}</label>
       {err && <p className="text-sm font-semibold text-[#b3261e]" role="alert">{err}</p>}
       <div className="flex gap-2">
         <button disabled={busy} onClick={() => go(f)} className="h-12 flex-1 rounded-xl font-bold text-white disabled:opacity-60" style={{ background: NAVY }}>{busy ? "Saving…" : "Save"}</button>

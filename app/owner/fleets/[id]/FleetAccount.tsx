@@ -19,7 +19,7 @@ const nice = (d: string) => new Date(d.length === 10 ? `${d}T12:00:00Z` : d).toL
 
 type Due = { state: "ok" | "soon" | "due" | "booked" | "new"; date: string | null };
 type V = { id: string; unit_number: string | null; year: number | null; make: string | null; model: string | null; engine: string | null; vin: string | null; plate: string | null;
-  fleet_price: number | null; notes: string | null; active: boolean; lastService: string | null; lastKm: number | null; booked: string | null; due: Due };
+  fleet_price: number | null; notes: string | null; active: boolean; parked_at?: string | null; lastService: string | null; lastKm: number | null; booked: string | null; due: Due };
 type J = { id: string; done_at: string; km: number | null; vehicle_id: string | null; vehicle_text: string | null; subtotal: number; total: number; invoice_id: string | null };
 type Inv = { id: string; invoice_no: number; token: string; period_start: string | null; period_end: string | null; issued_at: string; due_at: string | null; total: number; status: string; sent_at: string | null; paid_at: string | null; paid_method: string | null };
 type Data = { account: AccountIn & { id: string; business_name: string; billing: string; service_every_months: number }; vehicles: V[]; unbilled: J[]; invoices: Inv[]; history: J[];
@@ -50,7 +50,7 @@ export default function FleetAccount({ id }: { id: string }) {
   const [vForm, setVForm] = useState<Record<string, string> | null>(null);
   const [pick, setPick] = useState<string[]>([]);
   const { can } = useRole();
-  const [date, setDate] = useState(todayHfx()); const [time, setTime] = useState(""); const [note, setNote] = useState("");
+  const [date, setDate] = useState(todayHfx()); const [time, setTime] = useState(""); const [note, setNote] = useState(""); const [where, setWhere] = useState("");
   const [slots, setSlots] = useState<{ time: string; label: string }[] | null>(null); const [other, setOther] = useState(false);
   const [bulk, setBulk] = useState(false);
   const [billPick, setBillPick] = useState<string[] | null>(null);
@@ -83,9 +83,9 @@ export default function FleetAccount({ id }: { id: string }) {
   async function book() {
     if (!pick.length) return setErr("Tick the vehicles to book.");
     if (!time) return setErr("Pick a start time.");
-    const j = await post({ action: "book", vehicleIds: pick, start: halifaxIso(date, time), note });
+    const j = await post({ action: "book", vehicleIds: pick, start: halifaxIso(date, time), note, ...(where.trim() ? { address: where.trim() } : {}) });
     if (!j) loadSlots();
-    if (j) { setPick([]); setNote(""); setMsg(`Booked ${j.bookings.length} vehicle${j.bookings.length > 1 ? "s" : ""}, back to back. They're on the calendar, and each gets its own job screen.`); load(); }
+    if (j) { setPick([]); setNote(""); setWhere(""); setMsg(`Booked ${j.bookings.length} vehicle${j.bookings.length > 1 ? "s" : ""}, back to back. They're on the calendar, and each gets its own job screen.`); load(); }
   }
   async function invoice() {
     const j = await post({ action: "invoice", jobIds: billPick ?? [] });
@@ -152,7 +152,7 @@ export default function FleetAccount({ id }: { id: string }) {
                   <button onClick={() => setPick(active.filter((v) => v.due.state === "due" || v.due.state === "soon").map((v) => v.id))} className="h-9 px-3 rounded-lg border font-bold text-sm bg-white" style={{ borderColor: LINE }}>Pick the due ones</button>
                 )}
                 <button onClick={() => { setBulk(true); setVForm(null); }} className="h-9 px-3 rounded-lg font-bold text-sm text-white" style={{ background: NAVY }}>+ Many</button>
-                <button onClick={() => { setBulk(false); setVForm({ unit_number: "", vin: "", year: "", make: "", model: "", engine: "", plate: "", fleet_price: "", notes: "" }); }} className="h-9 px-3 rounded-lg font-bold text-sm" style={{ background: GOLD, color: NAVY }}>+ One</button>
+                <button onClick={() => { setBulk(false); setVForm({ unit_number: "", vin: "", year: "", make: "", model: "", engine: "", plate: "", fleet_price: "", notes: "", parked_at: "" }); }} className="h-9 px-3 rounded-lg font-bold text-sm" style={{ background: GOLD, color: NAVY }}>+ One</button>
               </div>
             </div>
 
@@ -175,6 +175,7 @@ export default function FleetAccount({ id }: { id: string }) {
                   <label className={lbl}>Fleet price before HST<input value={vForm.fleet_price} onChange={(e) => setVForm({ ...vForm, fleet_price: e.target.value.replace(/[^\d.]/g, "") })} inputMode="decimal" placeholder="Normal price" className={field} style={{ borderColor: LINE }} /></label>
                 </div>
                 <label className={lbl}>Notes<input value={vForm.notes} onChange={(e) => setVForm({ ...vForm, notes: e.target.value })} className={field} style={{ borderColor: LINE }} /></label>
+                <label className={lbl}>Usually parked at (blank = the yard)<input value={vForm.parked_at ?? ""} onChange={(e) => setVForm({ ...vForm, parked_at: e.target.value })} placeholder="e.g. the driver's home address" className={field} style={{ borderColor: LINE }} /></label>
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => setVForm(null)} className="h-12 rounded-xl border font-bold" style={{ borderColor: LINE }}>Cancel</button>
                   <button onClick={saveVehicle} disabled={busy} className="h-12 rounded-xl font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Saving…" : "Save"}</button>
@@ -195,7 +196,7 @@ export default function FleetAccount({ id }: { id: string }) {
                     <p className="text-sm">{price != null ? <><strong>{money(price)}</strong>{v.fleet_price != null ? " fleet price" : " (normal price)"}</> : "Price on booking"}{profit != null && can.money && <span style={{ color: profit < 45 ? "#9b1c1c" : MUTED }}> · about {money(profit)} profit</span>}</p>
                     {b.text(v.due, v) && <span className="self-start text-xs font-bold rounded-full px-2 py-1 mt-1" style={{ background: b.bg, color: b.fg }}>{b.text(v.due, v)}</span>}
                   </div>
-                  <button onClick={() => setVForm({ id: v.id, unit_number: v.unit_number ?? "", vin: v.vin ?? "", year: String(v.year ?? ""), make: v.make ?? "", model: v.model ?? "", engine: v.engine ?? "", plate: v.plate ?? "", fleet_price: v.fleet_price != null ? String(v.fleet_price) : "", notes: v.notes ?? "" })}
+                  <button onClick={() => setVForm({ id: v.id, unit_number: v.unit_number ?? "", vin: v.vin ?? "", year: String(v.year ?? ""), make: v.make ?? "", model: v.model ?? "", engine: v.engine ?? "", plate: v.plate ?? "", fleet_price: v.fleet_price != null ? String(v.fleet_price) : "", notes: v.notes ?? "", parked_at: v.parked_at ?? "" })}
                     className="self-start text-sm font-bold underline">Edit</button>
                 </div>
               );
@@ -205,7 +206,7 @@ export default function FleetAccount({ id }: { id: string }) {
 
         {d && pick.length > 0 && (
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-3 border-2" style={{ borderColor: GOLD }}>
-            <h2 className="font-extrabold text-lg">Book {pick.length} vehicle{pick.length > 1 ? "s" : ""} at the yard</h2>
+            <h2 className="font-extrabold text-lg">Book {pick.length} vehicle{pick.length > 1 ? "s" : ""}</h2>
             <label className={lbl}>Day<input type="date" value={date} min={todayHfx()} onChange={(e) => setDate(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
             <div className="flex flex-col gap-1">
               <span className="text-sm font-semibold">Start time</span>
@@ -215,6 +216,11 @@ export default function FleetAccount({ id }: { id: string }) {
               {can.timeOff && (other
                 ? <label className={lbl}>Outside our usual hours<input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
                 : <button type="button" onClick={() => { setOther(true); setTime(""); }} className="self-start text-sm font-semibold underline mt-1" style={{ color: MUTED }}>Book outside our usual hours</button>)}
+            </div>
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="font-semibold">Where</span>
+              {d.vehicles.filter((v) => pick.includes(v.id)).map((v) => <span key={v.id} style={{ color: MUTED }}>{v.unit_number ? `Unit ${v.unit_number}` : [v.year, v.make, v.model].filter(Boolean).join(" ")}: {where.trim() || v.parked_at || a?.address || "no address yet"}</span>)}
+              <input value={where} onChange={(e) => setWhere(e.target.value)} placeholder="Do them all at another address (optional)" className={field} style={{ borderColor: LINE }} />
             </div>
             <label className={lbl}>Note for the visit<input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Keys at the front desk, PO 4471" className={field} style={{ borderColor: LINE }} /></label>
             <p className="text-sm" style={{ color: MUTED }}>Done one after another, about {Math.round(pick.length * 75 / 60 * 10) / 10} hours. {money(pickedTotal)} + HST, billed on the fleet&apos;s invoice.</p>
