@@ -13,7 +13,9 @@ type Summary = { jobs: number; sales: number; hstCollected: number; spending: nu
 type Month = { month: string; sales: number; spending: number; profit: number };
 type Data = { period: { kind: Kind; label: string; from: string; to: string; offset: number }; summary: Summary; months: Month[];
   unpaid: { id: string; date: string; name: string; amount: number; fee?: boolean }[]; bank: { needsLook: number; lastStatement: string | null; today: string };
-  hourly: Hourly | null };
+  hourly: Hourly | null; hole: Hole | null };
+type Hole = { behind: number; breakEven: number | null; needed: number | null; perMonthPayback: number | null; onPace: number | null; behindAuto: number; owedSet: boolean;
+  fixed: number; months: number; perJob: number; jobsThisMonth: number; recentJobs: number; gasPerJob: number };
 type Bucket = { name: string; jobs: number; revenue: number; profit: number; hours: number | null; perHour: number | null };
 type Hourly = { all: Bucket | null; areas: Bucket[]; services: Bucket[]; addons: { name: string; count: number; revenue: number }[]; untimed: number };
 type BankLine = { id: string; account?: string; posted_on: string; amount: number; description: string; kind: string | null; category: string | null; note: string | null; status?: string; decided_by?: string | null };
@@ -128,6 +130,71 @@ function PerHour({ h }: { h: Hourly }) {
   );
 }
 
+/** Jobs a month to get out of the hole: break-even, plus paying back what the business is behind over the months picked. */
+function HoleCard({ h, reload }: { h: Hole; reload: () => void }) {
+  const [edit, setEdit] = useState(false); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState("");
+  const [fixed, setFixed] = useState(String(h.fixed)); const [owed, setOwed] = useState(h.owedSet ? String(h.behind) : "");
+  async function save(body: object) {
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/owner/money", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({})); setBusy(false);
+    if (!r.ok || !j.ok) return setMsg(j.error || "Couldn't save");
+    setEdit(false); reload();
+  }
+  const out = h.behind <= 0;
+  const pace = h.needed != null && h.onPace != null ? (h.onPace >= h.needed ? GOOD : h.onPace >= (h.breakEven ?? 0) ? "#8a5a00" : BAD) : MUTED;
+  return (
+    <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-2">
+        <h2 className="font-extrabold text-lg">{out ? "Out of the hole" : "Getting out of the hole"}</h2>
+        <button onClick={() => setEdit((e) => !e)} className="h-9 px-3 rounded-lg border text-sm font-bold shrink-0" style={{ borderColor: LINE }}>{edit ? "Close" : "Change numbers"}</button>
+      </div>
+      {h.needed == null ? <p style={{ color: MUTED }}>Finish a few jobs first so HQ knows what a job leaves you.</p> : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl p-3" style={{ background: "#fff6dd" }}>
+              <p className="text-xs font-semibold" style={{ color: MUTED }}>{out ? "Jobs a month to stay ahead" : `Jobs a month to clear it in ${h.months} month${h.months === 1 ? "" : "s"}`}</p>
+              <p className="text-[34px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>{h.needed}</p>
+            </div>
+            <div className="rounded-xl p-3 bg-[#f4f6fa]">
+              <p className="text-xs font-semibold" style={{ color: MUTED }}>Break-even (just the bills)</p>
+              <p className="text-[34px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>{h.breakEven}</p>
+            </div>
+          </div>
+          <p className="text-[15px]">
+            {out ? <>The business is <strong>{money(-h.behind)}</strong> ahead overall.</> : <>The business is <strong>{money(h.behind)}</strong> behind{h.owedSet ? " (the amount you entered)" : " overall"}. Paying back {money(h.perMonthPayback ?? 0)} a month clears it in {h.months} month{h.months === 1 ? "" : "s"}.</>}
+          </p>
+          <p className="text-[15px] font-semibold" style={{ color: pace }}>
+            This month: {h.jobsThisMonth} job{h.jobsThisMonth === 1 ? "" : "s"} so far, on pace for about {h.onPace}.
+            {h.onPace != null && (h.onPace >= h.needed ? " On track." : h.onPace >= (h.breakEven ?? 0) ? ` Covering the bills, ${h.needed - h.onPace} short of paying it down.` : ` ${h.needed - h.onPace} short. Push bookings and fleets.`)}
+          </p>
+          <p className="text-xs" style={{ color: MUTED }}>
+            Each job leaves about {money(h.perJob)} after oil, filter and {money(h.gasPerJob)} gas (last 90 days, {h.recentJobs} jobs). Bills: {money(h.fixed, false)} a month.
+            {!h.owedSet && " Behind = everything spent since you started minus everything that came in, from HQ's records."}
+          </p>
+        </>
+      )}
+      {edit && (
+        <div className="flex flex-col gap-3 rounded-xl p-3 bg-[#f4f6fa]">
+          <label className="flex flex-col gap-1 text-sm font-semibold">Bills a month (ads, insurance, Quo, truck savings…)
+            <input id="hole-fixed" value={fixed} onChange={(e) => setFixed(e.target.value)} inputMode="decimal" className="h-12 rounded-xl border px-3 text-base bg-white font-normal" style={{ borderColor: LINE }} /></label>
+          <label className="flex flex-col gap-1 text-sm font-semibold">What we owe (leave blank and HQ works it out: {money(Math.max(0, h.behindAuto))})
+            <input id="hole-owed" value={owed} onChange={(e) => setOwed(e.target.value)} inputMode="decimal" placeholder="Blank = from HQ" className="h-12 rounded-xl border px-3 text-base bg-white font-normal" style={{ borderColor: LINE }} /></label>
+          <div className="flex flex-col gap-1 text-sm font-semibold">Pay it back in
+            <div className="grid grid-cols-4 gap-1">
+              {[3, 6, 9, 12].map((m) => (
+                <button key={m} onClick={() => save({ months: m })} disabled={busy} className="h-10 rounded-lg border font-bold" style={h.months === m ? { background: GOLD, borderColor: GOLD, color: NAVY } : { borderColor: LINE, background: "#fff" }}>{m} mo</button>
+              ))}
+            </div>
+          </div>
+          {msg && <p className="text-sm font-semibold" style={{ color: BAD }} role="alert">{msg}</p>}
+          <button onClick={() => save({ fixed: Number(fixed), owed: owed.trim() === "" ? null : Number(owed) })} disabled={busy} className="h-11 rounded-xl font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function MoneyScreen() {
   const { can } = useRole();
   const [kind, setKind] = useState<Kind>("month"); const [offset, setOffset] = useState(0);
@@ -189,6 +256,8 @@ export default function MoneyScreen() {
               )}
               <p className="text-xs" style={{ color: MUTED }}>All amounts before HST. Money out is everything spent: receipts, bank fees and lines added from the bank statement.</p>
             </section>
+
+            {data.hole && <HoleCard key={`${data.hole.fixed}-${data.hole.months}-${data.hole.owedSet}`} h={data.hole} reload={load} />}
 
             <MonthChart months={data.months} year={data.period.from.slice(0, 4)} pick={pick} setPick={setPick} />
 

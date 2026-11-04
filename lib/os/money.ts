@@ -88,3 +88,18 @@ export function byMonth(year: number, jobs: JobRow[], expenses: ExpRow[], halifa
   for (const e of expenses) if (+e.spent_at.slice(0, 4) === year) rows[+e.spent_at.slice(5, 7) - 1].spending += beforeHst(e);
   return rows.map((r) => ({ ...r, sales: r2(r.sales), spending: r2(r.spending), profit: r2(r.sales - r.spending) }));
 }
+
+/**
+ * Getting out of the hole: how many jobs a month cover the fixed costs (break-even), and how many also pay back
+ * what the business is behind within `months`. perJob = what one more job leaves after its oil, filter, supplies and gas.
+ */
+export function outOfHole(o: { behind: number; fixed: number; perJob: number; months: number; jobsThisMonth: number; day: number; daysInMonth: number }) {
+  const behind = Math.max(0, r2(o.behind));
+  if (!(o.perJob > 0)) return { behind, breakEven: null, needed: null, perMonthPayback: null, onPace: null };
+  const breakEven = Math.ceil(o.fixed / o.perJob);
+  const perMonthPayback = r2(behind / Math.max(1, o.months));
+  const needed = Math.ceil((o.fixed + perMonthPayback) / o.perJob);
+  // at this month's pace, how many jobs by the end of the month
+  const onPace = o.day > 0 ? Math.round((o.jobsThisMonth / o.day) * o.daysInMonth) : 0;
+  return { behind, breakEven, needed, perMonthPayback, onPace };
+}

@@ -1,9 +1,9 @@
 // GET ?kind=week|month|year&offset=0 → profit and loss, HST, unpaid jobs, bank status
 import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
-import { sbGet } from "@/lib/os/db";
+import { sbGet, sbInsert } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
-import { periodFor, summarize, byMonth, type JobRow, type ExpRow, type Period } from "@/lib/os/money";
+import { periodFor, summarize, byMonth, outOfHole, groupOf, beforeHst, type JobRow, type ExpRow, type Period } from "@/lib/os/money";
 import { moneyPerHour, dayDrives, type HourJob } from "@/lib/os/money-hour";
 import { cachedPoints, geoKey, geocode } from "@/lib/os/geo";
 import { bases } from "@/lib/os/maps";
@@ -51,6 +51,37 @@ const clock = (iso: string) => {
   const g = (t: string) => p.find((x) => x.type === t)?.value ?? "0";
   return { day: `${g("year")}-${g("month")}-${g("day")}`, min: Number(g("hour")) * 60 + Number(g("minute")) };
 };
+/** How far behind the business is (all time), what one more job leaves (last 90 days, after gas), and the jobs a month to get out. */
+const HOLE_DEFAULTS = { fixed_monthly: 1247, payoff_months: 6 };
+async function hole(today: string) {
+  const back = new Date(`${today}T12:00:00Z`); back.setUTCDate(back.getUTCDate() - 90);
+  const from90 = back.toISOString().slice(0, 10);
+  const [allJobs, allExps, rules] = await Promise.all([
+    sbGet<JobRow>(`jobs?select=${JOB_COLS}`), sbGet<ExpRow>(`expenses?select=${EXP_COLS}`),
+    sbGet<{ key: string; value: number }>("pricing_rules?select=key,value&key=in.(fixed_monthly,payoff_months,owed_override)").catch(() => []),
+  ]);
+  const rule = (k: string) => rules.find((r) => r.key === k)?.value;
+  const all = summarize(allJobs, allExps);
+  const recentJobs = allJobs.filter((j) => halifaxDate(new Date(j.done_at)) >= from90);
+  const recent = summarize(recentJobs, []);
+  const gas = allExps.filter((e) => e.spent_at >= from90 && groupOf(e.category, e.description) === "fuel").reduce((t, e) => t + beforeHst(e), 0);
+  // Old jobs often have no oil cost (oil was bought in bulk and logged as one expense): use the average cost of the jobs
+  // that do have it, so a job doesn't look more profitable than it is
+  const costed = recentJobs.filter((j) => Number(j.cost_oil ?? 0) > 0);
+  const costs = costed.map((j) => Number(j.cost_oil ?? 0) + Number(j.cost_parts ?? 0) + Number(j.cost_other ?? 0)).sort((a, b) => a - b);
+  const costEach = costs.length ? costs[Math.floor(costs.length / 2)] : 0;   // middle one: a two-car job doesn't skew it
+  const perJob = recentJobs.length ? Math.round((recent.avgJob - Math.max(costEach, recent.avgJob - recent.avgJobProfit) - gas / recentJobs.length) * 100) / 100 : 0;
+  const owed = rule("owed_override");
+  const behindAuto = Math.round(-all.profit * 100) / 100;
+  const fixed = Number(rule("fixed_monthly") ?? HOLE_DEFAULTS.fixed_monthly);
+  const months = Number(rule("payoff_months") ?? HOLE_DEFAULTS.payoff_months);
+  const month = today.slice(0, 7);
+  const jobsThisMonth = allJobs.filter((j) => halifaxDate(new Date(j.done_at)).startsWith(month)).length;
+  const daysInMonth = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 0)).getUTCDate();
+  return { ...outOfHole({ behind: owed != null && Number(owed) >= 0 ? Number(owed) : behindAuto, fixed, perJob, months, jobsThisMonth, day: +today.slice(8, 10), daysInMonth }),
+    behindAuto, owedSet: owed != null && Number(owed) >= 0, fixed, months, perJob, jobsThisMonth, recentJobs: recentJobs.length, gasPerJob: recentJobs.length ? Math.round((gas / recentJobs.length) * 100) / 100 : 0 };
+}
+
 const expBetween = (from: string, to: string) => sbGet<ExpRow>(`expenses?select=${EXP_COLS}&spent_at=gte.${from}&spent_at=lte.${to}`);
 
 export async function GET(req: NextRequest) {
@@ -75,6 +106,7 @@ export async function GET(req: NextRequest) {
     sbGet<{ to_date: string; account: string }>("bank_imports?select=to_date,account&order=to_date.desc&limit=1").catch(() => []),
     perHour(p.from, p.to).catch(() => null),
   ]);
+  const holeNow = await hole(today).catch(() => null);
 
   return NextResponse.json({
     period: p,
@@ -83,6 +115,22 @@ export async function GET(req: NextRequest) {
     unpaid: unpaid.map((b) => ({ id: b.id, date: halifaxDate(new Date(b.starts_at)), name: [b.customer?.first_name, b.customer?.last_name].filter(Boolean).join(" ") || "Customer",
       amount: Number(b.jobs?.[0]?.total ?? b.quoted_total ?? 0), fee: b.status === "cancelled" })),
     hourly,
+    hole: holeNow,
     bank: { needsLook: needs.length, lastStatement: lastImport[0]?.to_date ?? null, today },
   });
+}
+
+/** Owners: the numbers behind "jobs a month to get out of the hole": fixed costs a month, months to pay it back, and what's owed (blank = HQ works it out). */
+export async function POST(req: NextRequest) {
+  if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
+  const b = await req.json().catch(() => ({}));
+  const set: [string, number, string][] = [];
+  if (b.fixed !== undefined) { const v = Number(b.fixed); if (!(v >= 0 && v < 100000)) return NextResponse.json({ error: "Check the monthly costs" }, { status: 400 }); set.push(["fixed_monthly", Math.round(v), "fixed costs a month (Money: out of the hole)"]); }
+  if (b.months !== undefined) { const v = Math.round(Number(b.months)); if (!(v >= 1 && v <= 36)) return NextResponse.json({ error: "Pick 1 to 36 months" }, { status: 400 }); set.push(["payoff_months", v, "months to pay back what we're behind"]); }
+  if (b.owed !== undefined) { const v = b.owed === null || b.owed === "" ? -1 : Number(b.owed); if (!(v >= -1 && v < 1000000)) return NextResponse.json({ error: "Check the amount owed" }, { status: 400 }); set.push(["owed_override", v, "what we owe (-1 = work it out from HQ)"]); }
+  for (const [key, value, note] of set) {
+    const r = await sbInsert("pricing_rules", { key, value, note }, { upsertOn: "key" });
+    if (!r.ok) return NextResponse.json({ error: "Couldn't save" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
 }
