@@ -5,6 +5,7 @@ import { markInvoicePaid } from "@/lib/os/fleet";
 import { markBillPaid } from "@/lib/os/plans";
 import { siteUrl } from "@/lib/os/customer-texts";
 import { pushToOwners } from "@/lib/os/push";
+import { cfetch, viaFixedAddress } from "@/lib/os/converge-fetch";
 import { amountDue, convergeEnv, invoiceFor, judge, parseAscii, payPageUrl, processUrl, queryForm, tokenForm, tokenUrl } from "@/lib/os/converge";
 
 export const payReady = () => !!convergeEnv();
@@ -146,7 +147,7 @@ export async function startOnlinePayment(token: string, tipIn: number): Promise<
   const row = await sbInsert<{ id: string }>("online_payments", { booking_id: t.bookingId, job_id: t.jobId, kind: t.kind, amount, tip, status: "started", ...(t.invoiceId ? { invoice_id: t.invoiceId } : {}), ...(t.planBillId ? { plan_bill_id: t.planBillId } : {}) });
   if (!row.ok || !row.data?.id) return { ok: false, error: "Couldn't start the payment. Please try again." };
   const id = row.data.id;
-  const res = await fetch(tokenUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  const res = await cfetch(tokenUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form(tokenForm(c, { paymentId: id, amount, description: `Oil Change On The Spot: ${t.title}${t.car ? `, ${t.car}` : ""}`,
       returnUrl: `${siteUrl()}/api/os/pay/return?p=${id}`, firstName: t.firstName, lastName: t.lastName, email: t.email })) }).catch(() => null);
   const text = res ? (await res.text()).trim() : "";
@@ -170,7 +171,7 @@ export async function finishOnlinePayment(paymentId: string, txnId: string | nul
     await sbPatch("online_payments", `id=eq.${p.id}&status=eq.started`, { status: "declined", message: "no transaction id", finished_at: new Date().toISOString() });
     return { token, status: "declined" };
   }
-  const res = await fetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, txnId)) }).catch(() => null);
+  const res = await cfetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, txnId)) }).catch(() => null);
   const q = res?.ok ? parseAscii(await res.text()) : { errorMessage: "Converge didn't answer" };
   const v = judge(q, { amount: Number(p.amount), invoice: invoiceFor(p.id) });
   if (!v.approved) {
@@ -241,15 +242,15 @@ export async function convergeCheck(): Promise<{ set: boolean; mode?: "demo" | "
     return { set: false, ok: false, message: `Missing in Vercel (Production): ${miss.join(", ")}. Add them, then redeploy.` };
   }
   const mode = c.demo ? "demo" as const : "prod" as const;
-  const res = await fetch(tokenUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  const res = await cfetch(tokenUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form(tokenForm(c, { paymentId: "00000000-0000-4000-8000-000000000000", amount: 1, description: "HQ connection check (not charged)", returnUrl: `${siteUrl()}/api/os/pay/return?p=check` })),
     signal: AbortSignal.timeout(15000) }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }));
   const text = (await res.text()).trim();
-  if (res.ok && text && !/[<\s=]/.test(text)) return { set: true, mode, ok: true, message: `Connected to Converge (${mode === "demo" ? "demo, test cards only" : "live"}).` };
+  if (res.ok && text && !/[<\s=]/.test(text)) return { set: true, mode, ok: true, message: `Connected to Converge (${mode === "demo" ? "demo, test cards only" : "live"}${viaFixedAddress() ? ", through Fixie's fixed address" : ""}).` };
   if (res.status === 403 || /403/.test(text)) {
     // which address did this come from? (Vercel's free plan has no fixed address: it can change between checks)
-    const ip = await fetch("https://api.ipify.org", { signal: AbortSignal.timeout(5000) }).then((r) => r.text()).catch(() => "");
-    return { set: true, mode, ok: false, message: `The login works, but Converge blocked the payment page (403).${/^[\d.:a-f]+$/i.test(ip.trim()) ? ` This check came from ${ip.trim()}, but that address can change on Vercel's free plan.` : ""} Ask Converge to turn on the Hosted Payments Page for this API user, and whether they only allow listed IP addresses.` };
+    const ip = await cfetch("https://api.ipify.org", { signal: AbortSignal.timeout(5000) }).then((r) => r.text()).catch(() => "");
+    return { set: true, mode, ok: false, message: `The login works, but Converge blocked the payment page (403).${/^[\d.:a-f]+$/i.test(ip.trim()) ? ` This check came from ${ip.trim()}${viaFixedAddress() ? " (Fixie's fixed address: give Converge both addresses from the Fixie dashboard)" : ", but that address can change on Vercel's free plan. Add Fixie (free) so it stays the same"}.` : ""} Ask Converge to turn on the Hosted Payments Page for this API user, and whether they only allow listed IP addresses.` };
   }
   // Converge explains in plain words; keep it short and never echo the keys
   const why = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) || `no answer (status ${res.status})`;
@@ -257,7 +258,7 @@ export async function convergeCheck(): Promise<{ set: boolean; mode?: "demo" | "
   const lens = `HQ sees: User ID "${c.userId}", Merchant ID ending ${c.merchantId.slice(-3)} (${c.merchantId.length} long), PIN ${c.pin.length} long${["CONVERGE_MERCHANT_ID", "CONVERGE_USER_ID", "CONVERGE_PIN"].some((k) => raw(k) !== raw(k).trim()) ? " (one had extra spaces, now ignored)" : ""}.`;
   if (res.status === 401 || /401/.test(why)) {
     // second test, on Converge's direct API: is it the login itself, or just the payment page that isn't switched on?
-    const q = await fetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, "0")),
+    const q = await cfetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, "0")),
       signal: AbortSignal.timeout(15000) }).then((r) => r.text()).catch(() => "");
     const a = parseAscii(q);
     const code = a.errorCode || a.ssl_result || "";
