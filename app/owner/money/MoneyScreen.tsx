@@ -14,7 +14,7 @@ type Month = { month: string; sales: number; spending: number; profit: number };
 type Data = { period: { kind: Kind; label: string; from: string; to: string; offset: number }; summary: Summary; months: Month[];
   unpaid: { id: string; date: string; name: string; amount: number; fee?: boolean }[]; bank: { needsLook: number; lastStatement: string | null; today: string };
   hourly: Hourly | null; hole: Hole | null };
-type Hole = { sales: number; spending: number; profit: number; shortBy: number; needed: number; perJob: number; gasPerJob: number; jobsThisMonth: number; onPace: number; daysLeft: number; recentJobs: number };
+type Hole = { sales: number; spending: number; profit: number; shortBy: number; needed: number; perJob: number; gasPerJob: number; jobsThisMonth: number; onPace: number; booked?: number; daysLeft: number; recentJobs: number };
 type Bucket = { name: string; jobs: number; revenue: number; profit: number; hours: number | null; perHour: number | null };
 type Hourly = { all: Bucket | null; areas: Bucket[]; services: Bucket[]; addons: { name: string; count: number; revenue: number }[]; untimed: number };
 type BankLine = { id: string; account?: string; posted_on: string; amount: number; description: string; kind: string | null; category: string | null; note: string | null; status?: string; decided_by?: string | null };
@@ -171,10 +171,11 @@ function HoleCard({ h }: { h: Hole }) {
         {behind && h.perJob > 0 && <> At about {money(h.perJob)} a job, {h.needed} more job{h.needed === 1 ? "" : "s"} cover{h.needed === 1 ? "s" : ""} it.</>}
       </p>
       <p className="text-[15px] font-semibold" style={{ color: !behind || h.onPace - h.jobsThisMonth >= h.needed ? GOOD : BAD }}>
-        {h.jobsThisMonth} job{h.jobsThisMonth === 1 ? "" : "s"} so far, on pace for about {h.onPace} this month{behind ? (h.onPace - h.jobsThisMonth >= h.needed ? ", enough to cover it." : `, ${h.needed - Math.max(0, h.onPace - h.jobsThisMonth)} short at this pace. Push bookings and fleets.`) : "."}
+        {h.jobsThisMonth} job{h.jobsThisMonth === 1 ? "" : "s"} finished so far, on pace for about {h.onPace} this month{behind ? (h.onPace - h.jobsThisMonth >= h.needed ? ", enough to cover it." : `, ${h.needed - Math.max(0, h.onPace - h.jobsThisMonth)} short at this pace. Push bookings and fleets.`) : "."}
       </p>
+      {!!h.booked && <p className="text-sm" style={{ color: MUTED }}>{h.booked} more booked this month. They only count once they&apos;re finished, since bookings can still cancel.</p>}
       <p className="text-xs" style={{ color: MUTED }}>
-        Uses what was actually spent this month (receipts and bank lines), before HST. Each job leaves about {money(h.perJob)} after oil, filter and {money(h.gasPerJob)} gas (last 90 days, {h.recentJobs} jobs). New spending changes the number right away.
+        Only finished jobs count. The pace is what&apos;s finished plus the rest of the month at the last 30 days&apos; rate. Uses what was actually spent this month (receipts and bank lines), before HST. Each job leaves about {money(h.perJob)} after oil, filter and {money(h.gasPerJob)} gas (last 90 days, {h.recentJobs} jobs). New spending changes the number right away.
       </p>
     </section>
   );
@@ -234,7 +235,7 @@ export default function MoneyScreen() {
                 <div className="rounded-xl p-3 bg-[#f4f6fa]"><p className="text-xs font-semibold" style={{ color: MUTED }}>Money out</p><p className="text-xl font-extrabold">{money(s.spending)}</p></div>
               </div>
               <p className="text-sm" style={{ color: MUTED }}>
-                {s.jobs ? <>{s.jobs} job{s.jobs === 1 ? "" : "s"} · {money(s.avgJob)} average · {money(s.avgJobProfit)} left per job after oil and parts</> : "No jobs in this period yet."}
+                {s.jobs ? <>{s.jobs} job{s.jobs === 1 ? "" : "s"} · {money(s.avgJob)} average · {money(s.avgJobProfit)} left per job after the oil and filter recorded on it (before gas)</> : "No jobs in this period yet."}
               </p>
               {s.jobs > 0 && Object.entries(s.doneBy).some(([k, v]) => k !== "both" && v > 0) && (
                 <p className="text-sm" style={{ color: MUTED }}>Done by: {Object.entries(s.doneBy).filter(([, v]) => v > 0).map(([k, v]) => `${k === "both" ? "both of you" : k[0].toUpperCase() + k.slice(1)} ${v}`).join(", ")}</p>

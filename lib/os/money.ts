@@ -1,6 +1,8 @@
 // Profit and loss for a week / month / year. Pure functions (tested in __tests__/money.test.ts).
 
-export type JobRow = { done_at: string; revenue: number | null; hst: number | null; tip?: number | null; cost_oil: number | null; cost_parts: number | null; cost_other: number | null; done_by: string | null };
+export type JobRow = { done_at: string; revenue: number | null; hst: number | null; tip?: number | null; cost_oil: number | null; cost_parts: number | null; cost_other: number | null; done_by: string | null; service?: string | null };
+/** Cancellation fees and plan payments are money in, but not jobs we did. */
+export const isRealJob = (j: { service?: string | null }) => j.service !== "cancellation_fee" && j.service !== "plan_payment";
 export type ExpRow = { spent_at: string; total: number; hst: number | null; subtotal: number | null; category: string | null; description?: string | null };
 export type Period = { kind: "week" | "month" | "year"; from: string; to: string; label: string; offset: number };
 
@@ -64,15 +66,16 @@ export function summarize(jobs: JobRow[], expenses: ExpRow[]) {
   const hstPaid = r2(expenses.reduce((t, e) => t + Number(e.hst ?? 0), 0));
   const cats = new Map<string, number>();
   for (const e of expenses) { const g = groupOf(e.category, e.description); cats.set(g, r2((cats.get(g) ?? 0) + beforeHst(e))); }
+  const real = jobs.filter(isRealJob);
   const people = { mathew: 0, harsh: 0, both: 0 } as Record<string, number>;
-  for (const j of jobs) { const k = (j.done_by || "both").toLowerCase(); people[k] = (people[k] ?? 0) + 1; }   // staff logins count under their own name
+  for (const j of real) { const k = (j.done_by || "both").toLowerCase(); people[k] = (people[k] ?? 0) + 1; }   // staff logins count under their own name
   return {
-    jobs: jobs.length, sales, hstCollected, spending, hstPaid,
+    jobs: real.length, sales, hstCollected, spending, hstPaid,
     profit: r2(sales - spending),
     hstOwing: r2(hstCollected - hstPaid),
-    avgJob: jobs.length ? r2(sales / jobs.length) : 0,
+    avgJob: real.length ? r2(real.reduce((t, j) => t + Number(j.revenue ?? 0), 0) / real.length) : 0,
     jobProfit: r2(sales - partsUsed),                         // what the jobs made after the oil and parts they used
-    avgJobProfit: jobs.length ? r2((sales - partsUsed) / jobs.length) : 0,
+    avgJobProfit: real.length ? r2(real.reduce((t, j) => t + Number(j.revenue ?? 0) - Number(j.cost_oil ?? 0) - Number(j.cost_parts ?? 0) - Number(j.cost_other ?? 0), 0) / real.length) : 0,
     spendingByGroup: [...cats.entries()].map(([group, amount]) => ({ group, name: groupName(group), amount })).sort((a, b) => b.amount - a.amount),
     doneBy: people,
     tips: r2(jobs.reduce((t, j) => t + Number(j.tip ?? 0), 0)),       // part of Money in, never taxed

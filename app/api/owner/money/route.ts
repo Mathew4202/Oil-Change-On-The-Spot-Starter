@@ -3,14 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
 import { sbGet, sbInsert } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
-import { periodFor, summarize, byMonth, groupOf, beforeHst, type JobRow, type ExpRow, type Period } from "@/lib/os/money";
+import { periodFor, summarize, byMonth, groupOf, beforeHst, isRealJob, type JobRow, type ExpRow, type Period } from "@/lib/os/money";
 import { moneyPerHour, dayDrives, type HourJob } from "@/lib/os/money-hour";
 import { cachedPoints, geoKey, geocode } from "@/lib/os/geo";
 import { bases } from "@/lib/os/maps";
 
 export const dynamic = "force-dynamic";
 
-const JOB_COLS = "done_at,revenue,hst,tip,cost_oil,cost_parts,cost_other,done_by";
+const JOB_COLS = "done_at,revenue,hst,tip,cost_oil,cost_parts,cost_other,done_by,service";
 const EXP_COLS = "spent_at,total,hst,subtotal,category,description";
 const nextDay = (d: string) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
 const jobsBetween = (from: string, to: string) =>
@@ -53,6 +53,8 @@ const clock = (iso: string) => {
 };
 /** This month so far: what came in vs everything spent. If we're behind, how many more jobs get us back to $0.
  *  perJob = what one more job leaves after its oil, filter, supplies and gas (last 90 days). */
+const nextMonthStart = (month: string) => { const [y, m] = month.split("-").map(Number); return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`; };
+
 async function hole(today: string) {
   const back = new Date(`${today}T12:00:00Z`); back.setUTCDate(back.getUTCDate() - 90);
   const from90 = back.toISOString().slice(0, 10);
@@ -63,7 +65,13 @@ async function hole(today: string) {
     sbGet<ExpRow>(`expenses?select=${EXP_COLS}&spent_at=gte.${month}-01&spent_at=lte.${today}`),
     sbGet<JobRow>(`jobs?select=${JOB_COLS}&done_at=gte.${month}-01T00:00:00-04:00`),
   ]);
+  // only finished jobs count (a booking can still cancel); cancellation fees and plan payments aren't jobs
   const jobsNow = monthJobs.filter((j) => halifaxDate(new Date(j.done_at)).startsWith(month));
+  const doneNow = jobsNow.filter(isRealJob).length;
+  const [booked, last30] = await Promise.all([
+    sbGet<{ id: string }>(`bookings?select=id&status=in.(confirmed,requested)&starts_at=gt.${new Date().toISOString()}&starts_at=lt.${nextMonthStart(month)}`).catch(() => []),
+    sbGet<{ service: string | null }>(`jobs?select=service&done_at=gte.${new Date(Date.now() - 30 * 86400000).toISOString()}`).catch(() => []),
+  ]);
   const recent = summarize(recentJobs, []);
   const gas = gasExps.filter((e) => groupOf(e.category, e.description) === "fuel").reduce((t, e) => t + beforeHst(e), 0);
   // Old jobs often have no oil cost (oil was bought in bulk and logged as one expense): use the typical cost of the jobs
@@ -78,8 +86,10 @@ async function hole(today: string) {
   const needed = shortBy > 0 && perJob > 0 ? Math.ceil(shortBy / perJob) : 0;
   const day = +today.slice(8, 10);
   const daysInMonth = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 0)).getUTCDate();
-  const onPace = day > 0 ? Math.round((jobsNow.length / day) * daysInMonth) : 0;
-  return { sales: m.sales, spending: m.spending, profit: m.profit, shortBy, needed, perJob, gasPerJob, jobsThisMonth: jobsNow.length, onPace, daysLeft: daysInMonth - day, recentJobs: recentJobs.length };
+  // pace: finished so far + the rest of the month at the last 30 days' rate (the first few days of a month alone would overshoot)
+  const perDay = last30.filter(isRealJob).length / 30;
+  const onPace = doneNow + Math.round(perDay * (daysInMonth - day));
+  return { sales: m.sales, spending: m.spending, profit: m.profit, shortBy, needed, perJob, gasPerJob, jobsThisMonth: doneNow, onPace, booked: booked.length, daysLeft: daysInMonth - day, recentJobs: recentJobs.length };
 }
 
 const expBetween = (from: string, to: string) => sbGet<ExpRow>(`expenses?select=${EXP_COLS}&spent_at=gte.${from}&spent_at=lte.${to}`);
