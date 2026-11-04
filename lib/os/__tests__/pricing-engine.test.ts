@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { quoteOilChange, quoteStandalone, travelFee } from "../pricing-engine.ts";
+import { quoteOilChange, quoteStandalone, travelFee, DEFAULT_RULES } from "../pricing-engine.ts";
 
 const costs = (filterCost: number | null) => ({
   oilPerL: { "5W-20": 6.61, "5W-30": 6.61, "0W-20": 7.18, "0W-16": 8.21, "5W-40": 7.30, "Euro 0W-30": 10.73, "15W-40": 6.15 },
@@ -242,4 +242,15 @@ test("add-ons on a tire change or diagnostic: same price as with an oil change",
   assert.equal(q.profit, 80 + 15 + 10);
   assert.equal(q.cost, 44);
   assert.equal(quoteVisit({ job: "diagnostic", items: [{ kind: "battery", partCost: 200 }] }).subtotal, 320);
+});
+
+test("the $45 floor counts gas: a 4.6 L sedan at $90 goes up so it still clears $45 after gas", () => {
+  const base = { vehicleClass: "Sedan" as const, spec: { grade: "0W-20", capacityL: 4.6 }, costs: { oilPerL: { "0W-20": 7.07 }, filterCost: 9.68, consumables: 1 } };
+  const noGas = quoteOilChange({ ...base, rules: { ...DEFAULT_RULES } });
+  assert.equal(noGas.lines[0].amount, 90);                         // 90 - 43.20 = 46.80 profit, over the floor
+  const withGas = quoteOilChange({ ...base, rules: { ...DEFAULT_RULES, gasPerJob: 9.12 } });
+  assert.equal(withGas.lines[0].amount, 100);                      // 43.20 + 9.12 + 45 = 97.32 → $100
+  assert.ok(withGas.profit! - 9.12 >= 45);
+  const small = quoteOilChange({ ...base, spec: { grade: "0W-20", capacityL: 3.5 }, costs: { ...base.costs, filterCost: 5.12 }, rules: { ...DEFAULT_RULES, gasPerJob: 9.12 } });
+  assert.equal(small.lines[0].amount, 90);                         // a small engine still clears it at $90
 });

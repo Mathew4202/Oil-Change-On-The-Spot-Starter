@@ -24,6 +24,7 @@ export type Rules = {
   roundTo: number;         // raised prices round up to a tidy number, e.g. 5
   hstRate: number;         // 0.14
   freeTravelKm: number;    // 30
+  gasPerJob?: number;      // average gas per job (from gas receipts): counted when checking the floor, so a job still clears $45 after gas
 };
 
 export const DEFAULT_RULES: Rules = { profitFloor: 45, bumpTo: 45, roundTo: 5, hstRate: 0.14, freeTravelKm: 30 };
@@ -207,8 +208,9 @@ export function quoteOilChange(input: QuoteInput): Quote {
       if (input.costs.filterCost == null) needsReview.push("Filter price not on file");
       if (perL != null) {
         cost = r2(input.spec.capacityL * perL + (input.costs.filterCost ?? 0) + input.costs.consumables);
-        if (price - cost < rules.profitFloor) {
-          price = ceilTo(cost + rules.bumpTo, rules.roundTo);
+        const gas = rules.gasPerJob ?? 0;
+        if (price - cost - gas < rules.profitFloor) {
+          price = ceilTo(cost + gas + rules.bumpTo, rules.roundTo);
           raised = true;
         }
       }

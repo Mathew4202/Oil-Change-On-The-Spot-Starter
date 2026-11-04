@@ -162,7 +162,7 @@ async function repriceMoved(ids: string[]) {
  * The difference shows as its own line ("Price changed by Mathew"), the profit moves by the same amount, and the job
  * sheet and receipt start from the new price.
  */
-export async function setPrice(id: string, subtotalIn: number, by: string) {
+export async function setPrice(id: string, subtotalIn: number, by: string, tell = false) {
   const subtotal = Math.round(Number(subtotalIn) * 100) / 100;
   if (!(subtotal >= 0 && subtotal < 20000)) return { ok: false as const, error: "Check the price" };
   const [b] = await sbGet<{ status: string; quote_breakdown: (Priced & { cost?: number | null; raised?: boolean; needsReview?: string[] }) | null }>(
@@ -184,7 +184,29 @@ export async function setPrice(id: string, subtotalIn: number, by: string) {
   const profit = oldProfit == null ? null : r2(oldProfit - oldDiff + diff);
   const breakdown = { ...(q ?? {}), lines: newLines, subtotal, hst, total: r2(subtotal + hst), profit };
   const ok = await sbPatch("bookings", `id=eq.${enc(id)}`, { quoted_total: breakdown.total, quote_breakdown: breakdown });
-  return ok ? { ok: true as const, total: breakdown.total, profit } : { ok: false as const, error: "Couldn't save the price" };
+  if (!ok) return { ok: false as const, error: "Couldn't save the price" };
+  const oldTotal = q?.total ?? null;
+  const told = tell && oldTotal !== breakdown.total ? await tellNewPrice(id, breakdown.total, oldTotal).catch(() => ({ sent: false, status: "error" })) : null;
+  return { ok: true as const, total: breakdown.total, profit, told };
+}
+
+const PRICE_TEXT = "Hi {first_name}, quick update on your appointment {when}: the new total is {total} with HST{was}. If you have any questions, just reply here.\n- {signer}, Oil Change On The Spot";
+
+/** Text the customer their new price (owners tick "Text them the new price"). Fleets get it on their invoice, not by text. */
+async function tellNewPrice(id: string, total: number, oldTotal: number | null) {
+  const [b] = await sbGet<{ starts_at: string; fleet_account_id: string | null; customers: { id: string; first_name: string | null; phone: string | null; sms_opt_out: boolean | null } | null }>(
+    `bookings?select=starts_at,fleet_account_id,customers(id,first_name,phone,sms_opt_out)&id=eq.${enc(id)}`);
+  const c = b?.customers;
+  if (!b || b.fleet_account_id || !c?.phone) return { sent: false, status: "no_phone" };
+  if (c.sms_opt_out) return { sent: false, status: "opted_out" };
+  const [t] = await sbGet<{ body: string; active: boolean }>("message_templates?select=body,active&key=eq.price_changed").catch(() => []);
+  if (t && !t.active) return { sent: false, status: "template_off" };
+  const { fill, sendSms } = await import("@/lib/os/sms");
+  const { signed } = await import("@/lib/os/signer");
+  const m = (n: number) => `$${n.toFixed(2)}`;
+  const text = await signed(fill(t?.body || PRICE_TEXT, { first_name: c.first_name?.trim() || "there", when: when(b.starts_at), total: m(total), old_total: oldTotal != null ? m(oldTotal) : "", was: oldTotal != null ? ` (it was ${m(oldTotal)})` : "" }));
+  const r = await sendSms(c.phone, text, { kind: "price_changed", customerId: c.id, bookingId: id });
+  return { sent: r.status === "sent" || r.status === "queued" || r.status === "delivered", status: r.status };
 }
 
 export type BookingEdit = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; notes?: string;
