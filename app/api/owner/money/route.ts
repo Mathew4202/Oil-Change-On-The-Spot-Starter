@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
 import { sbGet, sbInsert } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
-import { periodFor, summarize, byMonth, outOfHole, groupOf, beforeHst, type JobRow, type ExpRow, type Period } from "@/lib/os/money";
+import { periodFor, summarize, byMonth, groupOf, beforeHst, type JobRow, type ExpRow, type Period } from "@/lib/os/money";
 import { moneyPerHour, dayDrives, type HourJob } from "@/lib/os/money-hour";
 import { cachedPoints, geoKey, geocode } from "@/lib/os/geo";
 import { bases } from "@/lib/os/maps";
@@ -51,35 +51,35 @@ const clock = (iso: string) => {
   const g = (t: string) => p.find((x) => x.type === t)?.value ?? "0";
   return { day: `${g("year")}-${g("month")}-${g("day")}`, min: Number(g("hour")) * 60 + Number(g("minute")) };
 };
-/** How far behind the business is (all time), what one more job leaves (last 90 days, after gas), and the jobs a month to get out. */
-const HOLE_DEFAULTS = { fixed_monthly: 1247, payoff_months: 6 };
+/** This month so far: what came in vs everything spent. If we're behind, how many more jobs get us back to $0.
+ *  perJob = what one more job leaves after its oil, filter, supplies and gas (last 90 days). */
 async function hole(today: string) {
   const back = new Date(`${today}T12:00:00Z`); back.setUTCDate(back.getUTCDate() - 90);
   const from90 = back.toISOString().slice(0, 10);
-  const [allJobs, allExps, rules] = await Promise.all([
-    sbGet<JobRow>(`jobs?select=${JOB_COLS}`), sbGet<ExpRow>(`expenses?select=${EXP_COLS}`),
-    sbGet<{ key: string; value: number }>("pricing_rules?select=key,value&key=in.(fixed_monthly,payoff_months,owed_override)").catch(() => []),
+  const month = today.slice(0, 7);
+  const [recentJobs, gasExps, monthExps, monthJobs] = await Promise.all([
+    sbGet<JobRow>(`jobs?select=${JOB_COLS}&done_at=gte.${from90}`),
+    sbGet<ExpRow>(`expenses?select=${EXP_COLS}&spent_at=gte.${from90}`),
+    sbGet<ExpRow>(`expenses?select=${EXP_COLS}&spent_at=gte.${month}-01&spent_at=lte.${today}`),
+    sbGet<JobRow>(`jobs?select=${JOB_COLS}&done_at=gte.${month}-01T00:00:00-04:00`),
   ]);
-  const rule = (k: string) => rules.find((r) => r.key === k)?.value;
-  const all = summarize(allJobs, allExps);
-  const recentJobs = allJobs.filter((j) => halifaxDate(new Date(j.done_at)) >= from90);
+  const jobsNow = monthJobs.filter((j) => halifaxDate(new Date(j.done_at)).startsWith(month));
   const recent = summarize(recentJobs, []);
-  const gas = allExps.filter((e) => e.spent_at >= from90 && groupOf(e.category, e.description) === "fuel").reduce((t, e) => t + beforeHst(e), 0);
-  // Old jobs often have no oil cost (oil was bought in bulk and logged as one expense): use the average cost of the jobs
+  const gas = gasExps.filter((e) => groupOf(e.category, e.description) === "fuel").reduce((t, e) => t + beforeHst(e), 0);
+  // Old jobs often have no oil cost (oil was bought in bulk and logged as one expense): use the typical cost of the jobs
   // that do have it, so a job doesn't look more profitable than it is
   const costed = recentJobs.filter((j) => Number(j.cost_oil ?? 0) > 0);
   const costs = costed.map((j) => Number(j.cost_oil ?? 0) + Number(j.cost_parts ?? 0) + Number(j.cost_other ?? 0)).sort((a, b) => a - b);
   const costEach = costs.length ? costs[Math.floor(costs.length / 2)] : 0;   // middle one: a two-car job doesn't skew it
-  const perJob = recentJobs.length ? Math.round((recent.avgJob - Math.max(costEach, recent.avgJob - recent.avgJobProfit) - gas / recentJobs.length) * 100) / 100 : 0;
-  const owed = rule("owed_override");
-  const behindAuto = Math.round(-all.profit * 100) / 100;
-  const fixed = Number(rule("fixed_monthly") ?? HOLE_DEFAULTS.fixed_monthly);
-  const months = Number(rule("payoff_months") ?? HOLE_DEFAULTS.payoff_months);
-  const month = today.slice(0, 7);
-  const jobsThisMonth = allJobs.filter((j) => halifaxDate(new Date(j.done_at)).startsWith(month)).length;
+  const gasPerJob = recentJobs.length ? Math.round((gas / recentJobs.length) * 100) / 100 : 0;
+  const perJob = recentJobs.length ? Math.round((recent.avgJob - Math.max(costEach, recent.avgJob - recent.avgJobProfit) - gasPerJob) * 100) / 100 : 0;
+  const m = summarize(jobsNow, monthExps);
+  const shortBy = m.profit < 0 ? Math.round(-m.profit * 100) / 100 : 0;
+  const needed = shortBy > 0 && perJob > 0 ? Math.ceil(shortBy / perJob) : 0;
+  const day = +today.slice(8, 10);
   const daysInMonth = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 0)).getUTCDate();
-  return { ...outOfHole({ behind: owed != null && Number(owed) >= 0 ? Number(owed) : behindAuto, fixed, perJob, months, jobsThisMonth, day: +today.slice(8, 10), daysInMonth }),
-    behindAuto, owedSet: owed != null && Number(owed) >= 0, fixed, months, perJob, jobsThisMonth, recentJobs: recentJobs.length, gasPerJob: recentJobs.length ? Math.round((gas / recentJobs.length) * 100) / 100 : 0 };
+  const onPace = day > 0 ? Math.round((jobsNow.length / day) * daysInMonth) : 0;
+  return { sales: m.sales, spending: m.spending, profit: m.profit, shortBy, needed, perJob, gasPerJob, jobsThisMonth: jobsNow.length, onPace, daysLeft: daysInMonth - day, recentJobs: recentJobs.length };
 }
 
 const expBetween = (from: string, to: string) => sbGet<ExpRow>(`expenses?select=${EXP_COLS}&spent_at=gte.${from}&spent_at=lte.${to}`);
