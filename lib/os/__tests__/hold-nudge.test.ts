@@ -28,3 +28,14 @@ test("the time reads naturally", () => {
   assert.equal(timeWords("2026-11-04", "2026-11-03", "1:00 pm", "Wed, Nov 4 at 1:00 pm"), "tomorrow at 1:00 pm");
   assert.equal(timeWords("2026-11-06", "2026-11-03", "1:00 pm", "Fri, Nov 6 at 1:00 pm"), "Fri, Nov 6 at 1:00 pm");
 });
+
+import { soonDue } from "../hold-nudge-plan.ts";
+test("the 2-hours-before text: only around 2 hours out, in the daytime, not right after booking", () => {
+  const b = (minsOut: number, bookedHoursAgo = 30, status = "confirmed") => ({ starts_at: later(minsOut), created_at: ago(bookedHoursAgo * 60), status });
+  assert.equal(soonDue(b(120), now, 11), true);
+  assert.equal(soonDue(b(60), now, 11), false);
+  assert.equal(soonDue(b(180), now, 11), false);
+  assert.equal(soonDue(b(120, 1), now, 11), false);           // booked an hour ago
+  assert.equal(soonDue(b(120, 30, "cancelled"), now, 11), false);
+  assert.equal(soonDue(b(120), now, 7), false);                // before 8 am
+});

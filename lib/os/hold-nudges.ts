@@ -53,3 +53,30 @@ export async function runHoldNudges(now = new Date()) {
   }
   return out;
 }
+
+/** "See you today at 1:00 pm": about 2 hours before each booking (once per visit, so two cars get one text). */
+export async function runSoonReminders(now = new Date()) {
+  const { soonDue, SOON_DEFAULT } = await import("@/lib/os/hold-nudge-plan");
+  const { signed } = await import("@/lib/os/signer");
+  const from = new Date(now.getTime() + 70 * 60000).toISOString(), to = new Date(now.getTime() + 130 * 60000).toISOString();
+  const rows = await sbGet<{ id: string; group_id: string | null; starts_at: string; created_at: string; status: string; address: string | null; services: { job?: string } | null;
+    fleet_account_id: string | null; customers: { id: string; first_name: string | null; phone: string | null; sms_opt_out: boolean | null } | null }>(
+    `bookings?select=id,group_id,starts_at,created_at,status,address,services,fleet_account_id,customers(id,first_name,phone,sms_opt_out)&status=in.(confirmed,requested)&starts_at=gte.${from}&starts_at=lte.${to}&order=starts_at`).catch(() => []);
+  const out: { booking: string; status: string }[] = [];
+  const [t] = await sbGet<{ body: string; active: boolean }>("message_templates?select=body,active&key=eq.two_hours").catch(() => []);
+  if (t && !t.active) return out;   // switched off in HQ
+  const seen = new Set<string>();
+  for (const b of rows) {
+    const c = b.customers, key = `soon:${b.group_id || b.id}`;
+    if (seen.has(key) || b.fleet_account_id || !c?.phone || c.sms_opt_out) continue;
+    seen.add(key);
+    if (!soonDue(b, now, hourIn(now))) continue;
+    const done = await sbGet<{ type: string }>(`webhook_log?select=type&type=eq.${enc(key)}&limit=1`).catch(() => null);
+    if (!done || done.length) continue;   // already sent (or can't check: don't risk a double text)
+    await sbInsert("webhook_log", { type: key, body: { at: now.toISOString() } });
+    const text = await signed(fill(t?.body || SOON_DEFAULT, { first_name: c.first_name?.trim() || "there", time: timeOnly(b.starts_at), address: b.address || "your address", service: serviceName(b.services?.job ?? "oil_change") }));
+    const r = await sendSms(c.phone, text, { kind: "two_hours", customerId: c.id, bookingId: b.id });
+    out.push({ booking: b.id, status: r.status });
+  }
+  return out;
+}

@@ -34,3 +34,15 @@ export function timeWords(apptDay: string, today: string, clock: string, full: s
   const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1);
   return apptDay === d.toISOString().slice(0, 10) ? `tomorrow at ${clock}` : full;
 }
+
+/** The "see you in 2 hours" text: due 2 hours before (sent between 75 and 125 minutes out), daytime only,
+ *  and not for a booking made in the last 3 hours (they just got the confirmation). */
+export function soonDue(b: { starts_at: string; created_at: string; status: string }, now: Date, halifaxHour: number) {
+  if (b.status !== "confirmed" && b.status !== "requested") return false;
+  const mins = (new Date(b.starts_at).getTime() - now.getTime()) / 60000;
+  if (mins < 75 || mins > 125) return false;
+  if (now.getTime() - new Date(b.created_at).getTime() < 3 * 3600000) return false;
+  return halifaxHour >= 8 && halifaxHour < 20;
+}
+
+export const SOON_DEFAULT = "Hi {first_name}, see you today at {time} at {address} for your {service}. Please make sure the car is parked where we can get to it. Need to change something? Just reply here.\n- {signer}, Oil Change On The Spot";
