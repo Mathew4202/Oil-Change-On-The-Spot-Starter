@@ -10,9 +10,11 @@
 export type ConvergeEnv = { merchantId: string; userId: string; pin: string; base: string; demo: boolean };
 
 export function convergeEnv(env: Record<string, string | undefined> = process.env): ConvergeEnv | null {
-  const merchantId = env.CONVERGE_MERCHANT_ID, userId = env.CONVERGE_USER_ID, pin = env.CONVERGE_PIN;
+  // pasted keys often carry a space, a line break or quotes: Converge rejects those with a 401
+  const tidy = (v: string | undefined) => (v ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
+  const merchantId = tidy(env.CONVERGE_MERCHANT_ID), userId = tidy(env.CONVERGE_USER_ID), pin = tidy(env.CONVERGE_PIN);
   if (!merchantId || !userId || !pin) return null;
-  const demo = (env.CONVERGE_ENV || "demo") !== "prod";
+  const demo = tidy(env.CONVERGE_ENV || "demo").toLowerCase() !== "prod";
   const base = env.CONVERGE_TEST_BASE || (demo ? "https://api.demo.convergepay.com" : "https://api.convergepay.com");
   return { merchantId, userId, pin, base, demo };
 }

@@ -248,6 +248,9 @@ export async function convergeCheck(): Promise<{ set: boolean; mode?: "demo" | "
   if (res.ok && text && !/[<\s=]/.test(text)) return { set: true, mode, ok: true, message: `Connected to Converge (${mode === "demo" ? "demo, test cards only" : "live"}).` };
   // Converge explains in plain words; keep it short and never echo the keys
   const why = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) || `no answer (status ${res.status})`;
+  const raw = (k: string) => process.env[k] ?? "";
+  const lens = `Lengths HQ sees: Merchant ID ${c.merchantId.length}, User ID ${c.userId.length}, PIN ${c.pin.length}${["CONVERGE_MERCHANT_ID", "CONVERGE_USER_ID", "CONVERGE_PIN"].some((k) => raw(k) !== raw(k).trim()) ? " (one had extra spaces, now ignored)" : ""}.`;
+  if (res.status === 401 || /401/.test(why)) return { set: true, mode, ok: false, message: `Converge said the login is wrong (401). ${lens} The PIN should be the long one (usually 64 characters) for the API user, not a terminal or website password. Also check CONVERGE_ENV is ${mode === "prod" ? "prod for real details" : "demo for demo details"}.` };
   const hint = /4025|credentials|invalid|unauthor/i.test(why) ? " Check the Merchant ID, User ID and PIN, and that CONVERGE_ENV matches (demo details need demo, real ones need prod)."
     : /hosted|HPP|not enabled|permission/i.test(why) ? " Ask Converge to turn on the Hosted Payments Page for this API user." : "";
   return { set: true, mode, ok: false, message: `Converge said: ${why}.${hint}` };
