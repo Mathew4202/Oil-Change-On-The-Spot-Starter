@@ -27,7 +27,9 @@ const prettyPhone = (p: string) => { const d = p.replace(/\D/g, "").slice(-10); 
 const PAID: Record<string, string> = { card_terminal: "Card", cash: "Cash", etransfer: "E-transfer", card_online: "Paid online", invoice: "Invoice" };
 const SERVICE: Record<string, string> = { oil_change: "Oil change", seasonal: "Seasonal package", tires: "Tire change", parts: "Parts", diagnostic: "Diagnostic" };
 const TEXT_KIND: Record<string, string> = { booking_confirmation: "Booking confirmed", day_before: "Day-before reminder", oil_due: "Oil change due", review: "Review ask",
-  review_request: "Review ask", booking_moved: "Booking moved", booking_cancelled: "Booking cancelled", receipt: "Receipt" };
+  review_request: "Review ask", booking_moved: "Booking moved", booking_cancelled: "Booking cancelled", receipt: "Receipt",
+  fill_in: "\u201CIn your area\u201D text", two_hours: "2-hour reminder", price_changed: "New price", hold_nudge_1: "Booking link reminder", hold_nudge_2: "Booking link reminder",
+  hold_link: "Booking link", receipt_text: "Receipt", bill_sent: "Bill", pay_request: "Payment reminder", reply: "Our reply", book_link: "Booking link", referral_link: "Referral link" };
 const field = "h-11 rounded-xl border px-3 text-base w-full bg-white";
 
 export default function CustomerScreen({ id }: { id: string }) {
