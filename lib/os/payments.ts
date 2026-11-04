@@ -250,7 +250,19 @@ export async function convergeCheck(): Promise<{ set: boolean; mode?: "demo" | "
   const why = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) || `no answer (status ${res.status})`;
   const raw = (k: string) => process.env[k] ?? "";
   const lens = `Lengths HQ sees: Merchant ID ${c.merchantId.length}, User ID ${c.userId.length}, PIN ${c.pin.length}${["CONVERGE_MERCHANT_ID", "CONVERGE_USER_ID", "CONVERGE_PIN"].some((k) => raw(k) !== raw(k).trim()) ? " (one had extra spaces, now ignored)" : ""}.`;
-  if (res.status === 401 || /401/.test(why)) return { set: true, mode, ok: false, message: `Converge said the login is wrong (401). ${lens} The PIN should be the long one (usually 64 characters) for the API user, not a terminal or website password. Also check CONVERGE_ENV is ${mode === "prod" ? "prod for real details" : "demo for demo details"}.` };
+  if (res.status === 401 || /401/.test(why)) {
+    // second test, on Converge's direct API: is it the login itself, or just the payment page that isn't switched on?
+    const q = await fetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, "0")),
+      signal: AbortSignal.timeout(15000) }).then((r) => r.text()).catch(() => "");
+    const a = parseAscii(q);
+    const code = a.errorCode || a.ssl_result || "";
+    const name = (a.errorName || a.errorMessage || "").slice(0, 120);
+    const login = /4025|4000|4001|4002|4003|4004|4005|4006|4007|4009|4019|invalid.*(cred|user|pin|merchant)|not.*(authori|active|valid)/i.test(`${code} ${name}`);
+    const detail = code || name ? ` Converge's direct API answered: ${[code, name].filter(Boolean).join(" ")}.` : q ? "" : " Converge's direct API didn't answer either.";
+    if (login) return { set: true, mode, ok: false, message: `Converge doesn't accept the login.${detail} ${lens} Ask Converge: is this User ID an API user, is it active, and is this the PIN for that same user? (CONVERGE_ENV is ${mode}.)` };
+    if (q) return { set: true, mode, ok: false, message: `The login works, but the payment page is refused (401).${detail} Ask Converge to turn on the Hosted Payments Page for this API user and allow oilchangeonthespot.ca.` };
+    return { set: true, mode, ok: false, message: `Converge said the login is wrong (401). ${lens} Ask Converge to check this User ID and PIN are an active API user with Hosted Payments on.` };
+  }
   const hint = /4025|credentials|invalid|unauthor/i.test(why) ? " Check the Merchant ID, User ID and PIN, and that CONVERGE_ENV matches (demo details need demo, real ones need prod)."
     : /hosted|HPP|not enabled|permission/i.test(why) ? " Ask Converge to turn on the Hosted Payments Page for this API user." : "";
   return { set: true, mode, ok: false, message: `Converge said: ${why}.${hint}` };
