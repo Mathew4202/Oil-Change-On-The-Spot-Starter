@@ -86,6 +86,9 @@ function HealthCard() {
             </div>
           )}
           {card && <p className="mt-1 font-semibold" style={{ color: card.ok ? GOOD : BAD }} role="status">{card.message}</p>}
+          {card?.ok && (
+            <p className="mt-2">Last step: <a href="/api/owner/pay-test" className="font-bold underline" style={{ color: NAVY }}>Make a $1 test payment</a> with your own card on the real Converge page. It isn&apos;t linked to any customer, and you can void it in Converge after.</p>
+          )}
         </Row>
       )}
       <Row ok={h.email.ready} title="Receipt and invoice emails">{h.email.ready ? <>Sent from {h.email.from}.</> : "Emails only reach your own inbox: verify your domain in Resend and set EMAIL_FROM (e.g. receipts@oilchangeonthespot.ca)."}</Row>
