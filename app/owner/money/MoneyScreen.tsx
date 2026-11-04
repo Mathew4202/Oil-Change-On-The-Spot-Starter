@@ -31,7 +31,7 @@ const KIND_NAME: Record<string, string> = { receipt: "Receipt", napa_account: "N
 
 type Health = { quo: { key: boolean; number: boolean; secret: boolean; lastEvent: { at: string; type: string } | null; lastCall: { at: string; state: string | null } | null };
   push: { mine: number; myDevices: { device: string; lastOk: string | null; since: string }[]; everyone: [string, number][] }; cron: boolean; site: string | null;
-  email: { ready: boolean; from: string | null }; webhookUrl: string };
+  email: { ready: boolean; from: string | null }; webhookUrl: string; card?: { set: boolean; mode: "demo" | "prod" } };
 const ago = (iso: string | null | undefined) => {
   if (!iso) return "never";
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -41,6 +41,7 @@ const ago = (iso: string | null | undefined) => {
 /** Owners: is everything connected? Calls and texts from Quo, phone notifications, the evening job, email. */
 function HealthCard() {
   const [h, setH] = useState<Health | null>(null); const [test, setTest] = useState(""); const [busy, setBusy] = useState(false);
+  const [card, setCard] = useState<{ ok: boolean; message: string } | null>(null); const [checking, setChecking] = useState(false);
   const load = useCallback(() => { fetch("/api/owner/health", { cache: "no-store" }).then((r) => r.json()).then((j) => j.quo && setH(j)).catch(() => {}); }, []);
   useEffect(() => { load(); }, [load]);
   if (!h) return null;
@@ -73,6 +74,20 @@ function HealthCard() {
       </Row>
       <Row ok={h.cron} title="Evening job (reminders, route texts, backups)">{h.cron ? "Set up: runs every day at 5 pm." : "CRON_SECRET isn't set in Vercel (Production): the 5 pm reminders and backups won't run until it is."}</Row>
       <Row ok={!!h.site} title="Links in texts">{h.site ? <>Texts link to {h.site}.</> : "SITE_URL isn't set in Vercel (Production): links in texts may point to the wrong address."}</Row>
+      {h.card && (
+        <Row ok={h.card.set && (card ? card.ok : true)} title="Card payments (Converge)">
+          {!h.card.set ? "Not set up: add CONVERGE_MERCHANT_ID, CONVERGE_USER_ID and CONVERGE_PIN in Vercel (Production), then redeploy."
+            : <>Keys are in ({h.card.mode === "prod" ? "live" : "demo mode, test cards only"}).</>}
+          {h.card.set && (
+            <div className="mt-2 flex items-center gap-2">
+              <button onClick={async () => { setChecking(true); setCard(null); const r = await fetch("/api/owner/health?check=converge", { cache: "no-store" }).then((x) => x.json()).catch(() => null); setChecking(false);
+                setCard(r?.message ? r : { ok: false, message: "Couldn't reach HQ." }); }}
+                disabled={checking} className="h-10 px-3 rounded-lg border font-bold text-sm disabled:opacity-60" style={{ borderColor: LINE, color: NAVY }}>{checking ? "Checking…" : "Check Converge (no charge)"}</button>
+            </div>
+          )}
+          {card && <p className="mt-1 font-semibold" style={{ color: card.ok ? GOOD : BAD }} role="status">{card.message}</p>}
+        </Row>
+      )}
       <Row ok={h.email.ready} title="Receipt and invoice emails">{h.email.ready ? <>Sent from {h.email.from}.</> : "Emails only reach your own inbox: verify your domain in Resend and set EMAIL_FROM (e.g. receipts@oilchangeonthespot.ca)."}</Row>
     </section>
   );

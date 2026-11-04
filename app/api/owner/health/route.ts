@@ -4,12 +4,15 @@ import { NextResponse } from "next/server";
 import { currentOwner, isOwner } from "@/lib/os/auth";
 import { sbGet, enc } from "@/lib/os/db";
 import { pushToOwners } from "@/lib/os/push";
+import { convergeCheck } from "@/lib/os/payments";
+import type { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const owner = currentOwner();
   if (!owner || !isOwner()) return NextResponse.json({ error: "Owners only" }, { status: 403 });
+  if (req.nextUrl.searchParams.get("check") === "converge") return NextResponse.json(await convergeCheck());
   const [hook, call, subs, mine] = await Promise.all([
     sbGet<{ at: string; type: string }>("webhook_log?select=at,type&order=at.desc&limit=1").catch(() => []),
     sbGet<{ created_at: string; phone: string | null; state: string | null }>("calls?select=created_at,phone,state&order=created_at.desc&limit=1").catch(() => []),
@@ -26,6 +29,7 @@ export async function GET() {
     site: process.env.SITE_URL || null,
     email: { ready: !!process.env.RESEND_API_KEY && !/resend\.dev/i.test(email) && !!email, from: email.replace(/^.*</, "").replace(/>$/, "") || null },
     etransfer: { secret: !!process.env.ETRANSFER_SECRET },
+    card: { set: !!(process.env.CONVERGE_MERCHANT_ID && process.env.CONVERGE_USER_ID && process.env.CONVERGE_PIN), mode: (process.env.CONVERGE_ENV || "demo") === "prod" ? "prod" : "demo" },
     webhookUrl: `${process.env.SITE_URL || "https://oilchangeonthespot.ca"}/api/quo/webhook`,
   });
 }

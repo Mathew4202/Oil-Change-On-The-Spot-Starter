@@ -232,3 +232,23 @@ async function recordOnline(p: OnlineRow, txnId: string, last4: string | null) {
   try { await sbInsert("notifications", { kind: "paid_online", booking_id: p.booking_id, title: `Paid online: $${amount.toFixed(2)}`, body: p.kind === "prepay" ? "Paid when booking" : tip ? `Includes a $${tip.toFixed(2)} tip` : "Paid after the job" }); } catch { /* best effort */ }
   await Promise.race([pushToOwners({ title: `Paid online: $${amount.toFixed(2)}`, body: p.kind === "prepay" ? "Paid when booking" : "Paid after the job", url: "/owner/money", tag: `paid-${p.id}` }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
 }
+
+/** Owners: do the Converge keys work? Asks for a payment token for $1.00 (nothing is charged; an unused token just expires). */
+export async function convergeCheck(): Promise<{ set: boolean; mode?: "demo" | "prod"; ok: boolean; message: string }> {
+  const c = convergeEnv();
+  if (!c) {
+    const miss = ["CONVERGE_MERCHANT_ID", "CONVERGE_USER_ID", "CONVERGE_PIN"].filter((k) => !process.env[k]);
+    return { set: false, ok: false, message: `Missing in Vercel (Production): ${miss.join(", ")}. Add them, then redeploy.` };
+  }
+  const mode = c.demo ? "demo" as const : "prod" as const;
+  const res = await fetch(tokenUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form(tokenForm(c, { paymentId: "00000000-0000-4000-8000-000000000000", amount: 1, description: "HQ connection check (not charged)", returnUrl: `${siteUrl()}/api/os/pay/return?p=check` })),
+    signal: AbortSignal.timeout(15000) }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }));
+  const text = (await res.text()).trim();
+  if (res.ok && text && !/[<\s=]/.test(text)) return { set: true, mode, ok: true, message: `Connected to Converge (${mode === "demo" ? "demo, test cards only" : "live"}).` };
+  // Converge explains in plain words; keep it short and never echo the keys
+  const why = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) || `no answer (status ${res.status})`;
+  const hint = /4025|credentials|invalid|unauthor/i.test(why) ? " Check the Merchant ID, User ID and PIN, and that CONVERGE_ENV matches (demo details need demo, real ones need prod)."
+    : /hosted|HPP|not enabled|permission/i.test(why) ? " Ask Converge to turn on the Hosted Payments Page for this API user." : "";
+  return { set: true, mode, ok: false, message: `Converge said: ${why}.${hint}` };
+}
