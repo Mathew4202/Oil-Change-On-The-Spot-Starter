@@ -249,7 +249,7 @@ export async function convergeCheck(): Promise<{ set: boolean; mode?: "demo" | "
   // Converge explains in plain words; keep it short and never echo the keys
   const why = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) || `no answer (status ${res.status})`;
   const raw = (k: string) => process.env[k] ?? "";
-  const lens = `Lengths HQ sees: Merchant ID ${c.merchantId.length}, User ID ${c.userId.length}, PIN ${c.pin.length}${["CONVERGE_MERCHANT_ID", "CONVERGE_USER_ID", "CONVERGE_PIN"].some((k) => raw(k) !== raw(k).trim()) ? " (one had extra spaces, now ignored)" : ""}.`;
+  const lens = `HQ sees: User ID "${c.userId}", Merchant ID ending ${c.merchantId.slice(-3)} (${c.merchantId.length} long), PIN ${c.pin.length} long${["CONVERGE_MERCHANT_ID", "CONVERGE_USER_ID", "CONVERGE_PIN"].some((k) => raw(k) !== raw(k).trim()) ? " (one had extra spaces, now ignored)" : ""}.`;
   if (res.status === 401 || /401/.test(why)) {
     // second test, on Converge's direct API: is it the login itself, or just the payment page that isn't switched on?
     const q = await fetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, "0")),
