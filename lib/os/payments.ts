@@ -246,6 +246,11 @@ export async function convergeCheck(): Promise<{ set: boolean; mode?: "demo" | "
     signal: AbortSignal.timeout(15000) }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }));
   const text = (await res.text()).trim();
   if (res.ok && text && !/[<\s=]/.test(text)) return { set: true, mode, ok: true, message: `Connected to Converge (${mode === "demo" ? "demo, test cards only" : "live"}).` };
+  if (res.status === 403 || /403/.test(text)) {
+    // which address did this come from? (Vercel's free plan has no fixed address: it can change between checks)
+    const ip = await fetch("https://api.ipify.org", { signal: AbortSignal.timeout(5000) }).then((r) => r.text()).catch(() => "");
+    return { set: true, mode, ok: false, message: `The login works, but Converge blocked the payment page (403).${/^[\d.:a-f]+$/i.test(ip.trim()) ? ` This check came from ${ip.trim()}, but that address can change on Vercel's free plan.` : ""} Ask Converge to turn on the Hosted Payments Page for this API user, and whether they only allow listed IP addresses.` };
+  }
   // Converge explains in plain words; keep it short and never echo the keys
   const why = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200) || `no answer (status ${res.status})`;
   const raw = (k: string) => process.env[k] ?? "";
