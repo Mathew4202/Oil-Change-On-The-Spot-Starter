@@ -48,7 +48,7 @@ export async function PATCH(req: NextRequest) {
   if (!UUID.test(String(b.id || ""))) return NextResponse.json({ error: "bad id" }, { status: 400 });
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const r = await updateCustomer(b.id, { firstName: str(b.firstName), lastName: str(b.lastName), phone: str(b.phone), email: str(b.email),
-    address: str(b.address), notes: str(b.notes), smsOff: typeof b.smsOff === "boolean" ? b.smsOff : undefined }, owner);
+    address: str(b.address), notes: str(b.notes), smsOff: typeof b.smsOff === "boolean" ? b.smsOff : undefined, promoOff: typeof b.promoOff === "boolean" ? b.promoOff : undefined }, owner);
   return NextResponse.json(r, { status: r.ok ? 200 : 400 });
 }
 

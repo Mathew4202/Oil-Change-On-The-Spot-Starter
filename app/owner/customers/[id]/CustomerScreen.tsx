@@ -10,7 +10,7 @@ import { DUE_BADGE } from "../CustomersScreen";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0", MUTED = "#4a5878", GOOD = "#1d6b3a";
 type Detail = {
-  customer: { id: string; firstName: string | null; lastName: string | null; name: string; phone: string | null; email: string | null; address: string | null; notes: string | null; smsOff: boolean; smsOffAt: string | null; smsOffBy: string | null; since: string; source: string | null; reviewAsked: boolean };
+  customer: { id: string; firstName: string | null; lastName: string | null; name: string; phone: string | null; email: string | null; address: string | null; notes: string | null; smsOff: boolean; smsOffAt: string | null; smsOffBy: string | null; promoOff?: boolean; promoOffAt?: string | null; promoOffBy?: string | null; promoReady?: boolean; since: string; source: string | null; reviewAsked: boolean };
   stats: { visits: number; spent: number; average: number; lastVisit: string | null; nextDue: string | null; nextDueKm: number | null; due: string; cancelled: number; noShows: number };
   vehicles: { id: string; name: string; year?: number | null; make?: string | null; model?: string | null; engine: string | null; vin: string | null; lastKm: number | null; oil: string | null; filter: string | null; parts?: string | null }[];
   upcoming: { id: string; date: string; at: string; status: string; total: number | null; job: string | null }[];
@@ -163,6 +163,20 @@ function Texts({ c, texts, reload }: { c: Detail["customer"]; texts: Detail["tex
           <span className="absolute top-1 w-6 h-6 rounded-full bg-white transition-all" style={{ left: on ? 28 : 4 }} />
         </button>
       </div>
+      {on && c.phone && c.promoReady && (
+        <div className="flex items-center justify-between gap-3 pt-3 border-t" style={{ borderColor: "#eef1f6" }}>
+          <div>
+            <p className="font-bold">Oil-due and &ldquo;in your area&rdquo; texts</p>
+            <p className="text-sm" style={{ color: MUTED }}>{!c.promoOff ? "On. Turn off if they only want to hear from us about bookings they make."
+              : `Off${c.promoOffBy === "reply" ? ", they asked by text" : ""}${c.promoOffAt ? ` (${new Date(c.promoOffAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "America/Halifax" })})` : ""}. They still get booking confirmations, the reminders before a booking, bills and receipts.`}</p>
+          </div>
+          <button role="switch" aria-checked={!c.promoOff} aria-label="Oil-due and in your area texts" disabled={busy}
+            onClick={async () => { setBusy(true); await save(c.id, { promoOff: !c.promoOff }); setBusy(false); reload(); }}
+            className="relative w-14 h-8 rounded-full shrink-0 disabled:opacity-40" style={{ background: !c.promoOff ? GOOD : LINE }}>
+            <span className="absolute top-1 w-6 h-6 rounded-full bg-white transition-all" style={{ left: !c.promoOff ? 28 : 4 }} />
+          </button>
+        </div>
+      )}
       {!c.phone && <p className="text-sm" style={{ color: MUTED }}>Add a phone number below to text them.</p>}
       {texts.length > 0 && (
         <div className="flex flex-col">

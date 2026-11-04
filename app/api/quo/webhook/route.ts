@@ -75,6 +75,12 @@ export async function POST(req: NextRequest) {
     await alertOwners(`${name} turned texts back on`, "They replied START.", page, `start-${from}`);
     return NextResponse.json({ ok: true, action: "texts_on" });
   }
+  // "please stop texting me" inside a longer reply (not a plain STOP): turn off just the oil-due / "in your area" texts,
+  // so they still get what's needed for a booking they make. Tell us, no automatic reply (one of us usually answers).
+  if (c && /\b(stop|quit|no more|don'?t|do not)\s+(texting|testing|messaging|sending|contacting|reminding)\b|\b(don'?t|do not|stop)\s+(text|message)\s+me\b|\bno more (texts|messages|reminders)\b|\bunsubscribe\b/i.test(m.text)) {
+    const done = await sbPatch("customers", `id=eq.${c.id}`, { promo_off: true, promo_off_at: new Date().toISOString(), promo_off_by: "reply" }).catch(() => false);
+    if (done) await alertOwners(`${name}: no more reminder texts`, "They asked us to stop texting. HQ turned off their oil-due and \"in your area\" texts. Booking confirmations, reminders before a booking, bills and receipts still go.", page, `promo-${from}`);
+  }
   if (intent === "cancel") {
     await alertOwners(`${name} texted "${m.text.trim().slice(0, 40)}"`, "Sounds like they want to cancel a booking. Their texts are still on. Reply from HQ or Quo.", page, `cancel-${from}`);
   }

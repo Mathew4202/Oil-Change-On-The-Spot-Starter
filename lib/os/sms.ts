@@ -22,6 +22,9 @@ export async function template(key: string): Promise<string | null> {
 const payWording = (t: string) => (convergeEnv() ? t : t.replace(/\(card or e-transfer\)/g, "(by e-transfer)"));
 
 /** force = the one reply confirming STOP/START; everything else respects "texts off". */
+/** Texts about coming back (not about a booking they made): a customer can turn just these off. */
+export const PROMO_KINDS = new Set(["oil_due", "fill_in"]);
+
 export async function sendSms(to: string, contentIn: string, meta: { kind: string; customerId?: string | null; bookingId?: string | null; force?: boolean }) {
   const phone = e164(to);
   // signed by whoever is signed in to HQ (automatic texts: Mathew); until online card payments are set up (Converge),
@@ -31,7 +34,12 @@ export async function sendSms(to: string, contentIn: string, meta: { kind: strin
   let status = "sent", error: string | null = null, providerId: string | null = null;
   // Anyone who replied STOP (or was switched off in HQ) never gets an automatic text. Checked here so no path can skip it.
   const off = meta.force ? [] : await sbGet<{ id: string }>(`customers?select=id&sms_opt_out=eq.true&or=(${[meta.customerId ? `id.eq.${meta.customerId}` : "", `phone.eq.${enc(phone)}`].filter(Boolean).join(",")})&limit=1`).catch(() => []);
+  // Reminder-only opt-out: no "oil change due" / "we're in your area" texts, everything else still goes
+  const promoOff = !off.length && !meta.force && PROMO_KINDS.has(meta.kind)
+    ? await sbGet<{ id: string }>(`customers?select=id&promo_off=eq.true&or=(${[meta.customerId ? `id.eq.${meta.customerId}` : "", `phone.eq.${enc(phone)}`].filter(Boolean).join(",")})&limit=1`).catch(() => [])
+    : [];
   if (off.length) { status = "opted_out"; error = "Texts are off for this customer"; }
+  else if (promoOff.length) { status = "opted_out"; error = "Reminder texts are off for this customer"; }
   else if (!key || !from) { status = "not_set_up"; error = "Add QUO_API_KEY and QUO_FROM_NUMBER in Vercel"; }
   else {
     try {

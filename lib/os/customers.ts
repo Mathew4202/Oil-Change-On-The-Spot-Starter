@@ -43,7 +43,7 @@ export async function customerDetail(id: string) {
   const spent = Math.round(jobs.reduce((t, j) => t + Number(j.revenue ?? 0), 0) * 100) / 100;
   return {
     customer: { id: c.id, firstName: c.first_name, lastName: c.last_name, name: fullName(c), phone: c.phone, email: c.email, address: c.address, notes: c.notes,
-      smsOff: !!c.sms_opt_out, smsOffAt: c.sms_opt_out_at, smsOffBy: c.sms_opt_out_by, since: [day(c.created_at), ...jobs.map((j) => day(j.done_at)), ...bookings.map((b) => day(b.starts_at))].sort()[0],   // first time we saw them, not the import date
+      smsOff: !!c.sms_opt_out, smsOffAt: c.sms_opt_out_at, smsOffBy: c.sms_opt_out_by, ...(await promoOf(c.id)), since: [day(c.created_at), ...jobs.map((j) => day(j.done_at)), ...bookings.map((b) => day(b.starts_at))].sort()[0],   // first time we saw them, not the import date
       source: c.source, reviewAsked: !!c.review_asked_at },
     stats: { visits: jobs.filter((j) => !["plan_payment", "cancellation_fee"].includes(String((j as { service?: string | null }).service ?? ""))).length, spent, average: jobs.length ? Math.round((spent / jobs.length) * 100) / 100 : 0,
       lastVisit: jobs[0] ? day(jobs[0].done_at) : null, nextDue, nextDueKm: jobs.find((j) => j.next_due_km)?.next_due_km ?? null,
@@ -62,7 +62,13 @@ export async function customerDetail(id: string) {
   };
 }
 
-export type CustomerEdit = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; notes?: string; smsOff?: boolean };
+export type CustomerEdit = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; notes?: string; smsOff?: boolean; promoOff?: boolean };
+
+/** Reminders-only opt-out (0052). Before the migration it reads as on. */
+async function promoOf(id: string) {
+  const [p] = await sbGet<{ promo_off: boolean; promo_off_at: string | null; promo_off_by: string | null }>(`customers?select=promo_off,promo_off_at,promo_off_by&id=eq.${enc(id)}`).catch(() => []);
+  return { promoOff: !!p?.promo_off, promoOffAt: p?.promo_off_at ?? null, promoOffBy: p?.promo_off_by ?? null, promoReady: !!p };
+}
 
 export async function updateCustomer(id: string, e: CustomerEdit, by?: string) {
   const patch: Record<string, unknown> = {};
@@ -75,6 +81,7 @@ export async function updateCustomer(id: string, e: CustomerEdit, by?: string) {
   }
   if (e.address !== undefined) patch.address = e.address.trim().slice(0, 200) || null;
   if (e.notes !== undefined) patch.notes = e.notes.trim().slice(0, 2000) || null;
+  if (e.promoOff !== undefined) { patch.promo_off = !!e.promoOff; patch.promo_off_at = e.promoOff ? new Date().toISOString() : null; patch.promo_off_by = e.promoOff ? by ?? "owner" : null; }
   if (e.smsOff !== undefined) { patch.sms_opt_out = !!e.smsOff; patch.sms_opt_out_at = e.smsOff ? new Date().toISOString() : null; patch.sms_opt_out_by = e.smsOff ? by ?? "owner" : null; }
   if (e.phone !== undefined) {
     const digits = e.phone.replace(/\D/g, "");

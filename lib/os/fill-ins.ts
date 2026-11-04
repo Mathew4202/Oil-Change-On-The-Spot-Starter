@@ -33,8 +33,10 @@ export async function fillSlowDay(date: string, today: string) {
   // past customers coming due within a month either side of that day, not fleets
   const jobs = await sbGet<JobRow>(`jobs?select=customer_id,vehicle_id,done_at,next_due_date,customers(id,first_name,last_name,phone,email,address,sms_opt_out),vehicles(year,make,model,engine,fleet_account_id)` +
     `&next_due_date=gte.${addDays(today, -30)}&next_due_date=lte.${addDays(date, 30)}&customer_id=not.is.null&vehicle_id=not.is.null&order=done_at.desc&limit=300`);
+  // customers who asked for no reminder texts are left out (0052: if the column isn't there yet, nobody is)
+  const quiet = new Set((await sbGet<{ id: string }>("customers?select=id&promo_off=eq.true").catch(() => [])).map((c) => c.id));
   const latest = new Map<string, JobRow>();
-  for (const j of jobs) if (j.customers?.phone && !j.customers.sms_opt_out && !j.vehicles?.fleet_account_id && !latest.has(j.vehicle_id!)) latest.set(j.vehicle_id!, j);
+  for (const j of jobs) if (j.customers?.phone && !j.customers.sms_opt_out && !quiet.has(j.customer_id!) && !j.vehicles?.fleet_account_id && !latest.has(j.vehicle_id!)) latest.set(j.vehicle_id!, j);
   if (!latest.size) return { texted: 0, note: "nobody coming due" };
   const vids = [...latest.keys()], cids = [...new Set([...latest.values()].map((j) => j.customer_id!))];
   const [newer, upcoming, recent] = await Promise.all([
