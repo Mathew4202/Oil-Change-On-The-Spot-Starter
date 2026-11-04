@@ -64,7 +64,7 @@ export default async function InvoicePage({ params }: { params: { token: string 
           <div className="flex justify-between text-[18px] font-extrabold border-t-2 border-[#0d1b3e] pt-1"><span>Total</span><span>{money(i.total)}</span></div>
         </div>
         <div className="mt-8 text-[13px] text-[#4a5878] flex flex-col gap-1">
-          {i.status !== "paid" && <p>Pay by e-transfer to {process.env.ETRANSFER_EMAIL || EMAIL}, or by cheque to Oil Change On The Spot Limited. Please put invoice #{i.invoice_no} in the message.{payReady() ? " You can also pay by card online with the button below." : ""}</p>}
+          {i.status !== "paid" && <p><strong>Interac e-Transfer preferred:</strong> send to {process.env.ETRANSFER_EMAIL || EMAIL} with invoice #{i.invoice_no} in the message. Cheques to Oil Change On The Spot Limited also work.{payReady() ? " You can also pay by card online with the button below." : ""}</p>}
           <p>Thank you for your business.</p>
         </div>
         <div className="mt-6 print:hidden flex flex-wrap gap-3">

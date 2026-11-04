@@ -64,7 +64,7 @@ export function receiptHtml(r: ReceiptData): string {
   </table>
   ${r.due && r.due > 0 && r.payUrl ? `<div style="text-align:center;margin-top:16px">
    <a href="${esc(r.payUrl)}" style="display:inline-block;background:#f2b01e;color:#0d1b3e;font-weight:800;font-size:17px;text-decoration:none;padding:14px 28px;border-radius:10px">Pay ${money(r.due)}</a>
-   <div style="font-size:13px;color:#4a5878;margin-top:8px">Card online, or Interac e-Transfer to ${esc(BUSINESS.email)} (put #${r.receiptNo} in the message).</div>
+   <div style="font-size:13px;color:#4a5878;margin-top:8px"><strong>Interac e-Transfer preferred:</strong> send to ${esc(BUSINESS.email)} with #${r.receiptNo} in the message. Card online also works.</div>
    ${r.lateTerms ? `<div style="font-size:13px;color:#8a5a00;margin-top:6px">${esc(r.lateTerms)}</div>` : ""}
   </div>` : ""}
   ${(r.cars?.length ? r.cars : [{ vin: r.vin, km: r.km, oil: r.oil, filter: r.filter, nextDueKm: r.nextDueKm, nextDueDate: r.nextDueDate, checks: r.checks, note: r.customerNote }]).map(recordHtml).join("")}
@@ -120,7 +120,7 @@ export function receiptText(r: ReceiptData): string {
       c.note ? `Notes from your technician: ${c.note}` : "",
       c.checks?.now.length ? `Needs doing now: ${c.checks.now.join(", ")}` : "", c.checks?.soon.length ? `Coming up soon: ${c.checks.soon.join(", ")}` : ""]),
     ...(r.late ?? []).map((l) => `${l.label}: ${money(l.amount)}`),
-    r.due && r.due > 0 ? `Amount due${r.dueBy ? ` by ${r.dueBy}` : ""}: ${money(r.due)}${r.payUrl ? `. Pay here: ${r.payUrl}` : ""} (or e-transfer to ${BUSINESS.email} with #${r.receiptNo} in the message)${r.lateTerms ? ` ${r.lateTerms}` : ""}` : "",
+    r.due && r.due > 0 ? `Amount due${r.dueBy ? ` by ${r.dueBy}` : ""}: ${money(r.due)}. E-transfer preferred: send to ${BUSINESS.email} with #${r.receiptNo} in the message${r.payUrl ? `. Or pay by card here: ${r.payUrl}` : ""}${r.lateTerms ? ` ${r.lateTerms}` : ""}` : "",
     r.referUrl ? `Refer a friend, get $5 off your next oil change: ${r.referUrl}` : "",
     "", `${BUSINESS.name}, HST # ${BUSINESS.hst}, ${BUSINESS.phone}`,
   ].filter((x) => x !== "").join("\n");

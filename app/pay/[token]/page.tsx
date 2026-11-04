@@ -44,7 +44,16 @@ export default async function PayPage({ params, searchParams }: { params: { toke
                 {t.paid > 0 && <div className="flex justify-between gap-3 text-[#1d6b3a] font-semibold"><span>Paid</span><span>{money(-Math.min(t.paid, t.total))}</span></div>}
               </div>
               {t.due > 0 && (payReady()
-                ? <PayBox token={t.token} due={t.due} allowTip={t.kind === "job"} />
+                ? t.kind === "prepay" ? <PayBox token={t.token} due={t.due} allowTip={false} /> : (
+                  <>
+                    <div className="rounded-xl p-4 bg-[#fff6dd] text-[15px] flex flex-col gap-1">
+                      <p className="font-bold">Preferred: Interac e-Transfer</p>
+                      <p>Send <strong>{money(t.due)}</strong> to <strong className="select-all">{BUSINESS.email}</strong></p>
+                      <p>In the message, put <strong>{t.ref ? `#${t.ref}` : "your name"}</strong> so we match it to you. It&apos;s marked paid on its own.</p>
+                    </div>
+                    <p className="text-sm font-bold text-[#4a5878] text-center">Or pay by card</p>
+                    <PayBox token={t.token} due={t.due} allowTip={t.kind === "job"} />
+                  </>)
                 : t.kind === "prepay" ? <p className="rounded-xl p-4 bg-[#fff6dd] text-[15px]">Online card payment isn&apos;t switched on yet. No problem: pay after the job by card, tap, cash or e-transfer.</p>
                 : <div className="rounded-xl p-4 bg-[#fff6dd] text-[15px] flex flex-col gap-1">
                     <p className="font-bold">Pay by Interac e-Transfer</p>

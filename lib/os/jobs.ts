@@ -245,7 +245,7 @@ export async function finishJob(input: FinishInput, owner: string) {
     for (const c of others) if (c.job) await sbPatch("jobs", `id=eq.${c.job.id}`, { bill_sent_at: now }).catch(() => null);
     receipt = await sendReceipt(job.data!.id, input.email ?? null, { textIfNoEmail: false });   // shows what's owed, the due date and a Pay button (every car of the visit)
     const due = r2(total - prepaid + othersOwed);
-    const body = (await template("bill_sent")) || "Hi {first_name}, thanks for having us! Your total is {total}, due by {due_by}. Pay here (card or e-transfer): {pay_link}\n{late_terms}\n- {signer}, Oil Change On The Spot";
+    const body = (await template("bill_sent")) || "Hi {first_name}, thanks for having us! Your total is {total}, due by {due_by}. E-transfer preferred, or pay by card here: {pay_link}\n{late_terms}\n- {signer}, Oil Change On The Spot";
     billText = ctx.customer ? await textCustomer("bill_sent", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }, ctx.booking.id)
       .then((x) => (x.status === "template_off" && body ? sendSms(ctx.customer!.phone || "", fill(body, { first_name: ctx.customer!.first_name?.trim() || "there", total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }), { kind: "bill_sent", customerId: ctx.customer!.id, bookingId: ctx.booking.id }) : x)).catch(() => null) : null;
   }

@@ -242,7 +242,7 @@ export async function sendInvoice(invoiceId: string, to?: string | null) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { sent: false, reason: "no email on the account" };
   if (!process.env.RESEND_API_KEY) return { sent: false, reason: "email isn't set up yet" };
   const link = `${siteUrl()}/invoice/${inv.token}`;
-  const text = await signed(`Hi${a?.contact_name ? ` ${a.contact_name.split(" ")[0]}` : ""},\n\nHere is invoice #${inv.invoice_no} from Oil Change On The Spot for $${Number(inv.total).toFixed(2)} (HST included)${inv.due_at ? `, due ${inv.due_at}` : ""}.\n\n${!!convergeEnv() ? "View, print or pay it by card here" : "View or print it here"}: ${link}\n${!!convergeEnv() ? "Or pay" : "Pay"} by e-transfer to ${process.env.ETRANSFER_EMAIL || "oilchangeonthespot@gmail.com"} with the invoice number in the message.\n\nThank you,\n{signer}\nOil Change On The Spot`);
+  const text = await signed(`Hi${a?.contact_name ? ` ${a.contact_name.split(" ")[0]}` : ""},\n\nHere is invoice #${inv.invoice_no} from Oil Change On The Spot for $${Number(inv.total).toFixed(2)} (HST included)${inv.due_at ? `, due ${inv.due_at}` : ""}.\n\nView or print it here: ${link}\n\nE-transfer is preferred: send to ${process.env.ETRANSFER_EMAIL || "oilchangeonthespot@gmail.com"} with the invoice number in the message.${!!convergeEnv() ? " You can also pay by card from the link above." : ""}\n\nThank you,\n{signer}\nOil Change On The Spot`);
   try {
     await new Resend(process.env.RESEND_API_KEY).emails.send({ from: emailFrom(), to: email,
       replyTo: process.env.NOTIFY_TO || process.env.EMAIL_TO || undefined, subject: `Invoice #${inv.invoice_no} from Oil Change On The Spot`, text });
