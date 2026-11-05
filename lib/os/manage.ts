@@ -73,7 +73,11 @@ export async function cancelBooking(b: ManagedBooking, by: "customer" | string, 
     ...(sameDay && by !== "customer" && !opts.chargeFee ? { cancel_fee_waived: true } : {}) });
   await releaseCredits(b.id);   // a referral credit used on it goes back on their account
   const fee = sameDay && by !== "customer" && opts.chargeFee ? await chargeCancelFee(b) : null;
-  await tellOwners(b, "cancelled", `Cancelled: ${when(b.starts_at)}, ${carOf(b)}`, `${nameOf(b)}${by === "customer" ? " cancelled online" : ` (cancelled by ${by})`}${reason ? `: ${reason}` : ""}`);
+  // paid online when they booked? the money has to go back through Converge (HQ can't refund by itself)
+  const paidOnline = await sbGet<{ amount: number; txn_id: string | null; card_last4: string | null }>(`online_payments?select=amount,txn_id,card_last4&booking_id=eq.${b.id}&status=eq.approved`).catch(() => []);
+  const prepaid = paidOnline.reduce((t, p) => t + Number(p.amount), 0);
+  const refundNote = prepaid > 0 ? ` REFUND NEEDED: they paid $${prepaid.toFixed(2)} by card${paidOnline[0]?.card_last4 ? ` (ending ${paidOnline[0].card_last4})` : ""}. Refund it in Converge${paidOnline[0]?.txn_id ? `, transaction ${paidOnline[0].txn_id}` : ""}${fee ? `, minus the $${fee.total.toFixed(2)} fee` : ""}.` : "";
+  await tellOwners(b, "cancelled", `Cancelled: ${when(b.starts_at)}, ${carOf(b)}${prepaid > 0 ? " (refund needed)" : ""}`, `${nameOf(b)}${by === "customer" ? " cancelled online" : ` (cancelled by ${by})`}${reason ? `: ${reason}` : ""}${refundNote}`);
   if (by !== "customer") await textCustomer("booking_cancelled", b.customers, { when: when(b.starts_at), car: carOf(b) }, b.id).catch(() => null);
   if (fee) await textCustomer("cancel_fee", b.customers, { fee: `$${fee.fee.toFixed(2)}`, total: `$${fee.total.toFixed(2)}`, pay_link: payLink(fee.token) }, b.id).catch(() => null);
   return { ok: true, fee: fee ? fee.total : null };
