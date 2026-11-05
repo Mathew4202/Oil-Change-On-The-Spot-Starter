@@ -8,8 +8,8 @@ import { euroOilKey, quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUN
 const ADDON_DEFAULTS: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200, coolant: 25, washer_fluid: 10, tires: 0 };
 const addonPrice = (k: string, r: Record<string, number>) => r[`addon_part_${k}`] ?? r[`addon_price_${k}`] ?? ADDON_DEFAULTS[k] ?? 0;
 /** What the customer pays for the part itself (NAPA's retail price, Nov 2026): our cost is lower, the difference is our margin.
- *  Wipers are a pair ($30 a side). Change with addon_retail_<kind> in pricing_rules. */
-const RETAIL_DEFAULTS: Record<string, number> = { wipers: 60, cabin_filter: 30, engine_filter: 30 };
+ *  Wipers are a pair ($35 a side). Change with addon_retail_<kind> in pricing_rules. */
+const RETAIL_DEFAULTS: Record<string, number> = { wipers: 70, cabin_filter: 30, engine_filter: 30 };
 const addonRetail = (k: string, r: Record<string, number>, cost: number) => {
   const set = r[`addon_retail_${k}`] ?? RETAIL_DEFAULTS[k];
   return set != null ? Math.max(set, cost) : undefined;   // never charge less than it costs us

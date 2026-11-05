@@ -26,7 +26,7 @@ function writeSaved(v: Saved | null) { try { if (v) localStorage.setItem(SAVE_KE
 
 const STEPS = ["Your car", "Services", "Date and time", "Your details", "Review", "Done"];
 const ADDON_NOTES: Record<string, string> = {
-  tires: "Tires already on rims", wipers: "$75 for both, installed", cabin_filter: "$40 installed",
+  tires: "Tires already on rims", wipers: "$85 for both, installed", cabin_filter: "$40 installed",
   engine_filter: "$40 installed", battery: "$20 install + battery", coolant: "Top-up with the right type",
   washer_fluid: "Top-up",
 };
