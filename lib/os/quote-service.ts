@@ -7,6 +7,17 @@ import { euroOilKey, quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUN
 // Customer price for each add-on part or top-up (settings can override; part prices get replaced by the parts lookup later)
 const ADDON_DEFAULTS: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200, coolant: 25, washer_fluid: 10, tires: 0 };
 const addonPrice = (k: string, r: Record<string, number>) => r[`addon_part_${k}`] ?? r[`addon_price_${k}`] ?? ADDON_DEFAULTS[k] ?? 0;
+/** What the customer pays for the part itself (NAPA's retail price, Nov 2026): our cost is lower, the difference is our margin.
+ *  Wipers are a pair ($30 a side). Change with addon_retail_<kind> in pricing_rules. */
+const RETAIL_DEFAULTS: Record<string, number> = { wipers: 60, cabin_filter: 30, engine_filter: 30 };
+const addonRetail = (k: string, r: Record<string, number>, cost: number) => {
+  const set = r[`addon_retail_${k}`] ?? RETAIL_DEFAULTS[k];
+  return set != null ? Math.max(set, cost) : undefined;   // never charge less than it costs us
+};
+const addonItem = (k: Addon["kind"], r: Record<string, number>, cost?: number | null): Addon => {
+  const c = cost ?? addonPrice(k, r);
+  return { kind: k, partCost: c, partRetail: addonRetail(k, r, c) };
+};
 import { lookupOilSpec } from "@/lib/os/spec-lookup-run";
 import { gasPerJob } from "@/lib/os/gas";
 import { addLines, christmasLine } from "@/lib/os/deals";
@@ -134,6 +145,15 @@ export async function filterInStock(part: string | null | undefined): Promise<bo
   return rows.some((r) => Number(r.on_hand) >= 1);
 }
 
+/** Cabin / engine air filter: if the car's part number is on file and we've paid for it before, use that cost. */
+async function withRealCosts(addons: Addon[], spec: Spec | null, r: Record<string, number>) {
+  return Promise.all(addons.map(async (a) => {
+    const part = a.kind === "cabin_filter" ? spec?.cabin_filter_part : a.kind === "engine_filter" ? spec?.air_filter_part : null;
+    const cost = part ? await filterCostFor(part).catch(() => null) : null;
+    return cost != null ? addonItem(a.kind, r, cost) : a;
+  }));
+}
+
 async function filterCostFor(part: string | null): Promise<number | null> {
   if (!part) return null;
   const q = await sbGet<{ our_cost: number }>(
@@ -147,8 +167,8 @@ export async function buildQuote(req: QuoteRequest) {
     const rules = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value");
     const r = Object.fromEntries(rules.map((x) => [x.key, Number(x.value)]));
     // every service takes the small add-ons (washer fluid is the cheaper with-a-service price unless it's a parts-only visit)
-    const items: Addon[] = (req.addons ?? []).filter((k) => k !== "tires").map((k) => ({ kind: k,
-      partCost: k === "washer_fluid" && req.job !== "parts" ? r.addon_price_washer_fluid_with_oil ?? 5 : addonPrice(k, r) }));
+    const items: Addon[] = (req.addons ?? []).filter((k) => k !== "tires").map((k) => k === "washer_fluid" && req.job !== "parts"
+      ? { kind: k, partCost: r.addon_price_washer_fluid_with_oil ?? 5 } : addonItem(k, r));
     const vc = (req.vehicleClass || detectClassFromModel(req.model, req.make) || "Sedan") as VehicleClass;
     const quote = quoteVisit({ job: req.job, items, distanceKm: req.km ?? null, vehicleClass: vc,
       rules: { ...DEFAULT_RULES, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30 } });
@@ -173,8 +193,7 @@ export async function buildQuote(req: QuoteRequest) {
   const withTires = req.job === "seasonal" || (req.addons ?? []).includes("tires");
   if (withTires) kinds.unshift("tires");
   // Washer fluid is $5 with an oil change ($10 on a parts-only visit)
-  const addons: Addon[] = kinds.map((k) => ({ kind: k,
-    partCost: k === "washer_fluid" ? r.addon_price_washer_fluid_with_oil ?? 5 : addonPrice(k, r) }));
+  const addons: Addon[] = kinds.map((k) => k === "washer_fluid" ? { kind: k, partCost: r.addon_price_washer_fluid_with_oil ?? 5 } : addonItem(k, r));
 
   const priceWith = async (spec: Spec | null) => {
     const diesel = !isEuro && isDiesel(spec);
@@ -188,7 +207,7 @@ export async function buildQuote(req: QuoteRequest) {
       rules: { ...DEFAULT_RULES, profitFloor: r.profit_floor ?? 45, bumpTo: r.profit_floor ?? 45, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30,
         // the floor is after gas (gas_in_floor = 0 in pricing_rules turns this off)
         gasPerJob: r.gas_in_floor === 0 ? 0 : await gasPerJob().then((g) => g.perJob).catch(() => 0) },
-      ownParts: req.own ?? null, addons, distanceKm: req.km ?? null,
+      ownParts: req.own ?? null, addons: await withRealCosts(addons, spec, r), distanceKm: req.km ?? null,
     });
   };
 

@@ -254,3 +254,12 @@ test("the $45 floor counts gas: a 4.6 L sedan at $90 goes up so it still clears 
   const small = quoteOilChange({ ...base, spec: { grade: "0W-20", capacityL: 3.5 }, costs: { ...base.costs, filterCost: 5.12 }, rules: { ...DEFAULT_RULES, gasPerJob: 9.12 } });
   assert.equal(small.lines[0].amount, 90);                         // a small engine still clears it at $90
 });
+
+test("add-ons are charged at the part's retail price, and the margin counts as profit", () => {
+  const q = quoteOilChange({ vehicleClass: "Sedan", spec: { grade: "0W-20", capacityL: 3.5 }, costs: { oilPerL: { "0W-20": 7.07 }, filterCost: 5.12, consumables: 1 },
+    rules: { ...DEFAULT_RULES }, addons: [{ kind: "wipers", partCost: 22, partRetail: 60 }, { kind: "cabin_filter", partCost: 18, partRetail: 30 }] });
+  assert.equal(q.lines.find((l) => l.label === "Wiper blades")!.amount, 75);       // $15 labour + $60
+  assert.equal(q.lines.find((l) => l.label === "Cabin air filter")!.amount, 40);   // $10 labour + $30
+  const plain = quoteOilChange({ vehicleClass: "Sedan", spec: { grade: "0W-20", capacityL: 3.5 }, costs: { oilPerL: { "0W-20": 7.07 }, filterCost: 5.12, consumables: 1 }, rules: { ...DEFAULT_RULES } });
+  assert.equal(Math.round((q.profit! - plain.profit!) * 100) / 100, 15 + 38 + 10 + 12);
+});

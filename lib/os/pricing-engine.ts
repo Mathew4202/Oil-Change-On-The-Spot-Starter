@@ -225,6 +225,7 @@ export function quoteOilChange(input: QuoteInput): Quote {
     addonLabour += a.kind === "tires" ? TIRE_CHANGE[cls] : a.kind === "wipers" ? SERVICE_PRICES.addonWipers
       : a.kind === "battery" ? SERVICE_PRICES.batteryWithOilChange : a.kind === "cabin_filter" || a.kind === "engine_filter" ? SERVICE_PRICES.addonFilter : 0;
     const retail = a.partRetail ?? a.partCost;
+    addonLabour += Math.max(0, retail - a.partCost);   // our margin on the part (retail price minus what it costs us)
     if (a.kind === "wipers") lines.push({ label: "Wiper blades", amount: r2(SERVICE_PRICES.addonWipers + retail) });
     if (a.kind === "cabin_filter") lines.push({ label: "Cabin air filter", amount: r2(SERVICE_PRICES.addonFilter + retail) });
     if (a.kind === "engine_filter") lines.push({ label: "Engine air filter", amount: r2(SERVICE_PRICES.addonFilter + retail) });
@@ -292,7 +293,7 @@ export function quoteVisit(opts: { job: Exclude<JobType, "oil_change" | "seasona
       const retail = a.partRetail ?? a.partCost;
       const labour = a.kind === "wipers" ? SERVICE_PRICES.addonWipers : a.kind === "battery" ? SERVICE_PRICES.batteryWithOilChange
         : a.kind === "cabin_filter" || a.kind === "engine_filter" ? SERVICE_PRICES.addonFilter : 0;
-      addonLabour += labour;
+      addonLabour += labour + Math.max(0, (retail || 0) - a.partCost);
       if (!retail && a.kind !== "coolant" && a.kind !== "washer_fluid") needsReview.push(`${PART_NAMES[a.kind]} price to confirm`);
       lines.push({ label: PART_NAMES[a.kind], amount: r2(labour + (retail || 0)) });
     }
