@@ -14,7 +14,7 @@ type Month = { month: string; sales: number; spending: number; profit: number };
 type Data = { period: { kind: Kind; label: string; from: string; to: string; offset: number }; summary: Summary; months: Month[];
   unpaid: { id: string; date: string; name: string; amount: number; fee?: boolean }[]; bank: { needsLook: number; lastStatement: string | null; today: string };
   hourly: Hourly | null; hole: Hole | null };
-type Hole = { sales: number; spending: number; profit: number; shortBy: number; needed: number; perJob: number; gasPerJob: number; jobsThisMonth: number; onPace: number; booked?: number; daysLeft: number; recentJobs: number };
+type Hole = { sales: number; spending: number; profit: number; shortBy: number; needed: number; perJob: number; gasPerJob: number; jobsThisMonth: number; onPace: number; booked?: number; basis?: "month" | "30days"; daysLeft: number; recentJobs: number };
 type Bucket = { name: string; jobs: number; revenue: number; profit: number; hours: number | null; perHour: number | null };
 type Hourly = { all: Bucket | null; areas: Bucket[]; services: Bucket[]; addons: { name: string; count: number; revenue: number }[]; untimed: number };
 type BankLine = { id: string; account?: string; posted_on: string; amount: number; description: string; kind: string | null; category: string | null; note: string | null; status?: string; decided_by?: string | null };
@@ -175,7 +175,7 @@ function HoleCard({ h }: { h: Hole }) {
       </p>
       {!!h.booked && <p className="text-sm" style={{ color: MUTED }}>{h.booked} more booked this month. They only count once they&apos;re finished, since bookings can still cancel.</p>}
       <p className="text-xs" style={{ color: MUTED }}>
-        Only finished jobs count. The pace is what&apos;s finished plus the rest of the month at the last 30 days&apos; rate. Uses what was actually spent this month (receipts and bank lines), before HST. Each job leaves about {money(h.perJob)} after oil, filter and {money(h.gasPerJob)} gas (last 90 days, {h.recentJobs} jobs). New spending changes the number right away.
+        Only finished jobs count. The pace is what&apos;s finished plus the rest of the month at the last 30 days&apos; rate. Uses what was actually spent this month (receipts and bank lines), before HST. Each job leaves about {money(h.perJob)} after oil, filter and {money(h.gasPerJob)} gas ({h.basis === "month" ? "this month's jobs" : "last 30 days, until this month has 5 finished jobs"}). New spending changes the number right away.
       </p>
     </section>
   );

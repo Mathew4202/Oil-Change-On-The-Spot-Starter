@@ -81,15 +81,30 @@ async function hole(today: string) {
   const costEach = costs.length ? costs[Math.floor(costs.length / 2)] : 0;   // middle one: a two-car job doesn't skew it
   const gasPerJob = recentJobs.length ? Math.round((gas / recentJobs.length) * 100) / 100 : 0;
   const perJob = recentJobs.length ? Math.round((recent.avgJob - Math.max(costEach, recent.avgJob - recent.avgJobProfit) - gasPerJob) * 100) / 100 : 0;
+  // Per job, "the right way": this month's own jobs once there are 5 finished (they're at today's prices),
+  // otherwise the last 30 days. Price minus the oil and filter (typical cost if a job has none recorded) minus gas.
+  const leaves = (js: JobRow[]) => {
+    const real = js.filter(isRealJob);
+    if (!real.length) return 0;
+    const each = real.map((j) => {
+      const recorded = Number(j.cost_oil ?? 0) + Number(j.cost_parts ?? 0) + Number(j.cost_other ?? 0);
+      return Number(j.revenue ?? 0) - (Number(j.cost_oil ?? 0) > 0 ? recorded : Math.max(recorded, costEach));
+    });
+    return Math.round((each.reduce((t, x) => t + x, 0) / real.length - gasPerJob) * 100) / 100;
+  };
+  const thisMonthReal = jobsNow.filter(isRealJob);
+  const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString();
+  const basis = thisMonthReal.length >= 5 ? "month" as const : "30days" as const;
+  const perJobNow = basis === "month" ? leaves(thisMonthReal) : leaves(recentJobs.filter((j) => j.done_at >= cutoff30)) || perJob;
   const m = summarize(jobsNow, monthExps);
   const shortBy = m.profit < 0 ? Math.round(-m.profit * 100) / 100 : 0;
-  const needed = shortBy > 0 && perJob > 0 ? Math.ceil(shortBy / perJob) : 0;
+  const needed = shortBy > 0 && perJobNow > 0 ? Math.ceil(shortBy / perJobNow) : 0;
   const day = +today.slice(8, 10);
   const daysInMonth = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 0)).getUTCDate();
   // pace: finished so far + the rest of the month at the last 30 days' rate (the first few days of a month alone would overshoot)
   const perDay = last30.filter(isRealJob).length / 30;
   const onPace = doneNow + Math.round(perDay * (daysInMonth - day));
-  return { sales: m.sales, spending: m.spending, profit: m.profit, shortBy, needed, perJob, gasPerJob, jobsThisMonth: doneNow, onPace, booked: booked.length, daysLeft: daysInMonth - day, recentJobs: recentJobs.length };
+  return { sales: m.sales, spending: m.spending, profit: m.profit, shortBy, needed, perJob: perJobNow, basis, gasPerJob, jobsThisMonth: doneNow, onPace, booked: booked.length, daysLeft: daysInMonth - day, recentJobs: recentJobs.length };
 }
 
 const expBetween = (from: string, to: string) => sbGet<ExpRow>(`expenses?select=${EXP_COLS}&spent_at=gte.${from}&spent_at=lte.${to}`);
