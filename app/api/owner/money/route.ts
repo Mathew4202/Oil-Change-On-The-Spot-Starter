@@ -79,7 +79,8 @@ async function hole(today: string) {
   const costed = recentJobs.filter((j) => Number(j.cost_oil ?? 0) > 0);
   const costs = costed.map((j) => Number(j.cost_oil ?? 0) + Number(j.cost_parts ?? 0) + Number(j.cost_other ?? 0)).sort((a, b) => a - b);
   const costEach = costs.length ? costs[Math.floor(costs.length / 2)] : 0;   // middle one: a two-car job doesn't skew it
-  const gasPerJob = recentJobs.length ? Math.round((gas / recentJobs.length) * 100) / 100 : 0;
+  // same gas per job as the calendar and the prices use (last 60 days of gas receipts ÷ finished jobs)
+  const gasPerJob = await import("@/lib/os/gas").then((g) => g.gasPerJob()).then((g) => g.perJob).catch(() => (recentJobs.length ? Math.round((gas / recentJobs.length) * 100) / 100 : 0));
   const perJob = recentJobs.length ? Math.round((recent.avgJob - Math.max(costEach, recent.avgJob - recent.avgJobProfit) - gasPerJob) * 100) / 100 : 0;
   // Per job, "the right way": this month's own jobs once there are 5 finished (they're at today's prices),
   // otherwise the last 30 days. Price minus the oil and filter (typical cost if a job has none recorded) minus gas.
