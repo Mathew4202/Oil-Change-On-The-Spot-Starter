@@ -47,6 +47,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   const [notes, setNotes] = useState(""); const [custNote, setCustNote] = useState("");
   const [pay, setPay] = useState<string>(""); const [tip, setTip] = useState(""); const [txnId, setTxnId] = useState("");
   const [email, setEmail] = useState("");
+  const [loaded, setLoaded] = useState(false); const [restored, setRestored] = useState(false);
 
   useEffect(() => {
     fetch(`/api/owner/job?booking=${bookingId}`).then((r) => r.json()).then((c: Ctx) => {
@@ -56,8 +57,24 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
       setEmail(c.customer?.email || ""); setVin(c.vehicle?.vin || ""); setCustNote(c.job?.customer_note || "");
       if (!(c.booking.quote_breakdown?.lines ?? []).length) setExtras([{ label: "Oil change", amount: "" }]);
       if (c.booking.pay_mode === "online" && !c.paid) setPay("card_online");   // you marked it "Already paid" when booking
+      // what was typed before the form was closed by mistake (kept on this phone until the job is finished)
+      if (!c.job) {
+        const d = readDraft(bookingId);
+        if (d) {
+          if (d.km != null) setKm(d.km); if (d.vin != null) setVin(d.vin); if (d.grade != null) setGrade(d.grade); if (d.litres != null) setLitres(d.litres);
+          if (d.filter != null) setFilter(d.filter); if (d.checks) setChecks(d.checks); if (d.extras) setExtras(d.extras); if (d.doneBy) setDoneBy(d.doneBy);
+          if (d.notes != null) setNotes(d.notes); if (d.custNote != null) setCustNote(d.custNote); if (d.pay != null) setPay(d.pay); if (d.tip != null) setTip(d.tip); if (d.email != null) setEmail(d.email);
+          setRestored(true);
+        }
+      }
+      setLoaded(true);
     }).catch(() => setErr("Couldn't load this job"));
   }, [bookingId]);
+  // save as you type (only once the job has loaded, so the empty form never overwrites a saved one)
+  useEffect(() => {
+    if (!loaded || ctx?.job) return;
+    writeDraft(bookingId, { km, vin, grade, litres, filter, checks, extras, doneBy, notes, custNote, pay, tip, email });
+  }, [loaded, ctx?.job, bookingId, km, vin, grade, litres, filter, checks, extras, doneBy, notes, custNote, pay, tip, email]);
 
   const withOil = !ctx?.booking.services?.job || ["oil_change", "seasonal"].includes(ctx.booking.services.job || "");
   const lines: Line[] = useMemo(() => [
@@ -104,6 +121,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
       extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined, customerNote: custNote.trim() || undefined,
       payMethod: pay && pay !== "bill" ? pay : null, tip: pay && pay !== "bill" && Number(tip) > 0 ? Number(tip) : null, email: email.trim() || null, sendReceipt: true, bill: pay === "bill",
     });
+    if (j) clearDraft(bookingId);
     const stockLine = (j?.stock ?? []).length ? ` Stock: ${j.stock.join(". ")}.` : "";
     if (j?.partial) { setNext({ id: j.nextBookingId, car: j.nextCar, left: j.carsLeft }); setResult(`Car done (${money(j.total)}). Next: ${j.nextCar}. Payment, the receipt and the texts come after the last car.${stockLine}`); return; }
     const paidLine = j?.prepaid > 0 ? (j.refund > 0 ? `, paid online. They paid ${money(j.refund)} too much, refund it in Converge` : balance > 0 && !pay ? `, ${money(balance)} still owed` : ", paid online") : pay ? ", paid" : ", not paid yet";
@@ -306,6 +324,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
           <div className="fixed bottom-0 inset-x-0 z-50 bg-white border-t border-[#dde3ee] p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
             <div className="max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto flex flex-col gap-2">
               {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
+              {restored && !err && <p className="text-xs font-semibold text-[#1d6b3a]" role="status">Picked up where you left off. What you typed was saved.</p>}
               {needPay && <p className="text-sm font-semibold text-[#8a5a00]" role="status">Pick how they paid, or &quot;Pay later: send bill&quot; so they get the bill.</p>}
               <button onClick={finish} disabled={busy || needPay} className="py-3.5 rounded-xl font-extrabold text-base disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>
                 {busy ? "Saving…" : needPay ? `Pick how they paid · ${money(balance)}` : fleetJob ? `Finish job · ${money(total)} on the invoice` : notLastCar ? `Finish this car · next: ${g!.cars.find((c) => !c.done && c.bookingId !== bookingId)?.car ?? "next car"}` : others > 0 ? (pay === "bill" ? `Finish job · send bill for ${money(balance)}` : pay ? `Finish job · ${money(balance + (Number(tip) || 0))} paid` : `Finish job · ${money(balance)}`) : prepaid > 0 ? `Finish job · ${balance > 0 ? `${money(balance)} ${pay ? "paid" : "owed"}` : "paid online"}` : pay === "bill" ? `Finish job · send bill for ${money(total)}` : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
@@ -390,3 +409,16 @@ function AddCarBox({ bookingId, onAdded }: { bookingId: string; onAdded: () => v
     </section>
   );
 }
+
+// The job form is kept on this phone while it's being filled in, so closing it by mistake loses nothing.
+type Draft = { km?: string; vin?: string; grade?: string; litres?: string; filter?: string; checks?: Record<string, "ok" | "soon" | "now">; extras?: { label: string; amount: string }[];
+  doneBy?: string; notes?: string; custNote?: string; pay?: string; tip?: string; email?: string; at?: number };
+const draftKey = (id: string) => `ocots-job-draft:${id}`;
+function readDraft(id: string): Draft | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(draftKey(id)) || "null") as Draft | null;
+    return d && d.at && Date.now() - d.at < 3 * 86400000 ? d : null;   // older than 3 days: not this visit
+  } catch { return null; }
+}
+function writeDraft(id: string, d: Draft) { try { localStorage.setItem(draftKey(id), JSON.stringify({ ...d, at: Date.now() })); } catch { /* private mode: nothing to keep */ } }
+function clearDraft(id: string) { try { localStorage.removeItem(draftKey(id)); } catch { /* ignore */ } }
