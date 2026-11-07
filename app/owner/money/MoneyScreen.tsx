@@ -28,7 +28,7 @@ const CATS: [string, string][] = [["fuel", "Gas"], ["parts", "Filters and parts"
 const KIND_NAME: Record<string, string> = { receipt: "Receipt", napa_account: "NAPA account", payment: "Customer e-transfer", card_payout: "Card sales payout", bank_fee: "Bank fee",
   transfer: "Transfer", expense_no_receipt: "Added, no receipt", personal: "Not business", money_in: "Money in" };
 
-type Health = { quo: { key: boolean; number: boolean; secret: boolean; lastEvent: { at: string; type: string } | null; lastCall: { at: string; state: string | null } | null };
+type Health = { quo: { key: boolean; number: boolean; secret: boolean; lastEvent: { at: string; type: string } | null; usage?: { texts: number; segments: number; cost: number; top: { kind: string; texts: number; segments: number }[]; outOfCredits: boolean }; lastCall: { at: string; state: string | null } | null };
   push: { mine: number; myDevices: { device: string; lastOk: string | null; since: string }[]; everyone: [string, number][] }; cron: boolean; site: string | null;
   email: { ready: boolean; from: string | null }; webhookUrl: string; card?: { set: boolean; mode: "demo" | "prod" } };
 const ago = (iso: string | null | undefined) => {
@@ -58,6 +58,8 @@ function HealthCard() {
         {!quoOk ? <>Missing in Vercel: {[!h.quo.key && "QUO_API_KEY", !h.quo.number && "QUO_FROM_NUMBER", !h.quo.secret && "QUO_WEBHOOK_SECRET"].filter(Boolean).join(", ")} (tick Production, then redeploy).</> : null}
         <>Last thing Quo sent HQ: <strong>{h.quo.lastEvent ? `${ago(h.quo.lastEvent.at)} (${h.quo.lastEvent.type || "event"})` : "nothing yet"}</strong>. Last call: {h.quo.lastCall ? ago(h.quo.lastCall.at) : "none"}.</>
         {h.quo.lastEvent?.type.startsWith("rejected") ? <> Quo is reaching HQ, but the signing secret doesn&apos;t match, so HQ ignores it. In Quo, open the webhook, copy its signing secret, paste it into QUO_WEBHOOK_SECRET in Vercel (Production ticked), then redeploy.</> : null}
+        {h.quo.usage && <p className="mt-1">Automatic texts this month: <strong>{h.quo.usage.texts}</strong> ({h.quo.usage.segments} segments, about <strong>${h.quo.usage.cost.toFixed(2)}</strong> of Quo credits){h.quo.usage.top.length ? <>. Most: {h.quo.usage.top.map((t) => `${TEXT_NAMES[t.kind] ?? t.kind} ${t.texts}`).join(", ")}</> : null}.</p>}
+        {h.quo.usage?.outOfCredits && <p className="mt-1 font-semibold" style={{ color: BAD }}>Quo is out of prepaid credits, so texts aren&apos;t sending. Top up in Quo: Settings, Plan &amp; billing, Voice &amp; messaging balance.</p>}
         <> If you just called and this didn&apos;t change, Quo isn&apos;t sending to the live site: in Quo, Settings → Webhooks, set the address to <span className="font-mono break-all">{h.webhookUrl}</span> for calls and messages.</>
       </Row>
       <Row ok={h.push.mine > 0} title="Notifications on your phone">
@@ -180,6 +182,8 @@ function HoleCard({ h }: { h: Hole }) {
     </section>
   );
 }
+
+const TEXT_NAMES: Record<string, string> = { fill_in: "in your area", day_before: "day before", two_hours: "2-hour", booking_confirmation: "confirmations", bill_sent: "bills", receipt_text: "receipts", pay_request: "pay links", hold_link: "booking links", hold_nudge_1: "link reminders", hold_nudge_2: "link reminders", oil_due: "oil due", review_request: "review asks", reply: "replies" };
 
 export default function MoneyScreen() {
   const { can } = useRole();

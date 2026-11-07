@@ -11,3 +11,12 @@ export function segments(text: string): number {
   return len <= single ? 1 : Math.ceil(len / multi);
 }
 
+// Quo charges per segment. Plain characters fit 160 per segment (153 when split); one curly quote, dash or emoji
+// switches the whole text to 70 (67), so it costs 2 to 3 times more. Swap them for plain ones before sending.
+const SWAP: [RegExp, string][] = [[/[\u2018\u2019\u201A\u2032\u00B4]/g, "'"], [/[\u201C\u201D\u201E\u2033]/g, '"'], [/[\u2013\u2014\u2212]/g, "-"],
+  [/\u2026/g, "..."], [/[\u00A0\u2007\u202F]/g, " "], [/[\u2022\u00B7]/g, "-"], [/\u00D7/g, "x"]];
+export function plainText(s: string) {
+  let t = s;
+  for (const [re, to] of SWAP) t = t.replace(re, to);
+  return t;
+}

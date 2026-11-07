@@ -3,6 +3,7 @@ import { sbGet, sbInsert, enc } from "@/lib/os/db";
 import { convergeEnv } from "@/lib/os/converge";
 import { e164 } from "@/lib/os/booking";
 export { fill, segments } from "@/lib/os/text";
+import { plainText } from "@/lib/os/text";
 import { signed } from "@/lib/os/signer";
 
 export const DEFAULT_REVIEW_LINK = "https://g.page/r/Cc5AP8M9qC4MEAE/review";
@@ -29,7 +30,7 @@ export async function sendSms(to: string, contentIn: string, meta: { kind: strin
   const phone = e164(to);
   // signed by whoever is signed in to HQ (automatic texts: Mathew); until online card payments are set up (Converge),
   // pay links only offer e-transfer, so the text doesn't promise card
-  const content = payWording(await signed(contentIn));
+  const content = plainText(payWording(await signed(contentIn)));
   const key = process.env.QUO_API_KEY, from = process.env.QUO_FROM_NUMBER;
   let status = "sent", error: string | null = null, providerId: string | null = null;
   // Anyone who replied STOP (or was switched off in HQ) never gets an automatic text. Checked here so no path can skip it.
