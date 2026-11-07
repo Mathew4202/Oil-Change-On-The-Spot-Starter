@@ -16,7 +16,7 @@ type Detail = {
   upcoming: { id: string; date: string; at: string; status: string; total: number | null; job: string | null }[];
   jobs: { id: string; date: string; car: string | null; service: string | null; amount: number; tip: number; paidWith: string | null; receipt: string | null; receiptNo: number | null; fromSheet: boolean; km: number | null; oil: string | null; notes: string | null;
     flagged?: { now: string[]; soon: string[]; note: string | null } | null }[];
-  texts: { kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null; direction: string | null }[];
+  texts: { kind: string | null; body: string | null; sent_at: string; status: string | null; error?: string | null; channel: string | null; direction: string | null }[];
 };
 type Found = { id: string; first_name: string | null; last_name: string | null; phone: string | null; vehicles: { year: number | null; make: string | null; model: string | null }[] };
 
@@ -185,6 +185,7 @@ function Texts({ c, texts, reload }: { c: Detail["customer"]; texts: Detail["tex
           {texts.map((t, i) => (
             <div key={i} className="py-2 border-t text-sm" style={{ borderColor: "#eef1f6" }}>
               <p className="font-bold">{t.direction === "in" ? "They replied" : TEXT_KIND[t.kind ?? ""] ?? t.kind ?? "Message"} <span className="font-normal" style={{ color: MUTED }}>· {new Date(t.sent_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "America/Halifax" })}{t.status && !["sent", "received"].includes(t.status) ? ` · ${t.status === "not_set_up" ? "not sent (texting not set up)" : t.status === "opted_out" ? "not sent (texts off)" : "not sent"}` : ""}</span></p>
+              {t.error && !["sent", "received"].includes(t.status ?? "") && <p className="text-xs font-semibold" style={{ color: "#9b1c1c" }}>Why: {String(t.error).slice(0, 160)}</p>}
               {t.body && <p className="line-clamp-2" style={{ color: MUTED }}>{t.body}</p>}
             </div>
           ))}

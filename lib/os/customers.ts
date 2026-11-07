@@ -33,8 +33,8 @@ export async function customerDetail(id: string) {
       `jobs?select=*&customer_id=eq.${i}&order=done_at.desc&limit=200`),
     sbGet<{ id: string; starts_at: string; status: string; quoted_total: number | null; services: { job?: string } | null; source: string | null }>(
       `bookings?select=id,starts_at,status,quoted_total,services,source&customer_id=eq.${i}&order=starts_at.desc&limit=100`),
-    sbGet<{ kind: string | null; body: string | null; sent_at: string; status: string | null; channel: string | null; direction: string | null }>(
-      `messages?select=kind,body,sent_at,status,channel,direction&customer_id=eq.${i}&order=sent_at.desc&limit=15`).catch(() => []),
+    sbGet<{ kind: string | null; body: string | null; sent_at: string; status: string | null; error?: string | null; channel: string | null; direction: string | null }>(
+      `messages?select=kind,body,sent_at,status,error,channel,direction&customer_id=eq.${i}&order=sent_at.desc&limit=15`).catch(() => []),
   ]);
   if (!c) return null;
   const today = halifaxDate(new Date());
