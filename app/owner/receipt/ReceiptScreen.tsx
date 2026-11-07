@@ -123,6 +123,16 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
               </div>
             </div>
             {scan.warnings.length > 0 && <p className="text-sm rounded-lg bg-[#fff6dd] p-2">Check: {scan.warnings.join(". ")}.</p>}
+            {(() => {
+              // a misread or old date puts it in another month, so it won't show in this month's Money
+              const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax" });
+              if (!scan.date) return null;
+              const days = Math.round((Date.parse(today) - Date.parse(scan.date)) / 86400000);
+              if (days >= 0 && scan.date.slice(0, 7) === today.slice(0, 7)) return null;
+              return <p className="text-sm font-semibold rounded-lg bg-[#fde2e1] p-2" style={{ color: "#9b1c1c" }}>
+                {days < 0 ? `This is dated ${scan.date}, which is in the future.` : `This is dated ${scan.date}, so it counts in that month, not this one.`} If that&apos;s wrong, change the date above before saving.{" "}
+                <button type="button" onClick={() => upd({ date: today })} className="underline">Use today</button></p>;
+            })()}
 
             <div className="flex flex-col gap-2">
               {scan.items.map((it, i) => (

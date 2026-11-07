@@ -14,7 +14,7 @@ export const maxDuration = 60;
 export async function GET() {
   if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
   const rows = await sbGet<{ id: string; vendor: string | null; description: string | null; total: number; hst: number | null; spent_at: string; category: string | null; paid_with: string | null; receipt_url: string | null; added_by: string | null }>(
-    "expenses?select=id,vendor,description,total,hst,spent_at,category,paid_with,receipt_url,added_by&order=spent_at.desc,created_at.desc&limit=25");
+    "expenses?select=id,vendor,description,total,hst,spent_at,category,paid_with,receipt_url,added_by&order=created_at.desc&limit=25");
   return NextResponse.json({ expenses: rows });
 }
 
