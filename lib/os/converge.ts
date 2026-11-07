@@ -67,7 +67,9 @@ export type Verdict = { approved: boolean; reason: string; last4: string | null 
 export function judge(q: Record<string, string>, expect: { amount: number; invoice: string }): Verdict {
   const last4 = (q.ssl_card_number || "").replace(/\D/g, "").slice(-4) || null;
   if (q.errorCode || q.errorMessage) return { approved: false, reason: q.errorMessage || `error ${q.errorCode}`, last4 };
-  if (q.ssl_result !== "0") return { approved: false, reason: q.ssl_result_message || "declined", last4 };
+  // a transaction lookup doesn't always include ssl_result: an "APPROVAL" message counts as approved too
+  const ok = q.ssl_result === "0" || (q.ssl_result == null && /APPROV/i.test(q.ssl_result_message || ""));
+  if (!ok) return { approved: false, reason: q.ssl_result_message || (q.ssl_result == null ? "no result from Converge" : "declined"), last4 };
   if ((q.ssl_trans_status || "").toUpperCase() && /^(VOID|DECLINED|ERROR)/i.test(q.ssl_trans_status || "")) return { approved: false, reason: q.ssl_trans_status!, last4 };
   if (money(Number(q.ssl_amount)) !== money(expect.amount)) return { approved: false, reason: `amount was ${q.ssl_amount}, expected ${money(expect.amount)}`, last4 };
   if (q.ssl_invoice_number && q.ssl_invoice_number !== expect.invoice) return { approved: false, reason: "invoice number doesn't match", last4 };

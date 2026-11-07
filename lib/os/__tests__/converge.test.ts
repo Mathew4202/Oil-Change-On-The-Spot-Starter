@@ -47,3 +47,10 @@ test("what's still owed", () => {
   assert.equal(amountDue(119.7, 102.6), 17.1);
   assert.equal(amountDue(90, 102.6), 0);
 });
+
+test("a lookup without ssl_result but with APPROVAL counts as approved", () => {
+  const v = judge({ ssl_result_message: "APPROVAL", ssl_trans_status: "PEN", ssl_amount: "146.80", ssl_card_number: "45**********8700" }, { amount: 146.8, invoice: "OCX" });
+  assert.equal(v.approved, true);
+  assert.equal(v.last4, "8700");
+  assert.equal(judge({ ssl_result_message: "DECLINED", ssl_amount: "146.80" }, { amount: 146.8, invoice: "OCX" }).approved, false);
+});

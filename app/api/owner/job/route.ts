@@ -4,7 +4,7 @@ import { z } from "zod";
 import { currentOwner } from "@/lib/os/auth";
 import { sbPatch } from "@/lib/os/db";
 import { jobContext, startJob, finishJob, recordPayment, sendReceipt, setCustomerNote, payVisit, reviewIfDue } from "@/lib/os/jobs";
-import { payReady } from "@/lib/os/payments";
+import { payReady, claimByTxn } from "@/lib/os/payments";
 import { payLink, textCustomer } from "@/lib/os/customer-texts";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +67,10 @@ export async function POST(req: NextRequest) {
       const at = String(ctx.job.done_at || new Date().toISOString());
       await sbPatch("bookings", `id=eq.${id}`, { status: "done", finished_at: at, ...(ctx.booking.paid_at ? {} : { paid_at: at }) });
       return NextResponse.json({ ok: true });
+    }
+    if (body.action === "claim") {   // paid by card online, but HQ didn't hear back: check the Converge transaction ID
+      const r = await claimByTxn(id, String(body.txnId || ""));
+      return NextResponse.json(r, { status: r.ok ? 200 : 400 });
     }
     if (body.action === "paylink") {   // text them a link to pay online
       const ctx = await jobContext(id);

@@ -273,3 +273,29 @@ export async function convergeCheck(): Promise<{ set: boolean; mode?: "demo" | "
     : /hosted|HPP|not enabled|permission/i.test(why) ? " Ask Converge to turn on the Hosted Payments Page for this API user." : "";
   return { set: true, mode, ok: false, message: `Converge said: ${why}.${hint}` };
 }
+
+/**
+ * Owners: a card payment went through in Converge but HQ never heard back (they closed the page, or a decline came
+ * first). Paste the Converge transaction ID: HQ checks it with Converge, matches it to this booking's card page,
+ * then records it exactly as if they'd come back (paid, tip, receipt).
+ */
+export async function claimByTxn(bookingId: string, txnIdIn: string): Promise<{ ok: boolean; error?: string; amount?: number }> {
+  const txnId = txnIdIn.trim();
+  const c = convergeEnv();
+  if (!c) return { ok: false, error: "Card payments aren't set up" };
+  if (!/^[A-Za-z0-9-]{4,64}$/.test(txnId)) return { ok: false, error: "That doesn't look like a Converge transaction ID" };
+  const res = await cfetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, txnId)) }).catch(() => null);
+  const q = res?.ok ? parseAscii(await res.text()) : null;
+  if (!q) return { ok: false, error: "Converge didn't answer. Try again in a minute." };
+  const rows = await sbGet<{ id: string; status: string }>(`online_payments?select=id,status&booking_id=eq.${enc(bookingId)}&order=created_at.desc`).catch(() => []);
+  const p = rows.find((r) => invoiceFor(r.id) === (q.ssl_invoice_number || ""));
+  if (!p) return { ok: false, error: `That transaction${q.ssl_invoice_number ? ` (invoice ${q.ssl_invoice_number})` : ""} isn't one of this job's card payments` };
+  if (p.status === "approved") return { ok: true };
+  if (p.status !== "started") await sbPatch("online_payments", `id=eq.${p.id}`, { status: "started" });
+  const r = await finishOnlinePayment(p.id, txnId);
+  if (r.status !== "approved") {
+    const [now] = await sbGet<{ message: string | null }>(`online_payments?select=message&id=eq.${p.id}`).catch(() => []);
+    return { ok: false, error: `Converge doesn't show it as approved: ${now?.message ?? r.status}` };
+  }
+  return { ok: true, amount: Number(q.ssl_amount) || undefined };
+}

@@ -45,7 +45,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   const people: [string, string][] = [["both", "Both"], ["mathew", "Mathew"], ["harsh", "Harsh"], ...(["both", "mathew", "harsh"].includes(owner) ? [] : [[owner, owner[0].toUpperCase() + owner.slice(1)] as [string, string]])];
   const [doneBy, setDoneBy] = useState<string>(["both", "mathew", "harsh"].includes(owner) ? "both" : owner);
   const [notes, setNotes] = useState(""); const [custNote, setCustNote] = useState("");
-  const [pay, setPay] = useState<string>(""); const [tip, setTip] = useState("");
+  const [pay, setPay] = useState<string>(""); const [tip, setTip] = useState(""); const [txnId, setTxnId] = useState("");
   const [email, setEmail] = useState("");
 
   useEffect(() => {
@@ -116,6 +116,11 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
     const j = await post({ action: "pay", method: pay, tip: Number(tip) > 0 ? Number(tip) : 0, email: email.trim() || null });
     if (j) setResult(`Marked paid.${receiptMsg(j.receipt)}`);
   }
+  async function claim() {
+    if (!txnId.trim()) return setErr("Paste the transaction ID from Converge");
+    const j = await post({ action: "claim", txnId: txnId.trim() });
+    if (j) setResult(`Card payment found in Converge${j.amount ? ` (${money(j.amount)})` : ""} and marked paid. The receipt went out.`);
+  }
   async function sendPayLink() {
     const j = await post({ action: "paylink" });
     if (j) setResult(j.sms?.sent ? "Pay link texted. You'll get a notice when they pay." : j.sms?.status === "not_set_up" ? "Texting isn't set up yet, so the pay link wasn't sent." : j.sms?.status === "opted_out" ? "They turned texts off, so the link wasn't sent." : `The text didn't go through${j.sms?.error ? `: ${String(j.sms.error).slice(0, 140)}` : j.sms?.status ? ` (${j.sms.status})` : ""}. Check the number on their customer page.`);
@@ -171,6 +176,13 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
                   <p className="font-semibold text-[#8a5a00]">{late > 0 ? `${money(owedAfter)} owed, including ${money(late)} in late charges.` : owedAfter < shownTotal ? `${money(owedAfter)} still owed (${money(shownTotal - owedAfter)} paid).` : ctx.job!.bill_due_at ? `Bill sent, due ${new Date(ctx.job!.bill_due_at).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "short", hour: "numeric", minute: "2-digit" })}.` : "Not paid yet."} How did they pay?</p>
                   <div className="grid grid-cols-2 gap-2">{PAY.filter(([k]) => k !== "bill").map(([k, n]) => <button key={k} onClick={() => setPay(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
                   {pay && <TipBox tip={tip} setTip={setTip} total={owedAfter} />}
+                  {pay === "card_online" && (
+                    <div className="flex flex-col gap-2 rounded-lg bg-[#f4f6fa] p-2">
+                      <label className="flex flex-col gap-1 text-sm font-semibold">Converge transaction ID <span className="font-normal text-xs text-[#4a5878]">They paid by card on the link but it still shows unpaid? In Converge, open the payment and copy its Transaction ID. HQ checks it and records the right amount and tip.</span>
+                        <input id="job-txn" value={txnId} onChange={(e) => setTxnId(e.target.value)} placeholder="e.g. 071126O74-2726321D-..." autoCapitalize="characters" className={field} style={{ borderColor: LINE }} /></label>
+                      <button onClick={claim} disabled={busy || !txnId.trim()} className="h-11 rounded-lg font-bold text-sm disabled:opacity-50" style={{ background: NAVY, color: "#fff" }}>Check with Converge and mark paid</button>
+                    </div>
+                  )}
                   {ctx.customer?.phone && (
                     <button onClick={sendPayLink} disabled={busy} className="h-11 rounded-lg border font-bold text-sm disabled:opacity-60" style={{ borderColor: LINE }}>Or text them a link to pay online</button>
                   )}
