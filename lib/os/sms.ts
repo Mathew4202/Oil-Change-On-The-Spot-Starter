@@ -48,11 +48,22 @@ export async function sendSms(to: string, contentIn: string, meta: { kind: strin
         body: JSON.stringify({ content, from: e164(from), to: [phone] }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) { status = "failed"; error = `${res.status} ${JSON.stringify(body).slice(0, 200)}`; }
+      if (!res.ok) { status = "failed"; error = `${res.status} ${JSON.stringify(body).slice(0, 200)}`; if (res.status === 402) await creditsOut(); }
       else providerId = body?.data?.id ?? null;
     } catch (e) { status = "failed"; error = String(e).slice(0, 200); }
   }
   await sbInsert("messages", { customer_id: meta.customerId ?? null, booking_id: meta.bookingId ?? null, channel: "sms", direction: "out",
     kind: meta.kind, body: content, status, error, to_phone: phone, provider_id: providerId });
   return { sent: status === "sent", status, error };
+}
+
+/** Quo's texting credits ran out (402): tell the owners once a day, so texts don't quietly stop for days. */
+async function creditsOut() {
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax" });
+  const key = `quo402:${day}`;
+  const seen = await sbGet<{ type: string }>(`webhook_log?select=type&type=eq.${key}&limit=1`).catch(() => null);
+  if (!seen || seen.length) return;
+  await sbInsert("webhook_log", { type: key, body: { at: new Date().toISOString() } }).catch(() => null);
+  const { pushToOwners } = await import("@/lib/os/push");
+  await pushToOwners({ title: "Texts aren't sending: Quo credits ran out", body: "Top up the prepaid credits in Quo (Settings, Billing). Until then customers don't get reminders, bills or receipts by text.", url: "/owner/money" }).catch(() => null);
 }
