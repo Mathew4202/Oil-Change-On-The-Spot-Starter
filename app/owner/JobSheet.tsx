@@ -271,7 +271,9 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
                 <h3 className="font-extrabold text-lg mt-1">{prepaid > 0 ? (balance > 0 ? "How did they pay the rest?" : "Did they tip? Pick how") : "How did they pay?"}</h3>
                 <div className="grid grid-cols-2 gap-2">{payChoices.map(([k, n]) => <button key={k} onClick={() => setPay(pay === k ? "" : k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
                 {pay && pay !== "bill" && <TipBox tip={tip} setTip={setTip} total={prepaid > 0 || others > 0 ? balance : total} />}
-                {pay === "bill" && <p className="text-sm rounded-lg bg-[#f4f6fa] p-2">They get the receipt by email with a Pay button, and the pay link by text. They can pay by card online (once it&apos;s on) or e-transfer.</p>}
+                {pay === "bill" && <p className="text-sm rounded-lg bg-[#f4f6fa] p-2">{email.trim()
+                  ? <>They get the receipt by email with a Pay button, and the bill by text: the total, when it&apos;s due and the pay link.</>
+                  : <>No email on file, so the bill goes <strong>by text</strong> to their number: the total, when it&apos;s due and the pay link (it opens the full receipt and the e-transfer details). Add an email above to also send it by email.</>} Once they pay, the paid receipt goes out the same way.</p>}
                 {!pay && (prepaid === 0 || balance > 0) && <p className="text-sm text-[#8a5a00]">Paying later? Pick &quot;Pay later: send bill&quot; and they get the receipt with a pay link.</p>}
                 </>}
                 <label className="flex flex-col gap-1 text-sm font-semibold">Customer email (for the receipt)<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Optional" className={field} style={{ borderColor: LINE }} /></label>
