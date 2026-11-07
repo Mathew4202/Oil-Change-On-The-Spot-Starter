@@ -74,7 +74,13 @@ export async function POST(req: NextRequest) {
       if (!ctx.customer?.phone) return NextResponse.json({ error: "No phone number on file" }, { status: 400 });
       const due = Math.max(0, Math.round((Number(ctx.job.total) + Number(ctx.job.late_fee ?? 0) + Number(ctx.job.late_interest ?? 0) - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100);   // late charges included
       if (due <= 0) return NextResponse.json({ error: "Nothing left to pay" }, { status: 400 });
-      const r = await textCustomer("pay_request", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(String(ctx.job.receipt_token)) }, id);
+      const vars = { total: `$${due.toFixed(2)}`, pay_link: payLink(String(ctx.job.receipt_token)) };
+      let r = await textCustomer("pay_request", ctx.customer, vars, id);
+      if (r.status === "template_off") {   // the saved wording is missing or switched off: send the standard one
+        const { sendSms, fill } = await import("@/lib/os/sms");
+        r = await sendSms(ctx.customer.phone, fill("Hi {first_name}, thanks for having us! Your total is {total}. E-transfer preferred, or pay by card here: {pay_link}\n- Mathew, Oil Change On The Spot",
+          { first_name: ctx.customer.first_name?.trim() || "there", ...vars }), { kind: "pay_request", customerId: ctx.customer.id, bookingId: id });
+      }
       return NextResponse.json({ ok: true, sms: r });
     }
     if (body.action === "resend") {

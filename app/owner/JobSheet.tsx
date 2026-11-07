@@ -118,7 +118,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   }
   async function sendPayLink() {
     const j = await post({ action: "paylink" });
-    if (j) setResult(j.sms?.sent ? "Pay link texted. You'll get a notice when they pay." : j.sms?.status === "not_set_up" ? "Texting isn't set up yet, so the pay link wasn't sent." : j.sms?.status === "opted_out" ? "They turned texts off, so the link wasn't sent." : "The text didn't go through. Check the number.");
+    if (j) setResult(j.sms?.sent ? "Pay link texted. You'll get a notice when they pay." : j.sms?.status === "not_set_up" ? "Texting isn't set up yet, so the pay link wasn't sent." : j.sms?.status === "opted_out" ? "They turned texts off, so the link wasn't sent." : `The text didn't go through${j.sms?.error ? `: ${String(j.sms.error).slice(0, 140)}` : j.sms?.status ? ` (${j.sms.status})` : ""}. Check the number on their customer page.`);
   }
   async function resend() {
     const j = await post({ action: "resend", email: email.trim() || null, ...(custNote.trim() ? { customerNote: custNote.trim() } : {}) });
