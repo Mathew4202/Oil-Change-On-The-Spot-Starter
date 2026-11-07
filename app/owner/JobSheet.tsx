@@ -76,6 +76,8 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   const owedAfter = ctx?.job ? (g ? g.allOwed : Math.max(0, Math.round((Number(ctx.job.total) + late - (ctx.paid - Number(ctx.job.tip ?? 0))) * 100) / 100)) : 0;
   const shownTotal = ctx?.job && g ? g.allTotal : Number(ctx?.job?.total ?? 0);
   const fleetJob = ctx?.booking.pay_mode === "fleet_invoice";   // billed on the fleet's invoice
+  // Finishing with nothing picked used to send nothing at all (no bill, no receipt): make them choose
+  const needPay = !!ctx && !fleetJob && !notLastCar && !pay && balance > 0;
   const payChoices = prepaid > 0 ? PAY.filter(([k]) => k !== "card_online") : PAY;
 
   async function post(body: object) {
@@ -288,8 +290,9 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
           <div className="fixed bottom-0 inset-x-0 z-50 bg-white border-t border-[#dde3ee] p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
             <div className="max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto flex flex-col gap-2">
               {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
-              <button onClick={finish} disabled={busy} className="py-3.5 rounded-xl font-extrabold text-base disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>
-                {busy ? "Saving…" : fleetJob ? `Finish job · ${money(total)} on the invoice` : notLastCar ? `Finish this car · next: ${g!.cars.find((c) => !c.done && c.bookingId !== bookingId)?.car ?? "next car"}` : others > 0 ? (pay === "bill" ? `Finish job · send bill for ${money(balance)}` : pay ? `Finish job · ${money(balance + (Number(tip) || 0))} paid` : `Finish job · ${money(balance)}`) : prepaid > 0 ? `Finish job · ${balance > 0 ? `${money(balance)} ${pay ? "paid" : "owed"}` : "paid online"}` : pay === "bill" ? `Finish job · send bill for ${money(total)}` : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
+              {needPay && <p className="text-sm font-semibold text-[#8a5a00]" role="status">Pick how they paid, or &quot;Pay later: send bill&quot; so they get the bill.</p>}
+              <button onClick={finish} disabled={busy || needPay} className="py-3.5 rounded-xl font-extrabold text-base disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>
+                {busy ? "Saving…" : needPay ? `Pick how they paid · ${money(balance)}` : fleetJob ? `Finish job · ${money(total)} on the invoice` : notLastCar ? `Finish this car · next: ${g!.cars.find((c) => !c.done && c.bookingId !== bookingId)?.car ?? "next car"}` : others > 0 ? (pay === "bill" ? `Finish job · send bill for ${money(balance)}` : pay ? `Finish job · ${money(balance + (Number(tip) || 0))} paid` : `Finish job · ${money(balance)}`) : prepaid > 0 ? `Finish job · ${balance > 0 ? `${money(balance)} ${pay ? "paid" : "owed"}` : "paid online"}` : pay === "bill" ? `Finish job · send bill for ${money(total)}` : pay ? `Finish job · ${money(total + (Number(tip) || 0))} paid` : `Finish job · ${money(total)}`}
               </button>
               <p className="text-xs text-center text-[#4a5878]">Signed in as {owner}</p>
             </div>
