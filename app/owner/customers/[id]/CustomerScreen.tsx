@@ -317,17 +317,26 @@ function Referrals({ id, first }: { id: string; first: string }) {
   );
 }
 
-type CarRow = { id: string; name: string; year?: number | null; make?: string | null; model?: string | null; engine: string | null; vin: string | null };
-/** Fix a car: year, make, model, engine size, VIN. Saving links it to that car's oil and filter. */
+type CarSpec = { grade: string | null; litres: number | null; filter: string | null; cabin: string | null; air: string | null; wiperDriver: string | null; wiperPassenger: string | null };
+type CarRow = { id: string; name: string; year?: number | null; make?: string | null; model?: string | null; engine: string | null; vin: string | null; spec?: CarSpec | null };
+const OIL_KEYS = ["grade", "litres", "filter", "cabin", "air", "wiperDriver", "wiperPassenger"] as const;
+/** Fix a car: year, make, model, engine size, VIN, and its oil, litres, filters and wipers (saved as ours, so the next booking uses them). */
 function CarEdit({ customerId, car, onDone }: { customerId: string; car: CarRow; onDone: (saved: boolean) => void }) {
   const [f, setF] = useState({ year: car.year ? String(car.year) : "", make: car.make ?? "", model: car.model ?? "", engine: car.engine ?? "", vin: car.vin ?? "" });
+  const sp = car.spec;
+  const start = Object.fromEntries(OIL_KEYS.map((k) => [k, sp?.[k] != null ? String(sp[k]) : ""])) as Record<(typeof OIL_KEYS)[number], string>;
+  const [oil, setOil] = useState(start);
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState("");
   const field = "h-11 rounded-lg border border-[#c8d0e0] px-2 text-base w-full bg-white";
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+  const setO = (k: (typeof OIL_KEYS)[number]) => (e: React.ChangeEvent<HTMLInputElement>) => setOil({ ...oil, [k]: e.target.value });
   async function save() {
     setBusy(true); setMsg("");
+    // only send the oil part if something in it changed (only the changed boxes, so the rest stay as they are)
+    const changed = OIL_KEYS.filter((k) => oil[k].trim() !== start[k]);
+    const oilOut = changed.length ? Object.fromEntries(changed.map((k) => [k, oil[k].trim() || null])) : undefined;
     const r = await fetch("/api/owner/customers", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "car", id: customerId, carId: car.id, ...f, year: f.year ? Number(f.year) : null }) }).then((x) => x.json()).catch(() => null);
+      body: JSON.stringify({ action: "car", id: customerId, carId: car.id, ...f, year: f.year ? Number(f.year) : null, oil: oilOut }) }).then((x) => x.json()).catch(() => null);
     setBusy(false);
     if (!r?.ok) { setMsg(r?.error || "Couldn't save"); return; }
     onDone(true);
@@ -343,12 +352,26 @@ function CarEdit({ customerId, car, onDone }: { customerId: string; car: CarRow;
         <label className="text-xs font-semibold flex flex-col gap-1">Engine<input value={f.engine} onChange={set("engine")} placeholder="e.g. 2.0L" className={field} /></label>
         <label className="text-xs font-semibold flex flex-col gap-1">VIN<input value={f.vin} onChange={(e) => setF({ ...f, vin: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17) })} autoCapitalize="characters" className={`${field} font-mono`} /></label>
       </div>
+      <p className="text-xs font-extrabold uppercase tracking-wide text-[#4a5878] mt-1">Oil and parts</p>
+      <div className="grid grid-cols-3 gap-2">
+        <label className="text-xs font-semibold flex flex-col gap-1">Oil<input value={oil.grade} onChange={setO("grade")} placeholder="0W-20" autoCapitalize="characters" className={field} /></label>
+        <label className="text-xs font-semibold flex flex-col gap-1">Litres<input value={oil.litres} onChange={setO("litres")} placeholder="4.4" inputMode="decimal" className={field} /></label>
+        <label className="text-xs font-semibold flex flex-col gap-1">Oil filter<input value={oil.filter} onChange={setO("filter")} autoCapitalize="characters" className={`${field} font-mono`} /></label>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-xs font-semibold flex flex-col gap-1">Cabin filter<input value={oil.cabin} onChange={setO("cabin")} autoCapitalize="characters" className={`${field} font-mono`} /></label>
+        <label className="text-xs font-semibold flex flex-col gap-1">Air filter<input value={oil.air} onChange={setO("air")} autoCapitalize="characters" className={`${field} font-mono`} /></label>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-xs font-semibold flex flex-col gap-1">Wiper driver (in.)<input value={oil.wiperDriver} onChange={setO("wiperDriver")} placeholder="26" inputMode="numeric" className={field} /></label>
+        <label className="text-xs font-semibold flex flex-col gap-1">Wiper passenger (in.)<input value={oil.wiperPassenger} onChange={setO("wiperPassenger")} placeholder="18" inputMode="numeric" className={field} /></label>
+      </div>
       {msg && <p className="text-sm font-semibold text-[#a02020]">{msg}</p>}
       <div className="grid grid-cols-2 gap-2">
         <button onClick={() => onDone(false)} className="h-11 rounded-lg border border-[#c8d0e0] bg-white font-bold">Cancel</button>
         <button onClick={save} disabled={busy} className="h-11 rounded-lg font-extrabold disabled:opacity-60" style={{ background: "#f2b01e", color: "#0d1b3e" }}>{busy ? "Saving…" : "Save car"}</button>
       </div>
-      <p className="text-xs text-[#4a5878]">A new year, model or engine looks up that car&apos;s oil and filter for its next booking.</p>
+      <p className="text-xs text-[#4a5878]">A new year, model or engine looks up that car&apos;s oil and filter. Changing the oil or parts here saves them as ours, so every booking for this car (and cars like it) uses them.</p>
     </div>
   );
 }

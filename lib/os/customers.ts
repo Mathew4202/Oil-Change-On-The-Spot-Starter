@@ -52,6 +52,8 @@ export async function customerDetail(id: string) {
     vehicles: vehicles.map((v) => ({ id: v.id, name: [v.year, v.make, v.model].filter(Boolean).join(" ") || "Car", year: v.year, make: v.make, model: v.model, engine: v.engine, vin: v.vin, lastKm: v.last_km,
       oil: v.vehicle_specs ? [v.vehicle_specs.oil_grade, v.vehicle_specs.capacity_l ? `${v.vehicle_specs.capacity_l} L` : null].filter(Boolean).join(", ") : null,
       filter: v.vehicle_specs?.oil_filter_part ?? null,
+      spec: v.vehicle_specs ? { grade: v.vehicle_specs.oil_grade, litres: v.vehicle_specs.capacity_l, filter: v.vehicle_specs.oil_filter_part, cabin: v.vehicle_specs.cabin_filter_part ?? null,
+        air: v.vehicle_specs.air_filter_part ?? null, wiperDriver: v.vehicle_specs.wiper_driver ?? null, wiperPassenger: v.vehicle_specs.wiper_passenger ?? null } : null,
       parts: v.vehicle_specs ? [v.vehicle_specs.cabin_filter_part && `Cabin ${v.vehicle_specs.cabin_filter_part}`, v.vehicle_specs.air_filter_part && `Air ${v.vehicle_specs.air_filter_part}`,
         (v.vehicle_specs.wiper_driver || v.vehicle_specs.wiper_passenger) && `Wipers ${[v.vehicle_specs.wiper_driver, v.vehicle_specs.wiper_passenger].filter(Boolean).join(" / ")}`].filter(Boolean).join(" · ") || null : null })),
     upcoming: upcoming.map((b) => ({ id: b.id, date: day(b.starts_at), at: b.starts_at, status: b.status, total: b.quoted_total, job: b.services?.job ?? null })),

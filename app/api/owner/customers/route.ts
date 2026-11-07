@@ -1,6 +1,7 @@
 // GET ?q= → quick search (booking form) · ?list=1 → everyone with visits / spend / next due · ?id= → one customer
 // PATCH {id, ...fields} → edit · POST {action:"merge", from, into} → same person twice
 import { NextRequest, NextResponse } from "next/server";
+import { setCarOil } from "@/lib/os/spec-learn";
 import { currentOwner } from "@/lib/os/auth";
 import { sbGet, enc } from "@/lib/os/db";
 import { listCustomers, customerDetail, updateCustomer, mergeCustomers, updateCar } from "@/lib/os/customers";
@@ -60,7 +61,10 @@ export async function POST(req: NextRequest) {
   if (b.action === "car") {
     if (!UUID.test(String(b.id || "")) || !UUID.test(String(b.carId || ""))) return NextResponse.json({ error: "bad id" }, { status: 400 });
     const r = await updateCar(b.id, b.carId, b);
-    return NextResponse.json(r, { status: r.ok ? 200 : 400 });
+    if (!r.ok || !b.oil || typeof b.oil !== "object") return NextResponse.json(r, { status: r.ok ? 200 : 400 });
+    // they also changed the oil, filter or parts: save it as ours for this car (and every car like it)
+    const o = await setCarOil(b.carId, b.oil);
+    return NextResponse.json(o.ok ? { ok: true } : { ok: false, error: `Car saved, but the oil wasn't: ${o.error}` }, { status: o.ok ? 200 : 400 });
   }
   // referrals: give or take back a credit, set who referred them, text them their link
   if (["credit", "uncredit", "referredBy", "sendLink"].includes(b.action)) {

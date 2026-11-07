@@ -90,10 +90,12 @@ export const cleanGrade = (g: string) => g.trim().toUpperCase().replace(/\s+/g, 
  * Owners type in the oil, litres and filter for a car (on a booking, before the job): saved as ours, like a finished job,
  * so the bring list, the cost estimate and the job sheet use it, and every car of the same year/make/model/engine knows it.
  */
-export async function setCarOil(vehicleId: string, o: { grade?: string | null; litres?: number | string | null; filter?: string | null }) {
+export async function setCarOil(vehicleId: string, o: { grade?: string | null; litres?: number | string | null; filter?: string | null;
+  cabin?: string | null; air?: string | null; wiperDriver?: string | null; wiperPassenger?: string | null }) {
   const [v] = await sbGet<{ id: string; year: number | null; make: string | null; model: string | null; engine: string | null;
-    spec: { id: string; source: string | null; oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; oil_spec: string | null; fuel: string | null } | null }>(
-    `vehicles?select=id,year,make,model,engine,spec:vehicle_specs(id,source,oil_grade,capacity_l,oil_filter_part,oil_spec,fuel)&id=eq.${enc(vehicleId)}`);
+    spec: { id: string; source: string | null; oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; oil_spec: string | null; fuel: string | null;
+      cabin_filter_part: string | null; air_filter_part: string | null; wiper_driver: string | null; wiper_passenger: string | null } | null }>(
+    `vehicles?select=id,year,make,model,engine,spec:vehicle_specs(id,source,oil_grade,capacity_l,oil_filter_part,oil_spec,fuel,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger)&id=eq.${enc(vehicleId)}`);
   if (!v) return { ok: false as const, error: "Car not found" };
   if (!v.year || !v.make || !v.model) return { ok: false as const, error: "Add the car's year, make and model first" };
   const grade = o.grade?.trim() ? cleanGrade(o.grade) : v.spec?.oil_grade ?? null;
@@ -102,7 +104,14 @@ export async function setCarOil(vehicleId: string, o: { grade?: string | null; l
   if (!grade) return { ok: false as const, error: "Add the oil, like 0W-20" };
   if (!/^(Euro |Diesel )?\d{1,2}W-\d{1,2}$/.test(grade)) return { ok: false as const, error: "Write the oil like 0W-20 or 5W-30" };
   if (!(litres && litres > 0 && litres < 30)) return { ok: false as const, error: "Add how many litres it takes (like 4.4)" };
-  const fields = { oil_grade: grade, capacity_l: litres, oil_filter_part: filter };
+  // cabin, air and wipers: what they typed, or what the car already had (so moving to our own spec keeps them)
+  const wiper = (x: string | null | undefined) => (x ? x.replace(/[^0-9]/g, "").slice(0, 2) || null : null);
+  const keepOr = <T,>(given: string | null | undefined, clean: (x: string | null | undefined) => T, had: T) => (given === undefined ? had : clean(given));
+  const fields = { oil_grade: grade, capacity_l: litres, oil_filter_part: filter,
+    cabin_filter_part: keepOr(o.cabin, cleanFilter, v.spec?.cabin_filter_part ?? null),
+    air_filter_part: keepOr(o.air, cleanFilter, v.spec?.air_filter_part ?? null),
+    wiper_driver: keepOr(o.wiperDriver, wiper, v.spec?.wiper_driver ?? null),
+    wiper_passenger: keepOr(o.wiperPassenger, wiper, v.spec?.wiper_passenger ?? null) };
   let id: string | null = null;
   if (v.spec && (v.spec.source === "job_history" || v.spec.source === "sheet")) {
     id = v.spec.id;   // ours already: correct it (every car linked to it gets the fix)
