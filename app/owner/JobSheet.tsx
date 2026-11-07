@@ -294,6 +294,10 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
                 <label className="flex flex-col gap-1 text-sm font-semibold">Note for the customer <span className="font-normal text-xs text-[#4a5878]">Shows on their receipt</span><textarea value={custNote} onChange={(e) => setCustNote(e.target.value)} rows={2} placeholder="e.g. Front tires are getting bald, plan to replace them before winter" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>
                 <label className="flex flex-col gap-1 text-sm font-semibold">Notes for us <span className="font-normal text-xs text-[#4a5878]">Only you and Harsh see these</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Anything for next time" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>
               </section>
+              {!fleetJob && <AddCarBox bookingId={bookingId} onAdded={async () => {
+                const c = await fetch(`/api/owner/job?booking=${bookingId}`).then((r) => r.json()).catch(() => null);
+                if (c?.booking) setCtx((prev) => (prev ? { ...prev, group: c.group, booking: { ...prev.booking, group_id: c.booking.group_id } } : prev));
+              }} />}
             </>
           )}
         </div>
@@ -334,5 +338,55 @@ function TipBox({ tip, setTip, total }: { tip: string; setTip: (t: string) => vo
       {typing && <input autoFocus value={tip} onChange={(e) => setTip(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="Tip amount, e.g. 7.40" aria-label="Tip amount" className={field} style={{ borderColor: LINE }} />}
       <p className="text-sm">{t > 0 ? <>They paid <strong>{money(total + t)}</strong> in total ({money(total)} + {money(t)} tip)</> : <>They paid <strong>{money(total)}</strong></>}</p>
     </div>
+  );
+}
+
+/** On site, the customer wants another car done too: add it to this visit (one bill at the end). */
+function AddCarBox({ bookingId, onAdded }: { bookingId: string; onAdded: () => void }) {
+  const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(""); const [err, setErr] = useState("");
+  const [year, setYear] = useState(""); const [make, setMake] = useState(""); const [model, setModel] = useState(""); const [engine, setEngine] = useState("");
+  const [job, setJob] = useState("oil_change");
+  const box = "h-12 rounded-xl border px-3 text-base w-full bg-white";
+  if (!open) return (
+    <section className="flex flex-col gap-2">
+      <button onClick={() => { setOpen(true); setMsg(""); }} className="h-12 rounded-xl border-2 border-dashed font-bold" style={{ borderColor: LINE, color: NAVY }}>+ Add another car to this visit</button>
+      {msg && <p className="text-sm font-semibold text-[#1d6b3a]" role="status">{msg}</p>}
+    </section>
+  );
+  async function add() {
+    setErr("");
+    const y = Number(year);
+    if (!(y >= 1980 && y <= 2030) || !make.trim() || !model.trim()) return setErr("Add the year, make and model");
+    setBusy(true);
+    const r = await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingId, action: "addCar", car: { year: y, make: make.trim(), model: model.trim(), ...(engine.trim() ? { engine: engine.trim() } : {}), job } }) });
+    const j = await r.json().catch(() => ({})); setBusy(false);
+    if (!r.ok || !j.ok) return setErr(j.error || "Couldn't add the car");
+    setMsg(`Added ${j.car || "the car"} (${money(j.total)} with HST). It's next after this one, and it all goes on one bill.`);
+    setOpen(false); setYear(""); setMake(""); setModel(""); setEngine("");
+    onAdded();
+  }
+  return (
+    <section className="flex flex-col gap-2 rounded-xl border p-3" style={{ borderColor: LINE }}>
+      <p className="font-bold" style={{ color: NAVY }}>Another car on this visit</p>
+      <div className="grid grid-cols-3 gap-2">
+        <input id="add-year" value={year} onChange={(e) => setYear(e.target.value)} inputMode="numeric" placeholder="Year" aria-label="Year" className={box} style={{ borderColor: LINE }} />
+        <input id="add-make" value={make} onChange={(e) => setMake(e.target.value)} placeholder="Make" aria-label="Make" className={`${box} col-span-2`} style={{ borderColor: LINE }} />
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <input id="add-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model" aria-label="Model" className={`${box} col-span-2`} style={{ borderColor: LINE }} />
+        <input id="add-engine" value={engine} onChange={(e) => setEngine(e.target.value)} placeholder="2.0L" aria-label="Engine (optional)" className={box} style={{ borderColor: LINE }} />
+      </div>
+      <select id="add-job" value={job} onChange={(e) => setJob(e.target.value)} aria-label="Service" className={box} style={{ borderColor: LINE }}>
+        <option value="oil_change">Oil change</option><option value="tires">Tire change</option><option value="rotation">Tire rotation</option>
+        <option value="seasonal">Seasonal package</option><option value="diagnostic">Diagnostic</option>
+      </select>
+      <p className="text-xs text-[#4a5878]">Priced the usual way for that car, no second travel fee, and no booking text. Change the price on its job if needed.</p>
+      {err && <p className="text-sm font-semibold text-[#9b1c1c]" role="alert">{err}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={() => setOpen(false)} className="h-11 rounded-xl border font-bold" style={{ borderColor: LINE }}>Back</button>
+        <button onClick={add} disabled={busy} className="h-11 rounded-xl font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Adding…" : "Add car"}</button>
+      </div>
+    </section>
   );
 }

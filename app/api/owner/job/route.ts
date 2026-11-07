@@ -68,6 +68,14 @@ export async function POST(req: NextRequest) {
       await sbPatch("bookings", `id=eq.${id}`, { status: "done", finished_at: at, ...(ctx.booking.paid_at ? {} : { paid_at: at }) });
       return NextResponse.json({ ok: true });
     }
+    if (body.action === "addCar") {   // on site: they want another car done too
+      const A = z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1).max(40), model: z.string().trim().min(1).max(60), engine: z.string().trim().max(20).optional(),
+        job: z.enum(["oil_change", "seasonal", "parts", "diagnostic", "tires", "rotation"]).optional(), addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires", "coolant", "washer_fluid"])).max(7).optional() }).safeParse(body.car);
+      if (!A.success) return NextResponse.json({ error: "Add the car's year, make and model" }, { status: 400 });
+      const { addCarToVisit } = await import("@/lib/os/add-car");
+      const r = await addCarToVisit(id, A.data, owner);
+      return NextResponse.json(r, { status: r.ok ? 200 : 400 });
+    }
     if (body.action === "claim") {   // paid by card online, but HQ didn't hear back: check the Converge transaction ID
       const r = await claimByTxn(id, String(body.txnId || ""));
       return NextResponse.json(r, { status: r.ok ? 200 : 400 });
