@@ -14,7 +14,7 @@ export function dueNudge(h: NudgeHold, now: Date, sent: number[], halifaxHour: n
   const age = t - new Date(h.created_at).getTime();
   if (age > 3 * 60 * MIN) return null;                                // an old hold: don't text out of nowhere
   if (halifaxHour < 8 || halifaxHour >= 21) return null;              // no texts at night
-  const n = age >= 60 * MIN ? 2 : age >= 30 * MIN ? 1 : null;
+  const n = age >= 30 * MIN ? 1 : null;   // one reminder only (the 1-hour one was dropped to save texts)
   if (!n || sent.includes(n)) return null;
   return n;
 }

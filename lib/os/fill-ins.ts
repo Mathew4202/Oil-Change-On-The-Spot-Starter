@@ -68,15 +68,11 @@ export async function fillSlowDay(date: string, today: string) {
   let texted = 0;
   for (const id of chosen) {
     const j = byCustomer.get(id)!, c = j.customers!, v = j.vehicles;
-    const q = new URLSearchParams({ date });
-    if (v?.year && v.make) { q.set("year", String(v.year)); q.set("make", v.make); if (v.model) q.set("model", v.model); }
-    if (v?.engine) q.set("engine", v.engine);
-    const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim(); if (name) q.set("name", name);
-    if (c.address) q.set("address", c.address); if (c.email) q.set("email", c.email);
-    q.set("phone", c.phone!.replace(/^\+1/, ""));
+    // short link (opens the booking page with their details filled in): keeps the text to 1 or 2 segments on Quo
+    const link = `${siteUrl()}/f/${id.slice(0, 8)}${date.slice(2).replace(/-/g, "")}`;
     const area = areaOf(c.address);
     const r = await sendSms(c.phone!, fill(body, { first_name: c.first_name?.trim() || "there", area: /^(Other|No address)/.test(area) ? "your area" : area, day: dayName,
-      car: [v?.make, v?.model].filter(Boolean).join(" ") || "car", times: list, link: `${siteUrl()}/booking?${q}` }), { kind: "fill_in", customerId: id });
+      car: [v?.make, v?.model].filter(Boolean).join(" ") || "car", times: list, link }), { kind: "fill_in", customerId: id });
     if (r.sent) texted++;
   }
   return { texted, asked: chosen.length, open: open.length };

@@ -7,11 +7,11 @@ const ago = (m: number) => new Date(now.getTime() - m * 60000).toISOString();
 const later = (m: number) => new Date(now.getTime() + m * 60000).toISOString();
 const hold = (createdMinAgo: number, extra: object = {}) => ({ status: "held", booking_id: null, starts_at: later(120), expires_at: later(60), created_at: ago(createdMinAgo), ...extra });
 
-test("30 minutes after the hold, then 1 hour after, each once", () => {
+test("one reminder, 30 minutes after the hold", () => {
   assert.equal(dueNudge(hold(10), now, [], 11), null);
   assert.equal(dueNudge(hold(31), now, [], 11), 1);
   assert.equal(dueNudge(hold(45), now, [1], 11), null);
-  assert.equal(dueNudge(hold(61), now, [1], 11), 2);
+  assert.equal(dueNudge(hold(61), now, [1], 11), null);           // only one reminder now
   assert.equal(dueNudge(hold(70), now, [1, 2], 11), null);
 });
 
