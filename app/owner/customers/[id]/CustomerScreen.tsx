@@ -1,7 +1,7 @@
 "use client";
 // One customer: call / text / book, when their next oil change is due, their cars, every job, texts, and their details.
 import { useCallback, useEffect, useState } from "react";
-import { quoText } from "@/lib/os/quo-link";
+import { quoText, quoCall } from "@/lib/os/quo-link";
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
@@ -50,7 +50,7 @@ export default function CustomerScreen({ id }: { id: string }) {
   return (
     <Shell title={c.name} sub={`Customer since ${nice(c.since)}`}>
       <div className="grid grid-cols-4 gap-2">
-        {c.phone ? <a href={`tel:${c.phone}`} className={btn} style={{ borderColor: LINE }}>Call</a> : <span className={`${btn} opacity-40`} style={{ borderColor: LINE }}>Call</span>}
+        {c.phone ? <a href={quoCall(c.phone)} className={btn} style={{ borderColor: LINE }}>Call</a> : <span className={`${btn} opacity-40`} style={{ borderColor: LINE }}>Call</span>}
         {c.phone ? <a href={quoText(c.phone)} className={btn} style={{ borderColor: LINE }}>Text</a> : <span className={`${btn} opacity-40`} style={{ borderColor: LINE }}>Text</span>}
         {c.address ? <a href={`https://maps.google.com/?q=${encodeURIComponent(c.address)}`} target="_blank" rel="noreferrer" className={btn} style={{ borderColor: LINE }}>Map</a>
           : <span className={`${btn} opacity-40`} style={{ borderColor: LINE }}>Map</span>}

@@ -4,7 +4,7 @@ import { PHONE, PHONE_TEL, EMAIL, NAVY, GOLD } from "@/components/site/brand";
 
 export const metadata = { title: "Contact", description: "Call, text or email Oil Change On The Spot, or book online any time." };
 
-const SOCIALS: [string, string][] = [["Instagram", "https://www.instagram.com/oilchangeonthespot"], ["Facebook", "https://www.facebook.com/share/1ErPmq1186/?mibextid=wwXlfr"],
+const SOCIALS: [string, string][] = [["Instagram", "https://www.instagram.com/oilchangeonthespot_limited"], ["Facebook", "https://www.facebook.com/share/1ErPmq1186/?mibextid=wwXlfr"],
   ["TikTok", "https://www.tiktok.com/@oilchangeonthespot"], ["Google Maps", "https://google.com/maps?cid=877823960605999310"]];
 
 export default function Contact() {

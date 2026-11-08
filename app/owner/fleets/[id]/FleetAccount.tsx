@@ -1,6 +1,7 @@
 "use client";
 // One fleet: its vehicles (unit numbers, agreed prices, when each is due), booking a yard visit, and invoices.
 import { useEffect, useMemo, useState } from "react";
+import { quoCall } from "@/lib/os/quo-link";
 import Link from "next/link";
 import type { Route } from "next";
 import OwnerNav from "../../OwnerNav";
@@ -116,7 +117,7 @@ export default function FleetAccount({ id }: { id: string }) {
 
         {a && (edit ? <AccountForm start={a} onCancel={() => setEdit(false)} onDone={() => { setEdit(false); load(); }} /> : (
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-1 text-[15px]">
-            {a.phone && <p><a href={`tel:${a.phone}`} className="font-bold underline">{a.phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3")}</a>{a.email ? ` · ${a.email}` : ""}</p>}
+            {a.phone && <p><a href={quoCall(a.phone)} className="font-bold underline">{a.phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3")}</a>{a.email ? ` · ${a.email}` : ""}</p>}
             {a.address ? <p style={{ color: MUTED }}>{a.address}</p> : <p className="text-[#8a5a00] font-semibold">Add the yard address before booking.</p>}
             {a.invoice_email && <p style={{ color: MUTED }}>Invoices to {a.invoice_email}</p>}
             <p style={{ color: MUTED }}>Service every {a.service_every_months} months · pay within {a.terms_days} days</p>

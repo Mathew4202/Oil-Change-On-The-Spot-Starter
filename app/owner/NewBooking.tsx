@@ -14,6 +14,10 @@ const NAVY = "#0d1b3e", GOLD = "#f2b01e";
 export type Vehicle = { id: string; year: number | null; make: string | null; model: string | null; engine: string | null };
 export type Customer = { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; address: string | null; vehicles: Vehicle[] };
 type Slot = { time: string; label: string; start: string };
+/** What we heard on a call (Quo's summary, read by HQ), so "Book this person" opens the form already filled in. */
+export type CallPreset = { callId: string; customerId?: string | null; name?: string | null; lastName?: string | null; phone?: string | null; email?: string | null; address?: string | null;
+  year?: number | null; make?: string | null; model?: string | null; engine?: string | null; job?: string | null; cars?: number; addons?: string[]; notes?: string | null; problem?: string | null;
+  start?: string | null; date?: string | null; time?: string | null; summary?: string[] | null };
 type Quote = { lines: { label: string; amount: number }[]; subtotal: number; total: number; spec: HqSpec | null; engines?: string[]; error?: string };
 
 const field = "h-12 rounded-xl border border-[#c8d0e0] px-3 text-base w-full bg-white";
@@ -32,13 +36,14 @@ function halifaxIso(date: string, hhmm: string) {
   return new Date(guess.getTime() - off(new Date(guess.getTime() - off(guess) * 60000)) * 60000).toISOString();
 }
 
-export default function NewBooking({ date: initialDate, onClose, customer: preset }: { date: string; onClose: (bookedDate?: string) => void; customer?: Customer }) {
+export default function NewBooking({ date: initialDate, onClose, customer: preset, fromCall }: { date: string; onClose: (bookedDate?: string) => void; customer?: Customer; fromCall?: CallPreset }) {
   // Customer
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Customer[]>([]);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [first, setFirst] = useState(""); const [last, setLast] = useState("");
-  const [phone, setPhone] = useState(""); const [address, setAddress] = useState("");
+  const [phone, setPhone] = useState(""); const [address, setAddress] = useState(""); const [email, setEmail] = useState("");
+  const [wantStart, setWantStart] = useState<{ start: string | null; time: string | null; day: string | null } | null>(null);   // the time they asked for on the call
   const [place, setPlace] = useState<Place | null>(null);
   // Car
   const [vehicleId, setVehicleId] = useState<string>("new");
@@ -77,6 +82,41 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
   // opened from a customer's page: start with them picked
   useEffect(() => { if (preset) pick(preset); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // opened from a call ("Book this person"): fill in everything we heard, then they check it and fill the rest
+  useEffect(() => {
+    const x = fromCall; if (!x) return;
+    (async () => {
+      const digits = (x.phone || "").replace(/\D/g, "").slice(-10);
+      let found: Customer | null = null;
+      if (x.customerId) found = (await fetch(`/api/owner/customers?id=${x.customerId}&brief=1`).then((r) => r.json()).catch(() => null))?.customer ?? null;
+      if (!found && digits.length === 10) {
+        const list: Customer[] = (await fetch(`/api/owner/customers?q=${digits}`).then((r) => r.json()).catch(() => null))?.customers ?? [];
+        found = list.find((c) => (c.phone || "").replace(/\D/g, "").slice(-10) === digits) ?? null;
+      }
+      if (found) {
+        pick(found);
+        if (!found.address && x.address) setAddress(x.address);
+        if (!found.email && x.email) setEmail(x.email);
+      } else {
+        setFirst(x.name || ""); setLast(x.lastName || ""); setPhone(x.phone || ""); setAddress(x.address || ""); setEmail(x.email || "");
+      }
+      // the car they talked about: one they already have with us, or a new one
+      if (x.make && x.model) {
+        const same = found?.vehicles?.find((v) => (v.make || "").toLowerCase() === x.make!.toLowerCase() && (v.model || "").toLowerCase() === x.model!.toLowerCase() && (!x.year || v.year === x.year));
+        if (same) chooseVehicle(same);
+        else { setVehicleId("new"); setYear(x.year ? String(x.year) : ""); setMake(x.make); setModel(x.model); setEngine(x.engine || ""); }
+      }
+      if (x.job && ["oil_change", "seasonal", "parts", "diagnostic", "tires", "rotation"].includes(x.job)) setJob(x.job as JobKind);
+      if (x.cars && x.cars > 1) setCars(Math.min(4, x.cars));
+      if (x.addons?.length) setAddons(x.addons.filter((a) => ADDONS.some(([k]) => k === a)));
+      const note = [x.problem ? `Problem: ${x.problem}` : null, x.notes].filter(Boolean).join(" · ");
+      if (note) setNotes(note);
+      const day = x.start ? new Date(x.start).toLocaleDateString("en-CA", { timeZone: "America/Halifax" }) : x.date;
+      if (day) setDate(day);
+      if (x.start || x.time) setWantStart({ start: x.start ?? null, time: x.time ?? null, day: day ?? null });
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function pick(c: Customer) {
     setCustomer(c); setResults([]);
     setFirst(c.first_name || ""); setLast(c.last_name || ""); setPhone(c.phone || ""); setAddress(c.address || "");
@@ -95,6 +135,13 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
     fetch(`/api/os/services?date=${date}`).then((r) => r.json()).then((d) => setSeason(d.season)).catch(() => setSeason(null));
     fetch(`/api/os/slots?date=${date}&cars=${cars}&job=${job}&addons=${job === "oil_change" && addons.includes("tires") ? "tires" : ""}${more.length ? `&more=${more.map((x) => `${x.job}:${extraAddons(x).join("+")}`).join(",")}` : ""}`).then((r) => r.json()).then((d) => setSlots(d.slots || [])).catch(() => setSlots([]));
   }, [date, cars, job, addons, more.map((x) => `${x.job}:${x.addons.join("+")}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the time from the call: tap it for them once the open times load (if it's still open)
+  useEffect(() => {
+    if (!wantStart || !slots) return;
+    const s = slots.find((x) => (wantStart.start ? new Date(x.start).getTime() === new Date(wantStart.start).getTime() : x.time === wantStart.time && date === wantStart.day));
+    if (s) { setTime(s.time); setWantStart(null); }
+  }, [slots]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live price
   const carReady = /^\d{4}$/.test(year) && make.trim() && model.trim();
@@ -133,7 +180,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
     const r = await fetch("/api/owner/book", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(), ...(place?.placeId ? { placeId: place.placeId } : {}),
+        firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(), ...(email.trim() ? { email: email.trim() } : {}), ...(place?.placeId ? { placeId: place.placeId } : {}),
         car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() && engine !== "unsure" ? { engine: engine.trim() } : {}) },
         job, addons: keepAddons(job, addons), own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined, ...(referredBy.trim() ? { referredBy: referredBy.trim().slice(0, 80) } : {}),
         priceOverride: special.trim() ? Number(special) : null,
@@ -145,6 +192,8 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
     const j = await r.json();
     setBusy(false);
     if (!r.ok) return setErr(j.error || "Couldn't save the booking");
+    // booked from a call: that call is handled, take it off the list
+    if (fromCall?.callId) await fetch("/api/owner/calls", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: fromCall.callId, action: "done" }) }).catch(() => null);
     onClose(j.date);
   }
 
@@ -154,11 +203,17 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
     <div className="fixed inset-0 z-40 bg-black/40 flex justify-center" onClick={() => onClose()}>
       <div className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl h-full bg-[#eef1f6] flex flex-col" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="New booking">
         <div className="flex items-center justify-between p-4 text-white pt-[max(16px,env(safe-area-inset-top))]" style={{ background: NAVY }}>
-          <h2 className="text-2xl font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>New booking</h2>
+          <h2 className="text-2xl font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>{fromCall ? "Book this person" : "New booking"}</h2>
           <button onClick={() => onClose()} className="h-10 px-3 rounded-lg border border-[#3b4d7a] font-bold text-sm">Cancel</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-32">
+          {fromCall && (
+            <div className="rounded-2xl p-3 text-[15px] leading-snug border" style={{ background: "#fff6dd", borderColor: GOLD }}>
+              <strong>Filled in from the call.</strong> Check each part and add anything it didn&apos;t catch (address, car, time).
+              {fromCall.summary?.length ? <p className="text-[14px] text-[#4a5878] mt-1">{fromCall.summary.join(" ")}</p> : null}
+            </div>
+          )}
           {/* 1. Customer */}
           <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
             <h3 className="font-extrabold text-lg">1. Customer</h3>

@@ -1,6 +1,7 @@
 "use client";
 // Maintenance plans: send terms, see who agreed, visits used, and monthly payments owing.
 import { useEffect, useState } from "react";
+import { quoCall } from "@/lib/os/quo-link";
 import Link from "next/link";
 import type { Route } from "next";
 import OwnerNav from "../OwnerNav";
@@ -71,7 +72,7 @@ export default function PlansScreen() {
             <h2 className="font-extrabold text-lg">Asked on the website</h2>
             {d.requests.map((r) => (
               <div key={r.id} className="bg-white rounded-2xl p-4 flex flex-col gap-2 border-2" style={{ borderColor: GOLD }}>
-                <p className="font-bold text-[17px]">{r.customer_name} · <a href={`tel:${r.phone}`} className="underline">{fmt(r.phone)}</a></p>
+                <p className="font-bold text-[17px]">{r.customer_name} · <a href={quoCall(r.phone)} className="underline">{fmt(r.phone)}</a></p>
                 <p className="text-[15px]">{r.car} · {r.visits} oil changes{r.swaps ? ` + ${r.swaps} swaps` : ""} · <strong>{money(r.monthly)}/month + HST</strong></p>
                 <div className="flex flex-wrap gap-2">
                   <button disabled={busy} onClick={() => post({ action: "offer", requestId: r.id }, `Terms texted to ${r.customer_name}. The plan starts when they reply I AGREE.`)} className="h-11 px-3 rounded-lg font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Text them the terms</button>

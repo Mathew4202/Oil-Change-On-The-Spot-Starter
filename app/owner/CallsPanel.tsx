@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { useRole } from "./RoleContext";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
-type X = { name: string | null; year: number | null; make: string | null; model: string | null; job: string | null; cars: number; notes: string | null; wantsBooking: boolean } | null;
+type X = { name: string | null; lastName?: string | null; address?: string | null; email?: string | null; addons?: string[]; problem?: string | null; engine?: string | null;
+  date?: string | null; time?: string | null; year: number | null; make: string | null; model: string | null; job: string | null; cars: number; notes: string | null; wantsBooking: boolean } | null;
 export type Call = { id: string; phone: string | null; status: string | null; at: string; summary: string[] | null; extract: X; suggested: string | null; suggestedText: string | null; wanted?: string | null;
   channel?: string; texts?: { at: string; from: "them" | "us"; body: string; by?: string | null }[];
-  booked?: { at: string; car: string; id: string; text: string } | null };   // they already have a visit with us
+  booked?: { at: string; car: string; id: string; text: string } | null; customerId?: string | null };   // they already have a visit with us
 // quick replies, signed like every customer text
 const QUICK = [
   ["On a job", "Hi, thanks for your message! We're on a job right now, we'll get back to you shortly.\n- {signer}, Oil Change On The Spot"],
@@ -18,7 +19,7 @@ const JOB: Record<string, string> = { oil_change: "Oil change", seasonal: "Seaso
 const fmt = (p: string | null) => p?.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3") ?? "Unknown number";
 const time = (iso: string) => new Date(iso).toLocaleTimeString("en-CA", { timeZone: "America/Halifax", hour: "numeric", minute: "2-digit" }).replace(/\./g, "");
 
-export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: string | null; onChanged: () => void; onPickTime: (c: Call) => void }) {
+export default function CallsPanel({ focus, onChanged, onPickTime, onBook }: { focus?: string | null; onChanged: () => void; onPickTime: (c: Call) => void; onBook?: (c: Call) => void }) {
   const { name } = useRole();
   const me = name ? name.charAt(0).toUpperCase() + name.slice(1) : "Mathew";   // quick replies are signed by whoever is signed in
   const [calls, setCalls] = useState<Call[]>([]); const [busy, setBusy] = useState<string | null>(null); const [msg, setMsg] = useState<Record<string, string>>({});
@@ -80,10 +81,12 @@ export default function CallsPanel({ focus, onChanged, onPickTime }: { focus?: s
                 <a href={`/owner?date=${bookedDay}`} className="h-11 px-3 rounded-lg border font-bold text-sm bg-white flex items-center no-underline text-[#0d1b3e]" style={{ borderColor: LINE }}>See their booking</a>
               </> : c.suggested ? <>
                 <button disabled={busy === c.id} onClick={() => act(c, "hold")} className="h-11 px-3 rounded-lg font-extrabold text-[15px] disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Hold {c.suggestedText} + text link</button>
+                {onBook && <button disabled={busy === c.id} onClick={() => onBook(c)} className="h-11 px-3 rounded-lg font-extrabold text-[15px] text-white disabled:opacity-60" style={{ background: NAVY }}>Book this person</button>}
                 <button disabled={busy === c.id} onClick={() => act(c, "link")} className="h-11 px-3 rounded-lg border font-bold text-sm bg-white" style={{ borderColor: LINE }}>Text the booking link instead</button>
               </> : <>
                 <button disabled={busy === c.id} onClick={() => act(c, "link")} className="h-11 px-3 rounded-lg font-extrabold text-[15px] disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>Text the booking link{x ? " (filled in)" : ""}</button>
                 <button disabled={busy === c.id} onClick={() => onPickTime(c)} className="h-11 px-3 rounded-lg border font-bold text-sm bg-white" style={{ borderColor: LINE }}>Hold a time</button>
+                {onBook && <button disabled={busy === c.id} onClick={() => onBook(c)} className="h-11 px-3 rounded-lg font-extrabold text-[15px] text-white disabled:opacity-60" style={{ background: NAVY }}>Book this person</button>}
               </>}
               <button disabled={busy === c.id} onClick={() => act(c, "done")} className="h-11 px-3 rounded-lg font-bold text-sm text-[#4a5878] underline">Done</button>
             </div>

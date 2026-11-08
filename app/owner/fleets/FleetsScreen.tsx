@@ -1,6 +1,7 @@
 "use client";
 // Fleets: every fleet account with what needs doing, plus fleet pricing requests from the website.
 import { useEffect, useState } from "react";
+import { quoCall } from "@/lib/os/quo-link";
 import Link from "next/link";
 import type { Route } from "next";
 import OwnerNav from "../OwnerNav";
@@ -43,7 +44,7 @@ export default function FleetsScreen() {
                   <p className="font-bold text-[17px]">{r.company}</p>
                   <span className="text-xs font-bold rounded-full px-2 py-1 self-start capitalize" style={{ background: "#eef1f6" }}>{r.status}</span>
                 </div>
-                <p className="text-[15px]">{r.contact_name} · <a href={`tel:${r.phone}`} className="font-semibold underline">{r.phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3")}</a>{r.email ? ` · ${r.email}` : ""}</p>
+                <p className="text-[15px]">{r.contact_name} · <a href={quoCall(r.phone)} className="font-semibold underline">{r.phone.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3")}</a>{r.email ? ` · ${r.email}` : ""}</p>
                 <p className="text-sm" style={{ color: MUTED }}>{[r.vehicles ? `${r.vehicles} vehicles` : null, r.vehicle_types, r.services.length ? `Wants: ${r.services.join(", ")}` : null, r.address].filter(Boolean).join(" · ")}</p>
                 {r.notes && <p className="text-sm" style={{ color: MUTED }}>&ldquo;{r.notes}&rdquo;</p>}
                 <div className="flex flex-wrap gap-2">

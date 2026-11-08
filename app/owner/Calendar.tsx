@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { quoText } from "@/lib/os/quo-link";
-import NewBooking, { type Customer as BookCustomer } from "./NewBooking";
+import { quoText, quoCall } from "@/lib/os/quo-link";
+import NewBooking, { type Customer as BookCustomer, type CallPreset } from "./NewBooking";
 import PushToggle from "./PushToggle";
 import Tour from "./Tour";
 import JobSheet from "./JobSheet";
@@ -65,6 +65,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
   const [blocking, setBlocking] = useState(false);
   const [holding, setHolding] = useState(false);
   const [holdPreset, setHoldPreset] = useState<HoldPreset | undefined>(undefined);
+  const [callBook, setCallBook] = useState<CallPreset | null>(null);   // "Book this person" from a call
   const [callFocus, setCallFocus] = useState<string | null>(null);
   const [callsKey, setCallsKey] = useState(0);
   useEffect(() => { const c = new URLSearchParams(window.location.search).get("call"); if (c) setCallFocus(c); }, []);
@@ -179,6 +180,9 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
 
       <div className="flex-1 p-4 flex flex-col gap-3 pb-28">
         {can.calls && <CallsPanel key={callsKey} focus={callFocus} onChanged={() => load(date)}
+          onBook={(c) => { const x = c.extract; setCallBook({ callId: c.id, customerId: c.customerId ?? null, phone: c.phone, start: c.suggested, summary: c.summary,
+            ...(x ? { name: x.name, lastName: x.lastName, email: x.email, address: x.address, year: x.year, make: x.make, model: x.model, engine: x.engine, job: x.job, cars: x.cars,
+              addons: x.addons, notes: x.notes, problem: x.problem, date: x.date, time: x.time } : {}) }); }}
           onPickTime={(c) => { setHoldPreset({ callId: c.id, name: c.extract?.name, phone: c.phone, job: c.extract?.job, cars: c.extract?.cars,
             note: c.extract ? [[c.extract.year, c.extract.make, c.extract.model].filter(Boolean).join(" "), c.extract.notes].filter(Boolean).join(" · ") : null }); setHolding(true); }} />}
         {error && <p className="rounded-xl bg-red-50 text-red-800 p-3 text-sm" role="alert">{error}</p>}
@@ -335,7 +339,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
               <div data-tour="job-buttons" className="grid grid-cols-3 gap-2">
                 <a href={j.address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}` : undefined}
                   className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.address}>Directions</a>
-                <a href={j.phone ? `tel:${j.phone}` : undefined} className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.phone}>Call</a>
+                <a href={j.phone ? quoCall(j.phone) : undefined} className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.phone}>Call</a>
                 <a href={j.phone ? quoText(j.phone) : undefined} className="h-11 rounded-lg flex items-center justify-center font-bold text-sm text-white aria-disabled:opacity-40" style={{ background: NAVY }} aria-disabled={!j.phone}>Text</a>
               </div>
               {can.jobs && (
@@ -410,6 +414,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
         onClose={(nd) => { setChanging(null); if (nd === undefined) return; if (nd && nd !== date) setDate(nd); else load(date); loadAlerts(); }} />}
       {jobOpen && <JobSheet bookingId={jobOpen} owner={owner} onClose={(changed) => { setJobOpen(null); if (changed) load(date); }} />}
 
+      {callBook && <NewBooking date={date} fromCall={callBook} onClose={(d) => { setCallBook(null); setCallsKey((k) => k + 1); if (d) { if (d === date) load(date); else setDate(d); loadAlerts(); } }} />}
       {holding && <HoldTime date={date} preset={holdPreset} onClose={(saved) => { setHolding(false); setHoldPreset(undefined); if (saved) { load(date); setCallsKey((k) => k + 1); } }} />}
       {blocking && <BlockTime date={date} onClose={(saved) => { setBlocking(false); if (saved) load(date); }} />}
     </div>
