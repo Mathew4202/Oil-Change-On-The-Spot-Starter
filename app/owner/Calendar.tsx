@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { quoText } from "@/lib/os/quo-link";
 import NewBooking, { type Customer as BookCustomer } from "./NewBooking";
 import PushToggle from "./PushToggle";
 import Tour from "./Tour";
@@ -335,7 +336,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 <a href={j.address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(j.address)}` : undefined}
                   className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.address}>Directions</a>
                 <a href={j.phone ? `tel:${j.phone}` : undefined} className="h-11 rounded-lg border border-[#c8d0e0] flex items-center justify-center font-bold text-sm aria-disabled:opacity-40" aria-disabled={!j.phone}>Call</a>
-                <a href={j.phone ? `sms:${j.phone}` : undefined} className="h-11 rounded-lg flex items-center justify-center font-bold text-sm text-white aria-disabled:opacity-40" style={{ background: NAVY }} aria-disabled={!j.phone}>Text</a>
+                <a href={j.phone ? quoText(j.phone) : undefined} className="h-11 rounded-lg flex items-center justify-center font-bold text-sm text-white aria-disabled:opacity-40" style={{ background: NAVY }} aria-disabled={!j.phone}>Text</a>
               </div>
               {can.jobs && (
                 j.status === "confirmed" || j.status === "requested" ? (
