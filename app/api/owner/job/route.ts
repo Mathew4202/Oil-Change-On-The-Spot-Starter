@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { currentOwner } from "@/lib/os/auth";
 import { sbPatch } from "@/lib/os/db";
-import { jobContext, startJob, finishJob, recordPayment, sendReceipt, setCustomerNote, payVisit, reviewIfDue } from "@/lib/os/jobs";
+import { jobContext, startJob, finishJob, recordPayment, sendReceipt, setCustomerNote, payVisit, reviewIfDue, editPayment } from "@/lib/os/jobs";
+const PayMethod = z.enum(["card_terminal", "cash", "etransfer", "card_online"]);
 import { payReady, claimByTxn } from "@/lib/os/payments";
 import { payLink, textCustomer } from "@/lib/os/customer-texts";
 
@@ -60,6 +61,12 @@ export async function POST(req: NextRequest) {
       const receipt = body.sendReceipt === false ? null : await sendReceipt(String(ctx.job.id), body.email || null);
       await reviewIfDue(id).catch(() => null);   // receipt first, then the thank-you
       return NextResponse.json({ ok: true, receipt });
+    }
+    if (body.action === "fixPay") {   // wrong tip or payment type on a paid job
+      const m = body.method == null ? null : PayMethod.safeParse(body.method);
+      if (m && !m.success) return NextResponse.json({ error: "Pick how they paid" }, { status: 400 });
+      const r = await editPayment(id, { tip: body.tip == null ? null : Number(body.tip), method: m?.success ? m.data : null }, owner);
+      return NextResponse.json(r, { status: r.ok ? 200 : 400 });
     }
     if (body.action === "close") {   // job already logged in the sheet: just close the booking
       const ctx = await jobContext(id);

@@ -264,6 +264,28 @@ export async function recordPayment(bookingId: string, amount: number, method: s
   if (!opts.noReview && (j as { bill_sent_at?: string | null } | undefined)?.bill_sent_at) await reviewIfDue(bookingId).catch(() => null);
 }
 
+/** Fix a payment already marked: the tip and/or how they paid. Moves the difference onto the last payment for that car,
+ *  so Money (sales, tips) and the receipt follow. Doesn't touch the job's price (that's Edit price). */
+export async function editPayment(bookingId: string, change: { tip?: number | null; method?: string | null }, owner: string) {
+  const [j] = await sbGet<{ id: string; subtotal: number | null; tip: number | null; late_fee?: number | null; late_interest?: number | null; payment_method: string | null }>(
+    `jobs?select=*&booking_id=eq.${enc(bookingId)}&limit=1`);
+  if (!j) return { ok: false as const, error: "No finished job for this booking" };
+  const pays = await sbGet<{ id: string; amount: number; method: string | null; processor_ref: string | null; paid_at: string }>(
+    `payments?select=id,amount,method,processor_ref,paid_at&booking_id=eq.${enc(bookingId)}&order=paid_at.desc`);
+  if (!pays.length) return { ok: false as const, error: "It isn't marked paid yet. Use Mark paid instead." };
+  const oldTip = r2(Number(j.tip ?? 0));
+  const tip = change.tip == null ? oldTip : r2(Math.min(1000, Math.max(0, Number(change.tip) || 0)));
+  const method = change.method || j.payment_method || pays[0].method;
+  const diff = r2(tip - oldTip);
+  const last = pays[0];
+  if (r2(Number(last.amount) + diff) < 0) return { ok: false as const, error: "That would take the payment below $0" };
+  const note = `${last.processor_ref ? `${last.processor_ref}; ` : ""}fixed by ${owner}: tip $${oldTip.toFixed(2)} → $${tip.toFixed(2)}${method !== last.method ? `, ${last.method ?? "?"} → ${method}` : ""}`.slice(0, 500);
+  if (!(await sbPatch("payments", `id=eq.${last.id}`, { amount: r2(Number(last.amount) + diff), method, processor_ref: note }))) return { ok: false as const, error: "Couldn't save the payment" };
+  const late = Number(j.late_fee ?? 0) + Number(j.late_interest ?? 0);
+  await sbPatch("jobs", `id=eq.${j.id}`, { tip, payment_method: method, ...(j.subtotal != null ? { revenue: r2(Number(j.subtotal) + tip + late) } : {}) });
+  return { ok: true as const, tip, method, oldTip };
+}
+
 /** Pay everything still owed on a visit (every car), the same way. The tip goes on the car you're looking at. */
 export async function payVisit(bookingId: string, method: string, owner: string, tip = 0, opts: { noReview?: boolean } = {}) {
   const visit = await visitGroup(bookingId);

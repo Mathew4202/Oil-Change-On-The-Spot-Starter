@@ -45,7 +45,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   const people: [string, string][] = [["both", "Both"], ["mathew", "Mathew"], ["harsh", "Harsh"], ...(["both", "mathew", "harsh"].includes(owner) ? [] : [[owner, owner[0].toUpperCase() + owner.slice(1)] as [string, string]])];
   const [doneBy, setDoneBy] = useState<string>(["both", "mathew", "harsh"].includes(owner) ? "both" : owner);
   const [notes, setNotes] = useState(""); const [custNote, setCustNote] = useState("");
-  const [pay, setPay] = useState<string>(""); const [tip, setTip] = useState(""); const [txnId, setTxnId] = useState("");
+  const [pay, setPay] = useState<string>(""); const [tip, setTip] = useState(""); const [fixing, setFixing] = useState(false); const [txnId, setTxnId] = useState("");
   const [email, setEmail] = useState("");
   const [loaded, setLoaded] = useState(false); const [restored, setRestored] = useState(false);
 
@@ -206,6 +206,23 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
                   )}
                 </>
               )}
+              {!fleetJob && owedAfter <= 0 && ctx.paid > 0 && !ctx.job!.imported_from && (fixing ? (
+                <div className="flex flex-col gap-2 rounded-xl border-2 p-3" style={{ borderColor: NAVY }}>
+                  <p className="font-bold">Fix the payment</p>
+                  <div className="grid grid-cols-2 gap-2">{PAY.filter(([k]) => k !== "bill").map(([k, n]) => <button key={k} type="button" onClick={() => setPay(k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
+                  <TipBox tip={tip} setTip={setTip} total={shownTotal} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setFixing(false)} className="h-11 rounded-lg border font-bold bg-white" style={{ borderColor: LINE }}>Cancel</button>
+                    <button type="button" disabled={busy} onClick={async () => {
+                      const j = await post({ action: "fixPay", method: pay || null, tip: Number(tip) || 0 });
+                      if (j) { setFixing(false); setResult(`Payment fixed. Tip ${money(j.oldTip)} → ${money(j.tip)}, paid by ${PAY.find(([k]) => k === j.method)?.[1] ?? j.method}. Money and the receipt now show this. Open the job again and tap "Send receipt again" if they should get the fixed one.`); }
+                    }} className="h-11 rounded-lg font-extrabold disabled:opacity-60" style={{ background: GOLD, color: NAVY }}>{busy ? "Saving…" : "Save"}</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" onClick={() => { setPay(ctx.job!.payment_method || ""); setTip(Number(ctx.job!.tip ?? 0) > 0 ? String(Number(ctx.job!.tip)) : ""); setFixing(true); }}
+                  className="self-start h-10 px-3 rounded-lg border font-bold text-sm" style={{ borderColor: LINE }}>Fix payment (tip or how they paid){Number(ctx.job!.tip ?? 0) > 0 ? ` · tip ${money(Number(ctx.job!.tip))}` : ""}</button>
+              ))}
               {!fleetJob && owedAfter <= 0 && <label className="flex flex-col gap-1 text-sm font-semibold">Note for the customer <span className="font-normal text-xs text-[#4a5878]">Added to their receipt when you send it again</span>
                 <textarea value={custNote} onChange={(e) => setCustNote(e.target.value)} rows={2} placeholder="e.g. Front tires are getting bald" className="rounded-xl border p-3 text-base" style={{ borderColor: LINE }} /></label>}
               {!fleetJob && <label className="flex flex-col gap-1 text-sm font-semibold">Customer email<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="For the receipt" className={field} style={{ borderColor: LINE }} /></label>}
