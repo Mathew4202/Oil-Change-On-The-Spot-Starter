@@ -14,7 +14,7 @@ import { useRole } from "./RoleContext";
 
 type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
-  paid?: boolean; receiptNo?: number | null; finalTotal?: number | null;
+  paid?: boolean; receiptNo?: number | null; finalTotal?: number | null; sales?: number | null;
   name: string; phone: string | null; address: string | null; car: string; engine: string | null;
   oil: { grade: string; litres: number; filter: string | null; spec: string | null; engine?: string | null; diesel?: boolean; wix?: string | null;
     checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterCost?: number | null; filterNote?: string | null } | null;
@@ -245,7 +245,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
             return { ...nextUp, start: first.start, car: members.map((m) => m.car).filter(Boolean).join(" + "), cars: members.length,
               status: members.every((m) => m.status === "done") ? "done" : members.some((m) => m.status === "in_progress" || m.status === "done") ? "in_progress" : nextUp.status,
               paid: members.every((m) => m.paid), lines: members.flatMap((m) => m.lines.map((l) => ({ ...l, label: `${m.car || "Car"}: ${l.label}` }))),
-              total: sumN((m) => m.total), profit: sumN((m) => m.profit), finalTotal: sumN((m) => m.finalTotal), costs: null, actual: members.every((m) => m.actual) };
+              total: sumN((m) => m.total), profit: sumN((m) => m.profit), finalTotal: sumN((m) => m.finalTotal), sales: sumN((m) => m.sales ?? null), costs: null, actual: members.every((m) => m.actual) };
           })() : first;
           const expanded = open === j.id;
           const paid = j.payMode === "online";
@@ -318,7 +318,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 <div className="border-t border-[#eef1f6] pt-2 flex flex-col gap-1 text-[15px]">
                   {j.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>{money(l.amount)}</span></div>)}
                   {j.total != null && <div className="flex justify-between font-bold"><span>Total with HST</span><span>{money(j.total)}</span></div>}
-                  {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>{j.actual ? "Profit" : "Est. profit"}</span><span>{money(j.profit)}</span></div>}
+                  {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>{j.actual ? "Profit" : "Est. profit"}</span><span>{money(j.profit)}{j.sales ? <span className="ml-1.5 text-[13px] font-bold text-[#4a5878]">({Math.round((j.profit / j.sales) * 100)}%)</span> : null}</span></div>}
                   {j.profit != null && j.actual && <p className="text-xs text-[#4a5878]">What the job made: the price before HST, less the oil, filter and parts you used (at what you paid), $1 of supplies{day?.gasPerJob ? ` and about ${money(day.gasPerJob * (j.cars || 1))} of gas` : ""}.</p>}
                   {j.profit != null && !j.actual && (j.costs
                     ? <p className="text-xs text-[#4a5878]">Takes off: oil {money(j.costs.oil)} ({j.costs.litres} L {j.costs.grade} at {money(j.costs.perL)}/L), filter {money(j.costs.filter)}{j.costs.filterGuess ? " (a guess, no filter price on file)" : ""}, supplies {money(j.costs.supplies)}{day?.gasPerJob ? `, gas about ${money(day.gasPerJob * (j.cars || 1))} (last 60 days of gas receipts)` : ""}. Prices are what we last paid, after HST.</p>
