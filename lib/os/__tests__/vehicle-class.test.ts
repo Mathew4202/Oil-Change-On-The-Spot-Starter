@@ -31,3 +31,9 @@ test("Mitsubishi Outlander is a 3-row SUV; Outlander Sport and RVR are not", () 
   assert.equal(cls("Outlander Sport", "Mitsubishi"), "SUV/Crossover");
   assert.equal(cls("RVR", "Mitsubishi"), "SUV/Crossover");
 });
+
+test("older and less common SUVs aren't priced as cars", () => {
+  for (const [make, model, want] of [["Chevrolet", "Tracker", "SUV/Crossover"], ["Suzuki", "Grand Vitara", "SUV/Crossover"], ["Jeep", "Liberty", "SUV/Crossover"],
+    ["Honda", "Element", "SUV/Crossover"], ["Mazda", "CX-7", "SUV/Crossover"], ["Volkswagen", "Jetta GL", "Sedan"], ["Honda", "Civic LX", "Sedan"]] as const)
+    assert.equal(cls(model, make), want, `${make} ${model}`);
+});

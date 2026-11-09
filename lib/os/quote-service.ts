@@ -261,6 +261,8 @@ export async function buildQuote(req: QuoteRequest) {
   if (!spec) quote.needsReview = ["Oil spec not found online: check under the hood on arrival"];
   else if (spec.near) quote.needsReview.push(nearNote(spec));
   else if (spec.source === "ai_lookup" && spec.confidence === "low") quote.needsReview.push("Oil spec found online with low confidence: check the cap or manual on arrival");
+  // a model we don't know the size of gets the car price: say so, so an SUV or truck gets fixed with Edit price
+  if (!req.vehicleClass && !detectClassFromModel(req.model, req.make)) quote.needsReview.push(`Priced as a car: HQ doesn't know if a ${req.make} ${req.model} is a car, SUV or truck. If it's bigger, use Edit price`);
 
   // Every engine we know for this car (the booking page always asks; "Not sure" prices the safest one)
   const engines = Array.from(new Set(rows.map((x) => x.engine).filter(Boolean))) as string[];

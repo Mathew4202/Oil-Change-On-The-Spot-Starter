@@ -21,13 +21,22 @@ const LARGE_SUV = ["suburban", "expedition", "yukon", "yukon xl", "escalade", "p
   "sequoia", "pilot", "ascent", "traverse", "enclave", "armada", "pathfinder", "commander", "acadia", "sienna", "xl", "max", "4runner",
   "tahoe", "explorer", "durango", "grand caravan", "caravan", "pacifica", "odyssey", "carnival", "sedona", "cx-9", "cx9", "cx-90", "cx90",
   "mdx", "qx60", "qx80", "q7", "x5", "x7", "gle", "gls", "land cruiser", "gx", "navigator", "aviator", "grand wagoneer", "wagoneer",
-  "range rover", "defender", "discovery", "cayenne", "xc90", "santa fe xl", "ev9", "outlander", "sorento", "tiguan"];   // Outlander, Sorento, Tiguan: 3-row options, priced as 3-row
+  "range rover", "defender", "discovery", "cayenne", "xc90", "santa fe xl", "ev9", "outlander", "sorento", "tiguan",
+  // older and other 3-row ones
+  "envoy", "rainier", "aspen", "outlook", "uplander", "venture", "montana", "freestar", "windstar", "quest", "tribeca", "veracruz", "mohave", "borrego",
+  "journey", "flex", "mkt", "lx 570", "lx570", "lx 600", "lx600", "gl350", "gl450", "gl550", "q8", "x6", "touareg", "model x", "xl-7", "xl7", "montero", "endeavor", "sequoia", "transit connect", "sienna", "routan"];   // Outlander, Sorento, Tiguan: 3-row options, priced as 3-row
 const SUV = ["suv", "crossover", "sportage", "tucson", "rav4", "cr-v", "crv", "rogue", "escape", "edge", "equinox", "cx-5", "cx5", "cx-50", "cx50",
   "cx-30", "cx30", "cx-3", "seltos", "kona", "santa fe", "sante fe", "forester", "outback", "crosstrek", "cherokee", "compass",
   "grand cherokee", "renegade", "wrangler", "encore", "terrain", "murano", "kicks", "qashqai", "hr-v", "hrv", "venza", "trailblazer",
   "blazer", "trax", "envision", "bronco", "bronco sport", "ecosport", "rvr", "eclipse cross", "taos", "atlas cross sport",
   "niro", "soul", "venue", "c-hr", "corolla cross", "bz4x", "rdx", "qx50", "nx", "rx", "ux", "q3", "q5", "x1", "x2", "x3", "x4", "gla", "glb",
-  "glc", "macan", "xc40", "xc60", "evoque", "velar", "f-pace", "e-pace", "countryman", "gv60", "gv70", "gv80", "xt4", "xt5", "xt6", "corsair", "nautilus"];
+  "glc", "macan", "xc40", "xc60", "evoque", "velar", "f-pace", "e-pace", "countryman", "gv60", "gv70", "gv80", "xt4", "xt5", "xt6", "corsair", "nautilus",
+  // older and other small/mid SUVs (unknown models get the car price, so keep this list wide)
+  "tracker", "vitara", "grand vitara", "sidekick", "captiva", "captiva sport", "torrent", "aztek", "rendezvous", "vue", "liberty", "patriot", "nitro",
+  "element", "passport", "crosstour", "tribute", "mariner", "cx-7", "cx7", "cx-70", "x-trail", "xterra", "juke", "fj cruiser", "freestyle", "taurus x",
+  "envista", "encore gx", "trailblazer", "hornet", "tonale", "srx", "mkx", "mkc", "ex35", "ex37", "fx35", "fx45", "fx50", "qx30", "qx55", "qx70", "qx4",
+  "glk", "ml", "ml320", "ml350", "ml500", "ml550", "xc70", "x5", "ioniq 5", "ev6", "id.4", "id4", "model y", "ariya", "solterra", "rogue sport", "mx-30", "sx4", "kizashi crossover",
+  "santa fe sport", "tucson hybrid", "sportage hybrid", "xv crosstrek", "outback sport"];
 const SEDAN = ["sedan", "civic", "corolla", "elantra", "sonata", "camry", "accord", "malibu", "impala", "jetta", "passat", "altima", "maxima",
   "versa", "yaris", "sentra", "focus", "fusion", "legacy", "impreza", "mazda3", "mazda 3", "3", "mazda6", "6", "forte", "k5", "rio", "accent",
   "cruze", "golf", "insight", "prius", "avalon", "300", "200", "lancer", "mirage", "ilx", "tlx", "integra", "is", "es", "a3", "a4", "a6",
