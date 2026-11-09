@@ -14,7 +14,7 @@ import { useRole } from "./RoleContext";
 
 type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
-  paid?: boolean; receiptNo?: number | null; finalTotal?: number | null; sales?: number | null;
+  paid?: boolean; receiptNo?: number | null; finalTotal?: number | null; sales?: number | null; family?: boolean;
   name: string; phone: string | null; address: string | null; car: string; engine: string | null;
   oil: { grade: string; litres: number; filter: string | null; spec: string | null; engine?: string | null; diesel?: boolean; wix?: string | null;
     checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterCost?: number | null; filterNote?: string | null } | null;
@@ -331,6 +331,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                     <div className="flex flex-wrap gap-2 items-start">
                       <button onClick={() => setEditing(j.id)} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Edit details</button>
                       <EditPrice id={j.id} subtotal={Math.round(j.lines.reduce((t, l) => t + Number(l.amount), 0) * 100) / 100} onSaved={() => load(date)} />
+                      <FamilyPrice id={j.id} on={j.family} onSaved={() => load(date)} />
                     </div>
                   )}
                   {(j.status === "confirmed" || j.status === "requested") && can.book && (
@@ -482,6 +483,46 @@ function EditPrice({ id, subtotal, onSaved }: { id: string; subtotal: number; on
           setNote(!tell ? "Price saved." : j.told?.sent ? "Price saved and texted to them." : j.told ? `Price saved. Not texted (${j.told.status === "no_phone" ? "no mobile on file, or a fleet" : j.told.status === "opted_out" ? "they opted out of texts" : "the text didn't send"}).` : "Price saved (same total, no text).");
           setOpen(false); onSaved();
         }} className="h-10 px-4 rounded-lg font-extrabold text-sm disabled:opacity-60" style={{ background: "#f2b01e", color: "#0d1b3e" }}>{busy ? "Saving…" : "Save price"}</button>
+      </div>
+    </div>
+  );
+}
+
+/** Family discount: the price becomes just what the parts cost us (oil, filter, add-on parts) + $1 supplies, no labour or gas. */
+function FamilyPrice({ id, on, onSaved }: { id: string; on?: boolean; onSaved: () => void }) {
+  const [p, setP] = useState<{ lines: { label: string; amount: number }[]; subtotal: number; total: number; missing: string[] } | null>(null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const call = async (body: object) => {
+    setBusy(true); setErr("");
+    const r = await fetch("/api/owner/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId: id, ...body }) });
+    const j = await r.json().catch(() => ({})); setBusy(false);
+    if (!r.ok || !j.ok) { setErr(j.error || "Couldn't do that"); return null; }
+    return j;
+  };
+  if (on) return (
+    <div className="self-start mt-2 flex flex-col gap-1">
+      <button disabled={busy} onClick={async () => { if (await call({ action: "family", on: false })) onSaved(); }} className="h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Back to regular price</button>
+      {err && <p className="text-sm font-semibold text-[#9b1c1c]">{err}</p>}
+    </div>
+  );
+  if (!p) return (
+    <div className="self-start mt-2 flex flex-col gap-1">
+      <button disabled={busy} onClick={async () => { const j = await call({ action: "familyPreview" }); if (j) setP(j); }} className="h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">{busy ? "…" : "Family price"}</button>
+      {err && <p className="text-sm font-semibold text-[#9b1c1c]">{err}</p>}
+    </div>
+  );
+  return (
+    <div className="mt-2 w-full flex flex-col gap-1.5 rounded-lg border-2 p-2.5 text-[15px]" style={{ borderColor: "#f2b01e" }}>
+      <p className="font-bold">Family price: just the parts at our cost</p>
+      {p.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>${l.amount.toFixed(2)}</span></div>)}
+      <div className="flex justify-between font-bold"><span>Total with HST</span><span>${p.total.toFixed(2)}</span></div>
+      <p className="text-xs text-[#4a5878]">No labour and no gas. HST goes on top like any sale.</p>
+      {p.missing.length > 0 && <p className="text-sm font-semibold text-[#9b1c1c]">Missing {p.missing.join(" and ")}. Add it in Edit details first.</p>}
+      {err && <p className="text-sm font-semibold text-[#9b1c1c]">{err}</p>}
+      <div className="flex gap-2">
+        <button onClick={() => setP(null)} className="h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Cancel</button>
+        <button disabled={busy || p.missing.length > 0} onClick={async () => { if (await call({ action: "family" })) { setP(null); onSaved(); } }}
+          className="h-10 px-4 rounded-lg font-extrabold text-sm disabled:opacity-60" style={{ background: "#f2b01e", color: "#0d1b3e" }}>{busy ? "Saving…" : "Use family price"}</button>
       </div>
     </div>
   );

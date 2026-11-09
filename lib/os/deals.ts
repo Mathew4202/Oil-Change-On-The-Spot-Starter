@@ -63,7 +63,7 @@ export function makeRefCode(firstName: string | null | undefined, rand: () => nu
 /** A booking moved to another day: add the Christmas line if it moved into Dec 1 to Jan 1, take it off if it moved out.
  *  Returns the new price, or null when nothing changes. */
 export function repriceForDate<T extends Priced>(q: T | null | undefined, date: string, job: string | undefined, cars: number, rules: Record<string, number>, hstRate: number): T | null {
-  if (!q?.lines?.length) return null;
+  if (!q?.lines?.length || (q as { family?: unknown }).family) return null;   // family price: no deals on top
   const has = q.lines.some((l) => /^Christmas discount/.test(l.label));
   const want = christmasLine(date, job, cars, rules, q.lines);
   if (!!want === has) return null;

@@ -129,6 +129,7 @@ export async function GET(req: NextRequest) {
       id: r.id, start: r.starts_at, end: r.ends_at, status: r.status, payMode: r.pay_mode, cars: r.cars,
       // what the profit is a share of: the price before HST (with the tip once it's done)
       sales: money ? (r.jobs?.[0] ? Number(r.jobs[0].revenue ?? r.jobs[0].subtotal ?? 0) : Math.round((r.quote_breakdown?.lines ?? []).reduce((t, l) => t + Number(l.amount || 0), 0) * 100) / 100) || null : null,
+      family: !!(r.quote_breakdown as { family?: unknown } | null)?.family,
       paid: !!r.paid_at, receiptNo: r.jobs?.[0]?.receipt_no ?? null, finalTotal: r.jobs?.[0]?.total != null ? Number(r.jobs[0].total) : null,
       name, phone: r.customers?.phone ?? null, address: r.address || r.customers?.address || null, car,
       engine: r.vehicles?.engine ?? null,

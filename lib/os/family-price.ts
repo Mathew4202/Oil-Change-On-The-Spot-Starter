@@ -1,0 +1,70 @@
+// Family discount: the price is just what the parts cost us (oil, oil filter, any add-on parts) plus $1 of supplies
+// a car, no labour and no gas. HST goes on top like any sale. Owners tap "Family price" on the job card.
+import { sbGet, sbPatch, enc } from "@/lib/os/db";
+import { chargedAddons, normPart, ADDON_COST_DEFAULT } from "@/lib/os/addon-needs";
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const NAMES: Record<string, string> = { cabin_filter: "Cabin filter (part)", engine_filter: "Engine air filter (part)", wipers: "Wiper blades (parts)", battery: "Battery (part)" };
+
+type Line = { label: string; amount: number };
+
+/** What the family price would be for this booking: one line per part, at what we last paid. */
+export async function familyPrice(id: string) {
+  const [b] = await sbGet<{ status: string; cars: number | null; services: { job?: string; own?: string | null; addons?: string[] } | null;
+    quote_breakdown: { lines?: Line[]; family?: Line[] } | null;
+    vehicles: { vehicle_specs: { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; cabin_filter_part?: string | null; air_filter_part?: string | null } | null } | null }>(
+    `bookings?select=status,cars,services,quote_breakdown,vehicles(vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part))&id=eq.${enc(id)}`);
+  if (!b) return { ok: false as const, error: "Booking not found" };
+  if (b.status === "done" || b.status === "cancelled") return { ok: false as const, error: "This job is already finished or cancelled" };
+  const cars = Math.max(1, b.cars || 1), s = b.vehicles?.vehicle_specs, job = b.services?.job ?? "oil_change";
+  const [prices, rulesRows, quotes] = await Promise.all([
+    sbGet<{ grade: string; cost_per_l: number }>("oil_prices?select=grade,cost_per_l&active=is.true").catch(() => []),
+    sbGet<{ key: string; value: number }>("pricing_rules?select=key,value").catch(() => []),
+    sbGet<{ our_cost: number | null; parts: { part_number: string } | null }>("part_quotes?select=our_cost,parts!inner(part_number)&our_cost=not.is.null&order=checked_at.desc&limit=2000").catch(() => []),
+  ]);
+  const rr = Object.fromEntries(rulesRows.map((x) => [x.key, Number(x.value)]));
+  const costOf = (pn: string | null | undefined) => { const q = pn ? quotes.find((x) => x.parts && normPart(x.parts.part_number) === normPart(pn)) : undefined; return q ? Number(q.our_cost) : null; };
+  const lines: Line[] = [], missing: string[] = [];
+  // the lines being charged (before any family price), so add-ons they dropped don't count
+  const charged = b.quote_breakdown?.family ? b.quote_breakdown.family : (b.quote_breakdown?.lines ?? []);
+  if (["oil_change", "seasonal"].includes(job) && !b.services?.own) {
+    const perL = s?.oil_grade ? prices.find((p) => p.grade === s.oil_grade)?.cost_per_l : undefined;
+    if (!s?.oil_grade || !s.capacity_l) missing.push("the car's oil and litres");
+    else if (perL == null) missing.push(`a price for ${s.oil_grade} oil`);
+    else lines.push({ label: `Oil: ${r2(Number(s.capacity_l) * cars)} L ${s.oil_grade} at our cost`, amount: r2(Number(s.capacity_l) * Number(perL) * cars) });
+    const fc = costOf(s?.oil_filter_part);
+    lines.push({ label: `Oil filter${s?.oil_filter_part ? ` ${s.oil_filter_part}` : ""} at our cost${fc == null ? " (usual cost)" : ""}`, amount: r2((fc ?? rr.filter_estimate ?? 6.5) * cars) });
+  }
+  for (const { kind, times } of chargedAddons(charged, b.services?.addons, cars)) {
+    const pn = kind === "cabin_filter" ? s?.cabin_filter_part : kind === "engine_filter" ? s?.air_filter_part : null;
+    const c = costOf(pn);
+    lines.push({ label: `${NAMES[kind] ?? kind} at our cost${c == null ? " (usual cost)" : ""}`, amount: r2((c ?? rr[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times) });
+  }
+  lines.push({ label: "Supplies", amount: r2((rr.consumables ?? 1) * cars) });
+  const subtotal = r2(lines.reduce((t, l) => t + l.amount, 0));
+  const rate = Number(rr.hst_rate ?? 0.14);
+  return { ok: true as const, lines, subtotal, hst: r2(subtotal * rate), total: r2(subtotal * (1 + rate)), missing, before: charged };
+}
+
+/** Save the family price on the booking (the regular lines are kept, so it can be undone). */
+export async function setFamilyPrice(id: string, by: string, on = true) {
+  const [b] = await sbGet<{ quote_breakdown: Record<string, unknown> & { lines?: Line[]; family?: Line[] } | null }>(`bookings?select=quote_breakdown&id=eq.${enc(id)}`);
+  if (!b) return { ok: false as const, error: "Booking not found" };
+  const q = b.quote_breakdown ?? {};
+  if (!on) {   // back to the regular price
+    if (!q.family) return { ok: false as const, error: "It isn't on the family price" };
+    const lines = q.family;
+    const rate = 0.14, subtotal = r2(lines.reduce((t, l) => t + Number(l.amount), 0));
+    const { family: _drop, familyBy: _by, ...rest } = q as Record<string, unknown>; void _drop; void _by;
+    const bd = { ...rest, lines, subtotal, hst: r2(subtotal * rate), total: r2(subtotal * (1 + rate)) };
+    if (!(await sbPatch("bookings", `id=eq.${enc(id)}`, { quoted_total: bd.total, quote_breakdown: bd }))) return { ok: false as const, error: "Couldn't save" };
+    return { ok: true as const, total: bd.total };
+  }
+  const p = await familyPrice(id);
+  if (!p.ok) return p;
+  if (p.missing.length) return { ok: false as const, error: `Add ${p.missing.join(" and ")} first (Edit details), so the oil is counted` };
+  const who = by ? by.charAt(0).toUpperCase() + by.slice(1) : "HQ";
+  const bd = { ...q, lines: p.lines, subtotal: p.subtotal, hst: p.hst, total: p.total, profit: 0, family: q.family ?? q.lines ?? [], familyBy: who };
+  if (!(await sbPatch("bookings", `id=eq.${enc(id)}`, { quoted_total: p.total, quote_breakdown: bd }))) return { ok: false as const, error: "Couldn't save the price" };
+  return { ok: true as const, total: p.total, subtotal: p.subtotal };
+}
