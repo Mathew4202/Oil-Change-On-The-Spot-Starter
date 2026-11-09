@@ -24,7 +24,7 @@ export type JobContext = {
     customer_id: string | null; vehicle_id: string | null };
   customer: { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; review_asked_at: string | null } | null;
   vehicle: { id: string; year: number | null; make: string | null; model: string | null; engine: string | null; last_km: number | null; vin: string | null;
-    vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null } | null } | null;
+    vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null; cabin_filter_part?: string | null; air_filter_part?: string | null } | null } | null;
   job: Record<string, unknown> | null;
   paid: number;   // all payments on this booking so far (a booking paid online when booked, tips included)
   group?: { cars: { bookingId: string; car: string; done: boolean }[]; index: number; open: number; othersOwed: number; othersTotal: number; allTotal: number; allOwed: number } | null;   // several cars, one visit
@@ -54,7 +54,7 @@ export async function jobContext(bookingId: string): Promise<JobContext | null> 
   if (!b) return null;
   const [[customer], [vehicle], [job], pays] = await Promise.all([
     b.customer_id ? sbGet<NonNullable<JobContext["customer"]>>(`customers?select=id,first_name,last_name,phone,email,review_asked_at&id=eq.${b.customer_id}`) : Promise.resolve([null]),
-    b.vehicle_id ? sbGet<NonNullable<JobContext["vehicle"]>>(`vehicles?select=id,year,make,model,engine,last_km,vin,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter)&id=eq.${b.vehicle_id}`) : Promise.resolve([null]),
+    b.vehicle_id ? sbGet<NonNullable<JobContext["vehicle"]>>(`vehicles?select=id,year,make,model,engine,last_km,vin,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,cabin_filter_part,air_filter_part)&id=eq.${b.vehicle_id}`) : Promise.resolve([null]),
     sbGet<Record<string, unknown>>(`jobs?select=*&booking_id=eq.${id}&order=done_at.desc&limit=1`),
     sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${id}`),
   ]);
@@ -127,6 +127,25 @@ export async function finishJob(input: FinishInput, owner: string) {
     filterId = p?.id ?? null; filterOnHand = Number(p?.on_hand ?? 0);
     const [q] = filterId ? await sbGet<{ our_cost: number }>(`part_quotes?select=our_cost&part_id=eq.${filterId}&order=checked_at.desc&limit=1`) : [];
     costParts = r2(Number(q?.our_cost ?? rules.filter_estimate ?? 6.5) * (ctx.booking.cars || 1));
+  }
+  // the add-on parts we bought for them (cabin filter, air filter, wipers, battery): what we paid for that part number
+  // if we have a price for it, otherwise the usual cost from the price settings
+  const ADDON_COST: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200 };
+  const partFor: Record<string, string | null | undefined> = { cabin_filter: spec?.cabin_filter_part, engine_filter: spec?.air_filter_part };
+  // only the ones we actually charged for: booked add-ons still on the bill, or one added on site ("Cabin air filter")
+  const NAMES: Record<string, RegExp> = { wipers: /wiper/i, cabin_filter: /cabin/i, engine_filter: /engine air/i, battery: /battery/i };
+  const bookedAddons = ctx.booking.services?.addons ?? [];
+  for (const a of Object.keys(ADDON_COST)) {
+    const charged = lines.filter((l) => NAMES[a].test(l.label) && l.amount > 0).length;
+    if (!charged) continue;
+    const times = bookedAddons.includes(a) && charged === 1 ? (ctx.booking.cars || 1) : charged;
+    let cost: number | null = null;
+    const pn = partFor[a];
+    if (pn) {
+      const [q] = await sbGet<{ our_cost: number }>(`part_quotes?select=our_cost,parts!inner(part_number)&parts.part_number=eq.${enc(pn)}&order=checked_at.desc&limit=1`).catch(() => []);
+      if (q) cost = Number(q.our_cost);
+    }
+    costParts = r2(costParts + (cost ?? rules[`addon_part_${a}`] ?? ADDON_COST[a]) * times);
   }
 
   // Next oil change
