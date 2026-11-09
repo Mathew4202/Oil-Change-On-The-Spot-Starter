@@ -81,7 +81,7 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
     const retail = !isOil && !sup && it.listPrice && it.listPrice >= it.unitPrice ? r2(it.listPrice / perPack) : null;
     await sbInsert("part_quotes", { part_id: p.id, supplier: scan.supplier, our_cost: unitCostAfterTax, ...(retail ? { retail } : {}) });
     stock.push(isOil ? `+${addQty} L ${it.oilGrade}` : sup ? `+${addQty} ${sup.unit === "box" ? (addQty === 1 ? "box" : "boxes") : "towels"} of ${sup.name.toLowerCase()}` : `+${it.qty} × ${partNumber}`);
-    prices.push(isOil ? `${it.oilGrade} now $${unitCostAfterTax.toFixed(2)}/L` : sup ? `${sup.name} now $${unitCostAfterTax.toFixed(2)} a ${sup.unit === "box" ? "box" : "towel"}` : `${partNumber} now $${unitCostAfterTax.toFixed(2)}`);
+    prices.push(isOil ? `${it.oilGrade} now $${unitCostAfterTax.toFixed(2)}/L` : sup ? `${sup.name} now $${unitCostAfterTax.toFixed(2)} a ${sup.unit === "box" ? "box" : "towel"}` : `${partNumber} now $${unitCostAfterTax.toFixed(2)}${retail ? ` (retail $${retail.toFixed(2)} before tax)` : ["cabin_filter", "engine_filter", "wiper", "battery"].includes(it.category) ? " (no retail price on the receipt)" : ""}`);
     if (isOil && (unitCostAfterTax < 2 || unitCostAfterTax > 40)) {
       // a misread (litres per jug or the price): don't let it change what jobs are priced and costed at
       prices[prices.length - 1] = `${it.oilGrade} at $${unitCostAfterTax.toFixed(2)}/L looks wrong, so the oil price wasn't changed. Check the litres per jug`;

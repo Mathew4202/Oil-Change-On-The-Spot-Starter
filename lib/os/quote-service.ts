@@ -1,5 +1,6 @@
 // Loads what the pricing engine needs, looks up unknown cars automatically, and returns a quote.
 import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
+import { normPart } from "@/lib/os/addon-needs";
 import { sameCar } from "@/lib/os/car-match";
 import { claimLookup, finishLookup, releaseLookup, forgetFailed, lookupKey } from "@/lib/os/ai-budget";
 import { euroOilKey, quoteOilChange, quoteVisit, DEFAULT_RULES, SEASONAL_DISCOUNT, type VehicleClass, type Addon, type Quote, type JobType } from "@/lib/os/pricing-engine";
@@ -17,7 +18,9 @@ const addonRetail = (k: string, r: Record<string, number>, cost: number) => {
 const addonItem = (k: Addon["kind"], r: Record<string, number>, cost?: number | null, retail?: number | null): Addon => {
   const c = cost ?? addonPrice(k, r);
   // the store's retail price for that exact part, when a receipt or Stock gave us one; otherwise our set price
-  return { kind: k, partCost: c, partRetail: retail != null && retail > 0 ? Math.max(retail, c) : addonRetail(k, r, c) };
+  // retail is before tax on the receipt: the customer's part price is the store's shelf price with HST, plus our labour
+  const shelf = retail != null && retail > 0 ? Math.round(retail * (1 + Number(r.hst_rate ?? 0.14)) * 100) / 100 : null;
+  return { kind: k, partCost: c, partRetail: shelf != null ? Math.max(shelf, c) : addonRetail(k, r, c) };
 };
 import { lookupOilSpec } from "@/lib/os/spec-lookup-run";
 import { gasPerJob } from "@/lib/os/gas";
@@ -157,8 +160,10 @@ async function withRealCosts(addons: Addon[], spec: Spec | null, r: Record<strin
 
 async function filterCostFor(part: string | null): Promise<{ cost: number; retail: number | null } | null> {
   if (!part) return null;
-  const q = await sbGet<{ our_cost: number | null; retail: number | null }>(
-    `part_quotes?select=our_cost,retail,parts!inner(part_number)&parts.part_number=eq.${enc(part)}&order=checked_at.desc&limit=5`);
+  // the receipt may spell it "FIL 26195" or "2-6195" when the car has "26195": match without spaces, dashes or a store prefix
+  const all = await sbGet<{ our_cost: number | null; retail: number | null; parts: { part_number: string } | null }>(
+    `part_quotes?select=our_cost,retail,parts!inner(part_number)&order=checked_at.desc&limit=2000`);
+  const q = all.filter((x) => x.parts && normPart(x.parts.part_number) === normPart(part)).slice(0, 5);
   const latest = q.find((x) => x.our_cost != null);
   if (!latest) return null;
   const withRetail = q.find((x) => x.retail != null);   // the newest retail we have (a later receipt may not show it)
