@@ -59,3 +59,12 @@ test("oil priced per litre with qty in 20 L cases (East Coast) comes out per cas
   ] })!;
   assert.deepEqual(s.items.map((i) => i.unitPrice), [124, 124.4, 40]);   // per case; the per-jug one is left alone
 });
+
+test("keeps NAPA's list (retail) price next to what we paid", () => {
+  const s = cleanScan({ vendor: "NAPA", total: 25, items: [
+    { description: "Cabin filter", part_number: "PPF 1882", qty: 1, unit_price: 18.5, line_total: 18.5, list_price: 34.99, category: "cabin_filter" },
+    { description: "Air filter", part_number: "2337", qty: 1, unit_price: 20, line_total: 20, list_price: null, category: "engine_filter" }] })!;
+  assert.equal(s.items[0].listPrice, 34.99);
+  assert.equal(s.items[0].unitPrice, 18.5);
+  assert.equal(s.items[1].listPrice, undefined);
+});

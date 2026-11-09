@@ -14,9 +14,10 @@ const addonRetail = (k: string, r: Record<string, number>, cost: number) => {
   const set = r[`addon_retail_${k}`] ?? RETAIL_DEFAULTS[k];
   return set != null ? Math.max(set, cost) : undefined;   // never charge less than it costs us
 };
-const addonItem = (k: Addon["kind"], r: Record<string, number>, cost?: number | null): Addon => {
+const addonItem = (k: Addon["kind"], r: Record<string, number>, cost?: number | null, retail?: number | null): Addon => {
   const c = cost ?? addonPrice(k, r);
-  return { kind: k, partCost: c, partRetail: addonRetail(k, r, c) };
+  // the store's retail price for that exact part, when a receipt or Stock gave us one; otherwise our set price
+  return { kind: k, partCost: c, partRetail: retail != null && retail > 0 ? Math.max(retail, c) : addonRetail(k, r, c) };
 };
 import { lookupOilSpec } from "@/lib/os/spec-lookup-run";
 import { gasPerJob } from "@/lib/os/gas";
@@ -149,16 +150,19 @@ export async function filterInStock(part: string | null | undefined): Promise<bo
 async function withRealCosts(addons: Addon[], spec: Spec | null, r: Record<string, number>) {
   return Promise.all(addons.map(async (a) => {
     const part = a.kind === "cabin_filter" ? spec?.cabin_filter_part : a.kind === "engine_filter" ? spec?.air_filter_part : null;
-    const cost = part ? await filterCostFor(part).catch(() => null) : null;
-    return cost != null ? addonItem(a.kind, r, cost) : a;
+    const q = part ? await filterCostFor(part).catch(() => null) : null;
+    return q ? addonItem(a.kind, r, q.cost, q.retail) : a;
   }));
 }
 
-async function filterCostFor(part: string | null): Promise<number | null> {
+async function filterCostFor(part: string | null): Promise<{ cost: number; retail: number | null } | null> {
   if (!part) return null;
-  const q = await sbGet<{ our_cost: number }>(
-    `part_quotes?select=our_cost,parts!inner(part_number)&parts.part_number=eq.${enc(part)}&order=checked_at.desc&limit=1`);
-  return q[0]?.our_cost != null ? Number(q[0].our_cost) : null;
+  const q = await sbGet<{ our_cost: number | null; retail: number | null }>(
+    `part_quotes?select=our_cost,retail,parts!inner(part_number)&parts.part_number=eq.${enc(part)}&order=checked_at.desc&limit=5`);
+  const latest = q.find((x) => x.our_cost != null);
+  if (!latest) return null;
+  const withRetail = q.find((x) => x.retail != null);   // the newest retail we have (a later receipt may not show it)
+  return { cost: Number(latest.our_cost), retail: withRetail ? Number(withRetail.retail) : null };
 }
 
 export async function buildQuote(req: QuoteRequest) {
@@ -197,7 +201,7 @@ export async function buildQuote(req: QuoteRequest) {
 
   const priceWith = async (spec: Spec | null) => {
     const diesel = !isEuro && isDiesel(spec);
-    const filterCost = (await filterCostFor(spec?.oil_filter_part ?? null)) ?? (spec ? (isEuro ? r.euro_filter_estimate ?? 15 : diesel ? r.diesel_filter_estimate ?? 20 : r.filter_estimate ?? 6.5) : null);
+    const filterCost = (await filterCostFor(spec?.oil_filter_part ?? null))?.cost ?? (spec ? (isEuro ? r.euro_filter_estimate ?? 15 : diesel ? r.diesel_filter_estimate ?? 20 : r.filter_estimate ?? 6.5) : null);
     return quoteOilChange({
       vehicleClass, make,
       // European cars get the Westpier Euro oil that's approved for them (cheapest one that fits)

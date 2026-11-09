@@ -69,7 +69,10 @@ async function addStock(b: Record<string, unknown>) {
   // what it cost (after HST): the pricing and the profit estimates use it
   if (cost != null && cost > 0) {
     if (isOil) await sbInsert("oil_prices", { grade, cost_per_l: cost, supplier: String(b.brand || "on hand").slice(0, 60), updated_at: new Date().toISOString() }, { upsertOn: "grade" });
-    else await sbInsert("part_quotes", { part_id: p.id, supplier: "other", our_cost: cost });
+    else {
+      const retail = Number(b.retail);   // the store's retail price, if they typed it: what we charge for it
+      await sbInsert("part_quotes", { part_id: p.id, supplier: "other", our_cost: cost, ...(retail > 0 ? { retail: Math.round(retail * 100) / 100 } : {}) });
+    }
   }
   return { ok: true, partNumber, onHand: next };
 }

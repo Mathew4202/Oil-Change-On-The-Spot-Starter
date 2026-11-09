@@ -4,6 +4,7 @@ export type ScanItem = {
   category: "oil_filter" | "cabin_filter" | "engine_filter" | "wiper" | "battery" | "oil" | "fluid" | "tool" | "supply" | "gloves" | "shop_towels" | "fuel" | "other";
   litresPerUnit: number | null; oilGrade: string | null;
   unitsPerPack?: number | null;   // shop towels: towels in each pack or roll
+  listPrice?: number | null;      // the store's regular/retail price for one (NAPA "List"), before tax: what we charge for add-on parts
 };
 export type Scan = {
   vendor: string; supplier: "napa" | "partsource" | "westpier" | "eastcoast" | "other";
@@ -69,6 +70,7 @@ export function cleanScan(raw: unknown): Scan | null {
       brand: it.brand ? String(it.brand).trim().slice(0, 40) : null, qty: r2(qty), unitPrice: r2(unit), lineTotal: r2(line), category: cat,
       litresPerUnit: num(it.litres_per_unit), oilGrade: grade ? `${grade[1]}W-${grade[2]}` : null,
       ...(cat === "shop_towels" ? { unitsPerPack: num(it.units_per_pack) ?? towelsIn(words) } : {}),
+      ...(num(it.list_price) != null && (num(it.list_price) as number) > 0 ? { listPrice: r2(num(it.list_price) as number) } : {}),
     };
   }).filter((i) => i.lineTotal !== 0 || i.description !== "Item");
   foldFees(items);
@@ -103,10 +105,10 @@ export const SCAN_PROMPT = `This is a photo of a receipt or invoice from a busin
 Read it carefully. Reply with ONLY this JSON (no other text):
 {"vendor":"store name","date":"YYYY-MM-DD","invoice_no":"string or null","subtotal":0,"hst":0,"total":0,"currency":"CAD|USD",
  "paid_with":"card|cash|on_account|etransfer|unknown",
- "items":[{"description":"","part_number":"string or null","brand":"string or null","qty":1,"unit_price":0,"line_total":0,
+ "items":[{"description":"","part_number":"string or null","brand":"string or null","qty":1,"unit_price":0,"line_total":0,"list_price":"number or null",
    "category":"oil_filter|cabin_filter|engine_filter|wiper|battery|oil|fluid|tool|supply|gloves|shop_towels|fuel|other",
    "litres_per_unit":null,"oil_grade":null,"units_per_pack":null}]}
-Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). unit_price is the price of ONE of what qty counts (one case, jug or pail): if the invoice shows a price per litre and qty in cases or jugs, unit_price = price per litre x litres in each. For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". Disposable/nitrile gloves -> category "gloves", qty = number of boxes. Shop towels (blue towels, WypAll, rolls or boxes of wipes) -> category "shop_towels", qty = number of packs/rolls/boxes, units_per_pack = towels in each one (from "200 CT", "55 sheets" etc.). Environmental fee lines (e.g. NAPA "035 FILTERS LESS THAN 8IN") are their own items. "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". If something is unreadable use null.`;
+Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). unit_price is the price of ONE of what qty counts (one case, jug or pail): if the invoice shows a price per litre and qty in cases or jugs, unit_price = price per litre x litres in each. For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". Disposable/nitrile gloves -> category "gloves", qty = number of boxes. Shop towels (blue towels, WypAll, rolls or boxes of wipes) -> category "shop_towels", qty = number of packs/rolls/boxes, units_per_pack = towels in each one (from "200 CT", "55 sheets" etc.). list_price: when the invoice shows a regular/list/retail price for one item next to the price we paid (NAPA "LIST" and "NET" or "YOUR PRICE" columns), give the list/retail price for one, before tax; otherwise null. unit_price is always what we actually paid. Environmental fee lines (e.g. NAPA "035 FILTERS LESS THAN 8IN") are their own items. "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". If something is unreadable use null.`;
 
 export async function scanReceipt(imageBase64: string, mediaType: string): Promise<{ scan: Scan | null; error?: string }> {
   const { askAI, aiLastError } = await import("@/lib/os/ai");   // loaded here so this file stays testable on its own

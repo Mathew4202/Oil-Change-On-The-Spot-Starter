@@ -77,7 +77,9 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
     }
     await sbPatch("parts", `id=eq.${p.id}`, { on_hand: r2(Number(p.on_hand) + addQty) });
     await sbInsert("stock_moves", { part_id: p.id, qty: addQty, reason: "receipt", expense_id: exp.data!.id, unit_cost: unitCostAfterTax });
-    await sbInsert("part_quotes", { part_id: p.id, supplier: scan.supplier, our_cost: unitCostAfterTax });
+    // our price (after HST) for profit, and the store's retail price for what we charge customers for the part
+    const retail = !isOil && !sup && it.listPrice && it.listPrice >= it.unitPrice ? r2(it.listPrice / perPack) : null;
+    await sbInsert("part_quotes", { part_id: p.id, supplier: scan.supplier, our_cost: unitCostAfterTax, ...(retail ? { retail } : {}) });
     stock.push(isOil ? `+${addQty} L ${it.oilGrade}` : sup ? `+${addQty} ${sup.unit === "box" ? (addQty === 1 ? "box" : "boxes") : "towels"} of ${sup.name.toLowerCase()}` : `+${it.qty} × ${partNumber}`);
     prices.push(isOil ? `${it.oilGrade} now $${unitCostAfterTax.toFixed(2)}/L` : sup ? `${sup.name} now $${unitCostAfterTax.toFixed(2)} a ${sup.unit === "box" ? "box" : "towel"}` : `${partNumber} now $${unitCostAfterTax.toFixed(2)}`);
     if (isOil && (unitCostAfterTax < 2 || unitCostAfterTax > 40)) {

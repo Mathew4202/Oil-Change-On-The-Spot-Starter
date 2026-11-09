@@ -144,7 +144,7 @@ export default function StockScreen() {
 function AddStock({ onAdded }: { onAdded: () => void }) {
   const KINDS: [string, string][] = [["oil_filter", "Oil filter"], ["oil", "Oil"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["wiper", "Wiper"], ["battery", "Battery"], ["gloves", "Gloves (boxes)"], ["shop_towels", "Shop towels (count of towels)"], ["other", "Other"]];
   const [open, setOpen] = useState(false); const [kind, setKind] = useState("oil_filter");
-  const [pn, setPn] = useState(""); const [grade, setGrade] = useState(""); const [brand, setBrand] = useState(""); const [qty, setQty] = useState(""); const [cost, setCost] = useState("");
+  const [pn, setPn] = useState(""); const [grade, setGrade] = useState(""); const [brand, setBrand] = useState(""); const [qty, setQty] = useState(""); const [cost, setCost] = useState(""); const [retail, setRetail] = useState("");
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(""); const [ok, setOk] = useState(true);
   const field = "h-11 rounded-lg border px-2 text-base w-full bg-white";
   const oil = kind === "oil", supply = kind === "gloves" || kind === "shop_towels";
@@ -152,7 +152,7 @@ function AddStock({ onAdded }: { onAdded: () => void }) {
   async function save() {
     setBusy(true); setMsg("");
     const r = await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "add", category: kind, partNumber: pn, oilGrade: grade, brand, qty: Number(qty), unitCost: cost === "" ? null : Number(cost) }) });
+      body: JSON.stringify({ action: "add", category: kind, partNumber: pn, oilGrade: grade, brand, qty: Number(qty), unitCost: cost === "" ? null : Number(cost), retail: retail === "" ? null : Number(retail) }) });
     const j = await r.json().catch(() => ({})); setBusy(false); setOk(!!j.ok);
     if (!j.ok) { setMsg(j.error || "Couldn't add it"); return; }
     setMsg(`Added. ${oil ? `${j.partNumber.replace("OIL-", "")} oil` : j.partNumber}: ${j.onHand}${oil ? " L" : ""} on hand now.`);
@@ -173,6 +173,10 @@ function AddStock({ onAdded }: { onAdded: () => void }) {
         <label className="text-sm font-semibold flex flex-col gap-1">{oil ? "Cost per litre" : kind === "gloves" ? "Cost per box" : kind === "shop_towels" ? "Cost per towel" : "Cost each"} <span className="font-normal text-[#4a5878] text-xs">with HST, if you know</span>
           <input value={cost} onChange={(e) => setCost(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="optional" className={field} style={{ borderColor: LINE }} /></label>
       </div>
+      {["cabin_filter", "engine_filter", "wiper", "battery"].includes(kind) && (
+        <label className="text-sm font-semibold flex flex-col gap-1">Retail price each <span className="font-normal text-[#4a5878] text-xs">the store&apos;s regular price, before tax. It&apos;s what customers pay for this part</span>
+          <input value={retail} onChange={(e) => setRetail(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="optional, e.g. 34.99" className={field} style={{ borderColor: LINE }} /></label>
+      )}
       <label className="text-sm font-semibold flex flex-col gap-1">Brand <span className="font-normal text-[#4a5878] text-xs">optional</span><input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder={oil ? "e.g. East Coast Lubricants" : "NAPA ProFormer"} className={field} style={{ borderColor: LINE }} /></label>
       {msg && <p className="text-sm font-semibold" style={{ color: ok ? "#1d6b3a" : "#9b1c1c" }} role="status">{msg}</p>}
       <div className="grid grid-cols-2 gap-2">
