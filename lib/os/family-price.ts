@@ -41,8 +41,11 @@ export async function familyPrice(id: string) {
     lines.push({ label: `${NAMES[kind] ?? kind} at our cost${c == null ? " (usual cost)" : ""}`, amount: r2((c ?? rr[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times) });
   }
   lines.push({ label: "Supplies", amount: r2((rr.consumables ?? 1) * cars) });
-  const subtotal = r2(lines.reduce((t, l) => t + l.amount, 0));
+  // what we paid includes HST, and we get that HST back on our return. So each part is its price before tax,
+  // and HST goes on top: the family pays about what the parts cost us, and the tax is charged properly.
   const rate = Number(rr.hst_rate ?? 0.14);
+  for (const l of lines) { l.amount = r2(l.amount / (1 + rate)); l.label = l.label.replace(" at our cost", " at our cost before tax"); }
+  const subtotal = r2(lines.reduce((t, l) => t + l.amount, 0));
   return { ok: true as const, lines, subtotal, hst: r2(subtotal * rate), total: r2(subtotal * (1 + rate)), missing, before: charged };
 }
 

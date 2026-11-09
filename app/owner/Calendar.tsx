@@ -67,7 +67,8 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
   const [blocking, setBlocking] = useState(false);
   const [holding, setHolding] = useState(false);
   const [holdPreset, setHoldPreset] = useState<HoldPreset | undefined>(undefined);
-  const [callBook, setCallBook] = useState<CallPreset | null>(null);   // "Book this person" from a call
+  const [callBook, setCallBook] = useState<CallPreset | null>(null);
+  const [editMenu, setEditMenu] = useState<string | null>(null);   // which job card has its "Edit details" choices open   // "Book this person" from a call
   const [callFocus, setCallFocus] = useState<string | null>(null);
   const [callsKey, setCallsKey] = useState(0);
   useEffect(() => { const c = new URLSearchParams(window.location.search).get("call"); if (c) setCallFocus(c); }, []);
@@ -327,16 +328,25 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                     : <p className="text-xs text-[#4a5878]">After the oil and filter at what we last paid, $1 of supplies{day?.gasPerJob ? ` and about ${money(day.gasPerJob)} of gas (from the last 60 days of gas receipts)` : ""}.</p>)}
                   {j.notes && <p className="text-[#4a5878] mt-1">Note: {j.notes}</p>}
                   {j.imported && <p className="text-xs text-[#4a5878] mt-1">Imported from Square</p>}
-                  {["confirmed", "requested", "in_progress"].includes(j.status) && can.book && (
-                    <div className="flex flex-wrap gap-2 items-start">
-                      <button onClick={() => setEditing(j.id)} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Edit details</button>
-                      <EditPrice id={j.id} subtotal={Math.round(j.lines.reduce((t, l) => t + Number(l.amount), 0) * 100) / 100} onSaved={() => load(date)} />
-                      <FamilyPrice id={j.id} on={j.family} onSaved={() => load(date)} />
+                  {["confirmed", "requested", "in_progress"].includes(j.status) && can.book && (editMenu !== j.id ? (
+                    <button onClick={() => setEditMenu(j.id)} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Edit details</button>
+                  ) : (
+                    // one button on the card; the changes open under it
+                    <div className="mt-2 flex flex-col gap-1 rounded-xl border border-[#c8d0e0] p-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-[#4a5878]">Change this booking</span>
+                        <button onClick={() => setEditMenu(null)} className="h-9 px-3 rounded-lg text-sm font-bold text-[#4a5878]">Close</button>
+                      </div>
+                      <div className="flex flex-wrap gap-2 items-start">
+                        <button onClick={() => setEditing(j.id)} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Name, car, oil, notes</button>
+                        <EditPrice id={j.id} subtotal={Math.round(j.lines.reduce((t, l) => t + Number(l.amount), 0) * 100) / 100} onSaved={() => load(date)} />
+                        <FamilyPrice id={j.id} on={j.family} onSaved={() => load(date)} />
+                        {(j.status === "confirmed" || j.status === "requested") && (
+                          <button onClick={() => setChanging({ id: j.id, name: j.name.split(" ")[0] })} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Move or cancel</button>
+                        )}
+                      </div>
                     </div>
-                  )}
-                  {(j.status === "confirmed" || j.status === "requested") && can.book && (
-                    <button onClick={() => setChanging({ id: j.id, name: j.name.split(" ")[0] })} className="self-start mt-2 h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Move or cancel</button>
-                  )}
+                  ))}
                 </div>
               )}
 
@@ -516,7 +526,7 @@ function FamilyPrice({ id, on, onSaved }: { id: string; on?: boolean; onSaved: (
       <p className="font-bold">Family price: just the parts at our cost</p>
       {p.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>${l.amount.toFixed(2)}</span></div>)}
       <div className="flex justify-between font-bold"><span>Total with HST</span><span>${p.total.toFixed(2)}</span></div>
-      <p className="text-xs text-[#4a5878]">No labour and no gas. HST goes on top like any sale.</p>
+      <p className="text-xs text-[#4a5878]">No labour and no gas. Parts are before tax and HST goes on top, so the total is about what the parts cost us.</p>
       {p.missing.length > 0 && <p className="text-sm font-semibold text-[#9b1c1c]">Missing {p.missing.join(" and ")}. Add it in Edit details first.</p>}
       {err && <p className="text-sm font-semibold text-[#9b1c1c]">{err}</p>}
       <div className="flex gap-2">

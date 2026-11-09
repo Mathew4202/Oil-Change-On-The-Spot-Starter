@@ -347,7 +347,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
             )}
             <label className="flex items-start gap-2 text-[15px] font-semibold">
               <input type="checkbox" checked={family} onChange={(e) => setFamily(e.target.checked)} className="w-5 h-5 mt-0.5" />
-              <span>Family price<span className="block text-sm font-normal text-[#4a5878]">Just the oil, filter and any add-on parts at what we paid, plus $1 of supplies. No labour, no gas. HST on top. The price above changes once it&apos;s booked.</span></span>
+              <span>Family price<span className="block text-sm font-normal text-[#4a5878]">Just the oil, filter and any add-on parts at what we paid, plus $1 of supplies. No labour, no gas. Parts before tax with HST on top, so they pay about what the parts cost us. The price above changes once it&apos;s booked.</span></span>
             </label>
             {!family && <label className={lbl}>Special price before HST (optional)
               <input value={special} onChange={(e) => setSpecial(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="Leave empty for the normal price" className={field} />
