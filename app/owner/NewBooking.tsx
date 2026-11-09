@@ -62,6 +62,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
   const [otherTime, setOtherTime] = useState("");
   const [payMode, setPayMode] = useState<"after" | "online">("after");
   const [special, setSpecial] = useState("");
+  const [family, setFamily] = useState(false);   // family price: just the parts at our cost
   const [notes, setNotes] = useState(""); const [referredBy, setReferredBy] = useState("");
   // Price + saving
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -183,7 +184,7 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
         firstName: first.trim(), lastName: last.trim(), phone, address: address.trim(), ...(email.trim() ? { email: email.trim() } : {}), ...(place?.placeId ? { placeId: place.placeId } : {}),
         car: { year: Number(year), make: make.trim(), model: model.trim(), ...(engine.trim() && engine !== "unsure" ? { engine: engine.trim() } : {}) },
         job, addons: keepAddons(job, addons), own: job === "oil_change" || job === "seasonal" ? own || null : null, start: startIso, cars, payMode, notes: notes.trim() || undefined, ...(referredBy.trim() ? { referredBy: referredBy.trim().slice(0, 80) } : {}),
-        priceOverride: special.trim() ? Number(special) : null,
+        priceOverride: !family && special.trim() ? Number(special) : null, ...(family ? { family: true } : {}),
         ...(more.length ? { moreCars: more.map((x) => ({ car: { year: Number(x.year), make: x.make, model: x.model, ...(x.engine && x.engine !== "unsure" ? { engine: x.engine } : {}) }, job: x.job, addons: extraAddons(x),
           own: null, ...(x.vin && x.vin.length === 17 ? { vin: x.vin } : {}), ...(x.job === "diagnostic" && x.problem.trim() ? { notes: `Problem: ${x.problem.trim()}` } : {}) })) } : {}),
         customerId: customer?.id ?? null,
@@ -344,9 +345,13 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
                 <div className="flex justify-between font-bold"><span>Total with HST{more.length ? ` (${more.length + 1} cars)` : ""}</span><span>${(quote.total + more.reduce((t, x) => t + (x.quote?.total ?? 0), 0)).toFixed(2)}</span></div>
               </div>
             )}
-            <label className={lbl}>Special price before HST (optional)
-              <input value={special} onChange={(e) => setSpecial(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="Leave empty for the normal price" className={field} />
+            <label className="flex items-start gap-2 text-[15px] font-semibold">
+              <input type="checkbox" checked={family} onChange={(e) => setFamily(e.target.checked)} className="w-5 h-5 mt-0.5" />
+              <span>Family price<span className="block text-sm font-normal text-[#4a5878]">Just the oil, filter and any add-on parts at what we paid, plus $1 of supplies. No labour, no gas. HST on top. The price above changes once it&apos;s booked.</span></span>
             </label>
+            {!family && <label className={lbl}>Special price before HST (optional)
+              <input value={special} onChange={(e) => setSpecial(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="Leave empty for the normal price" className={field} />
+            </label>}
             <div className="flex gap-2">
               {([["after", "Pays after"], ["online", "Already paid"]] as const).map(([k, n]) => (
                 <button key={k} onClick={() => setPayMode(k)} className="h-10 px-3 rounded-full border text-sm font-bold" style={chip(payMode === k)}>{n}</button>

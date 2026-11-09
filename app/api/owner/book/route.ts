@@ -11,6 +11,7 @@ const OwnerBody = BookingBody.extend({
   address: z.string().trim().min(2).max(200),
   priceOverride: z.number().min(0).max(5000).nullable().optional(),
   customerId: z.string().uuid().nullable().optional(),
+  family: z.boolean().optional(),   // family price: just the parts at our cost
 });
 
 export async function POST(req: NextRequest) {
@@ -22,8 +23,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Please check: ${Object.keys(f).join(", ")}` }, { status: 400 });
   }
   try {
-    const { priceOverride, customerId, ...b } = parsed.data;
-    const r = await createBooking(b, { source: "phone", bookedBy: owner, anyTime: true, priceOverride: priceOverride ?? null, customerId: customerId ?? null });
+    const { priceOverride, customerId, family, ...b } = parsed.data;
+    const r = await createBooking(b, { source: "phone", bookedBy: owner, anyTime: true, priceOverride: family ? null : priceOverride ?? null, customerId: customerId ?? null, family: family === true });
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
     return NextResponse.json(r);
   } catch (e) {

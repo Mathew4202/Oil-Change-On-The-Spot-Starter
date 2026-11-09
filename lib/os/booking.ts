@@ -76,6 +76,7 @@ type Opts = {
   bookedBy?: string; anyTime?: boolean; priceOverride?: number | null; customerId?: string | null;
   // internal, for several cars on one visit
   groupId?: string; noTravel?: boolean; silent?: boolean;
+  family?: boolean;   // owners booked it at the family price: just the parts at our cost
   // fleets: book this exact vehicle (8 identical vans are 8 vehicles), billed on the fleet's invoice
   vehicleId?: string; fleetAccountId?: string;
 };
@@ -286,6 +287,15 @@ async function createOne(b: BookingInput, opts: Opts & {
   }
 
   await markCreditsUsed(creditIds, bk.data!.id);
+  // family price: swap the price for our cost of the parts before anyone gets the total
+  if (opts.family) {
+    const { setFamilyPrice } = await import("@/lib/os/family-price");
+    const f = await setFamilyPrice(bk.data!.id, opts.bookedBy ?? "");
+    if (f.ok) {
+      const [nb] = await sbGet<{ quote_breakdown: { lines: { label: string; amount: number }[]; subtotal: number; hst: number; total: number } }>(`bookings?select=quote_breakdown&id=eq.${bk.data!.id}`).catch(() => []);
+      if (nb) { quote.lines = nb.quote_breakdown.lines; quote.subtotal = nb.quote_breakdown.subtotal; quote.hst = nb.quote_breakdown.hst; quote.total = nb.quote_breakdown.total; quote.profit = 0; }
+    } else await sbPatch("bookings", `id=eq.${bk.data!.id}`, { needs_review: [...quote.needsReview, `Family price not set: ${f.error}. Tap Family price once that's fixed`] }).catch(() => null);
+  }
   // its spot on the map, for grouping the day by area later (free; never holds up the booking more than 2.5 s)
   await Promise.race([geocode(b.address).catch(() => null), new Promise((r) => setTimeout(r, 2500))]);
 
