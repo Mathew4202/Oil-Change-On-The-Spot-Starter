@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentOwner } from "@/lib/os/auth";
 import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
 import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
+import { addonNeeds, sumNeeds, onShelf } from "@/lib/os/addon-needs";
 
 export const dynamic = "force-dynamic";
 type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null };
@@ -13,8 +14,9 @@ export async function GET() {
   const from = new Date().toISOString(), to = new Date(halifaxToDate(today, 0).getTime() + 8 * 86400000).toISOString();
   const [parts, upcoming] = await Promise.all([
     sbGet<Part>("parts?select=id,part_number,brand,description,category,on_hand,unit,oil_grade,reorder_at&order=category,part_number"),
-    sbGet<{ cars: number; services: { job?: string; own?: string | null } | null; vehicles: { vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null } | null } | null }>(
-      `bookings?select=cars,services,vehicles(vehicle_specs(oil_grade,capacity_l,oil_filter_part))&status=in.(confirmed,requested)&starts_at=gte.${from}&starts_at=lt.${to}`),
+    sbGet<{ cars: number; services: { job?: string; own?: string | null; addons?: string[] } | null; vehicles: { vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null;
+      cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null } | null } | null }>(
+      `bookings?select=cars,services,vehicles(vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&status=in.(confirmed,requested,in_progress)&starts_at=gte.${from}&starts_at=lt.${to}`),
   ]);
   // What the next 7 days need
   const needFilters: Record<string, number> = {}, needOil: Record<string, number> = {};
@@ -25,11 +27,15 @@ export async function GET() {
     if (s.oil_filter_part && own !== "filter") needFilters[s.oil_filter_part] = (needFilters[s.oil_filter_part] || 0) + n;
     if (own !== "oil") { const g = s.oil_grade.replace(/^Euro /, "Euro "); needOil[g] = Math.round(((needOil[g] || 0) + Number(s.capacity_l) * n) * 10) / 10; }
   }
+  // the add-ons they picked (cabin and air filters, wipers, battery, top-ups), for every kind of job
+  const addons = sumNeeds(upcoming.map((b) => addonNeeds(b.services?.addons, b.vehicles?.vehicle_specs, b.cars)));
   const have = (pn: string) => parts.filter((p) => p.part_number === pn).reduce((t, p) => t + Number(p.on_hand), 0);
   const haveOil = (g: string) => parts.filter((p) => p.unit === "L" && (p.oil_grade === g || p.oil_grade === g.replace(/^Euro /, ""))).reduce((t, p) => t + Number(p.on_hand), 0);
   const toBuy = [
     ...Object.entries(needFilters).map(([pn, need]) => ({ kind: "filter", label: `Oil filter ${pn}`, need, have: have(pn), unit: "" })),
     ...Object.entries(needOil).map(([g, need]) => ({ kind: "oil", label: `${g} oil`, need, have: Math.round(haveOil(g) * 10) / 10, unit: "L" })),
+    // can't tell what's on the shelf (no part # yet, a battery): counted as 0 so it shows up to sort out
+    ...addons.map((x) => ({ kind: x.kind, label: x.label, need: x.qty, have: onShelf(x, parts) ?? 0, unit: "" })),
   ].map((x) => ({ ...x, buy: Math.max(0, Math.round((x.need - x.have) * 10) / 10) })).sort((a, b) => b.buy - a.buy);
   return NextResponse.json({ parts, toBuy, bookingsCounted: upcoming.length });
 }

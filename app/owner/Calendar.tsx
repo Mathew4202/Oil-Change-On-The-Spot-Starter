@@ -29,7 +29,7 @@ type Day = {
   date: string; jobs: Job[]; timeOff: { id: string; starts_at: string; ends_at: string; reason: string | null }[];
   holds?: { id: string; start: string; end: string; expires: string; name: string | null; phone: string | null; job: string; cars: number; note: string | null; by: string | null; link: string }[];
   totals: { jobs: number; booked: number | null; profit: number | null }; gasPerJob?: number | null;
-  bring: { oil: { grade: string; litres: number }[]; filters: { part: string; qty: number; inStock: number }[] };
+  bring: { oil: { grade: string; litres: number }[]; filters: { part: string; qty: number; inStock: number }[]; addons?: { label: string; qty: number; inStock: number | null }[] };
   route?: { link: string | null; stops: number; offers: { booking_id: string; to_start: string; status: string }[] } | null;
 };
 type Alert = { id: string; title: string; body: string | null; created_at: string; read_at: string | null; bookings: { starts_at: string } | null };
@@ -189,11 +189,12 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
         <PushToggle compact />
         {!day && !error && <p className="text-center text-[#4a5878] py-10">Loading…</p>}
 
-        {day && (day.bring.oil.length > 0 || day.bring.filters.length > 0) && (
+        {day && (day.bring.oil.length > 0 || day.bring.filters.length > 0 || (day.bring.addons?.length ?? 0) > 0) && (
           <div className="rounded-xl p-3 text-[15px] leading-snug border" style={{ background: "#fff6dd", borderColor: GOLD }}>
             <strong>Bring {date === today ? "today" : "this day"}:</strong>{" "}
             {[...day.bring.oil.map((o) => `${o.litres} L ${o.grade}`),
-              ...day.bring.filters.map((f) => `${f.qty} × filter ${f.part}${f.inStock >= f.qty ? " (in stock)" : " (buy)"}`)].join(", ")}
+              ...day.bring.filters.map((f) => `${f.qty} × filter ${f.part}${f.inStock >= f.qty ? " (in stock)" : " (buy)"}`),
+              ...(day.bring.addons ?? []).map((a) => `${a.qty} × ${a.label}${a.inStock == null ? "" : a.inStock >= a.qty ? " (in stock)" : " (buy)"}`)].join(", ")}
           </div>
         )}
 

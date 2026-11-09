@@ -1,5 +1,6 @@
 // Everything the calendar needs for one day: jobs, totals, what to bring, time off.
 import { activeHolds, holdLink } from "@/lib/os/holds";
+import { addonNeeds, sumNeeds, onShelf } from "@/lib/os/addon-needs";
 import { dayRoute } from "@/lib/os/route";
 import { bookingPhotoLink } from "@/lib/os/vin-photo";
 import { lastVisit } from "@/lib/os/last-visit";
@@ -59,6 +60,8 @@ export async function GET(req: NextRequest) {
     if (r.services?.own !== "oil") oil[g] = Math.round(((oil[g] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
     if (s.oil_filter_part && r.services?.own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
   }
+  // the add-ons they picked: cabin and air filters, wipers, battery, top-ups (any kind of job)
+  const addonList = sumNeeds(rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).map((r) => addonNeeds(r.services?.addons, r.vehicles?.vehicle_specs, r.cars || 1)));
   // then everything that needs the day's jobs, also all at once
   const fl = Object.keys(filters);
   const photoLinks: Record<string, string[]> = {};
@@ -66,7 +69,7 @@ export async function GET(req: NextRequest) {
   // what we flagged on each car last visit ("tires coming up soon"), to offer it on this visit
   const vids = Array.from(new Set(rows.map((r) => r.vehicle_id).filter(Boolean))) as string[];
   const prevJobs: { vehicle_id: string; booking_id: string | null; done_at: string; inspection: Record<string, { status?: string }> | null; customer_note?: string | null }[] = [];
-  const [parts, , , route] = await Promise.all([
+  const [parts, , , route, shelf] = await Promise.all([
     fl.length ? sbGet<{ part_number: string; on_hand: number }>(`parts?select=part_number,on_hand&part_number=in.(${fl.join(",")})`) : Promise.resolve([]),
     fl.length ? sbGet<{ our_cost: number; parts: { part_number: string } | null }>(`part_quotes?select=our_cost,parts!inner(part_number)&parts.part_number=in.(${fl.join(",")})&order=checked_at.desc`)
       .then((q) => { for (const x of q) if (x.parts && filterCosts[x.parts.part_number] == null) filterCosts[x.parts.part_number] = Number(x.our_cost); }).catch(() => null) : null,
@@ -76,6 +79,7 @@ export async function GET(req: NextRequest) {
       .catch(() => null) : null,   // migration 0019 not run yet
     dayRoute(date, rows).catch(() => null),
     vids.length ? sbGet<(typeof prevJobs)[number]>(`jobs?select=*&vehicle_id=in.(${vids.join(",")})&order=done_at.desc&limit=300`).then((x) => { prevJobs.push(...x); }).catch(() => null) : null,
+    addonList.length ? sbGet<{ part_number: string; description: string | null; category: string | null; on_hand: number }>("parts?select=part_number,description,category,on_hand&category=neq.oil").catch(() => []) : Promise.resolve([]),
   ]);
   const lastTimeFor = (r: Row) => { const p = prevJobs.find((j) => j.vehicle_id === r.vehicle_id && j.booking_id !== r.id && j.done_at < r.starts_at); return p ? lastVisit(p.inspection, p.customer_note) : null; };
   const stock = Object.fromEntries(parts.map((p) => [p.part_number, Number(p.on_hand)]));
@@ -149,6 +153,7 @@ export async function GET(req: NextRequest) {
     bring: {
       oil: Object.entries(oil).map(([grade, litres]) => ({ grade, litres })),
       filters: Object.entries(filters).map(([part, qty]) => ({ part, qty, inStock: stock[part] ?? 0 })),
+      addons: addonList.map((x) => ({ label: x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never) })),
     },
   });
 }
