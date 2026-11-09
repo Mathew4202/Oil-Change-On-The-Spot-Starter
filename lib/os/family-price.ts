@@ -8,26 +8,20 @@ const NAMES: Record<string, string> = { cabin_filter: "Cabin filter (part)", eng
 
 type Line = { label: string; amount: number };
 
-/** What the family price would be for this booking: one line per part, at what we last paid. */
-export async function familyPrice(id: string) {
-  const [b] = await sbGet<{ status: string; cars: number | null; services: { job?: string; own?: string | null; addons?: string[] } | null;
-    quote_breakdown: { lines?: Line[]; family?: Line[] } | null;
-    vehicles: { vehicle_specs: { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; cabin_filter_part?: string | null; air_filter_part?: string | null } | null } | null }>(
-    `bookings?select=status,cars,services,quote_breakdown,vehicles(vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part))&id=eq.${enc(id)}`);
-  if (!b) return { ok: false as const, error: "Booking not found" };
-  if (b.status === "done" || b.status === "cancelled") return { ok: false as const, error: "This job is already finished or cancelled" };
-  const cars = Math.max(1, b.cars || 1), s = b.vehicles?.vehicle_specs, job = b.services?.job ?? "oil_change";
+type Spec = { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; cabin_filter_part?: string | null; air_filter_part?: string | null } | null | undefined;
+
+/** The family price lines for a car: one line per part at what we last paid, before tax, plus supplies. */
+export async function familyLines(x: { spec: Spec; job: string; own?: string | null; charged: Line[]; addons?: string[] | null; cars?: number | null }) {
+  const cars = Math.max(1, x.cars || 1), s = x.spec;
   const [prices, rulesRows, quotes] = await Promise.all([
     sbGet<{ grade: string; cost_per_l: number }>("oil_prices?select=grade,cost_per_l&active=is.true").catch(() => []),
     sbGet<{ key: string; value: number }>("pricing_rules?select=key,value").catch(() => []),
     sbGet<{ our_cost: number | null; parts: { part_number: string } | null }>("part_quotes?select=our_cost,parts!inner(part_number)&our_cost=not.is.null&order=checked_at.desc&limit=2000").catch(() => []),
   ]);
-  const rr = Object.fromEntries(rulesRows.map((x) => [x.key, Number(x.value)]));
-  const costOf = (pn: string | null | undefined) => { const q = pn ? quotes.find((x) => x.parts && normPart(x.parts.part_number) === normPart(pn)) : undefined; return q ? Number(q.our_cost) : null; };
+  const rr = Object.fromEntries(rulesRows.map((r) => [r.key, Number(r.value)]));
+  const costOf = (pn: string | null | undefined) => { const q = pn ? quotes.find((y) => y.parts && normPart(y.parts.part_number) === normPart(pn)) : undefined; return q ? Number(q.our_cost) : null; };
   const lines: Line[] = [], missing: string[] = [];
-  // the lines being charged (before any family price), so add-ons they dropped don't count
-  const charged = b.quote_breakdown?.family ? b.quote_breakdown.family : (b.quote_breakdown?.lines ?? []);
-  if (["oil_change", "seasonal"].includes(job) && !b.services?.own) {
+  if (["oil_change", "seasonal"].includes(x.job) && !x.own) {
     const perL = s?.oil_grade ? prices.find((p) => p.grade === s.oil_grade)?.cost_per_l : undefined;
     if (!s?.oil_grade || !s.capacity_l) missing.push("the car's oil and litres");
     else if (perL == null) missing.push(`a price for ${s.oil_grade} oil`);
@@ -35,7 +29,7 @@ export async function familyPrice(id: string) {
     const fc = costOf(s?.oil_filter_part);
     lines.push({ label: `Oil filter${s?.oil_filter_part ? ` ${s.oil_filter_part}` : ""} at our cost${fc == null ? " (usual cost)" : ""}`, amount: r2((fc ?? rr.filter_estimate ?? 6.5) * cars) });
   }
-  for (const { kind, times } of chargedAddons(charged, b.services?.addons, cars)) {
+  for (const { kind, times } of chargedAddons(x.charged, x.addons, cars)) {
     const pn = kind === "cabin_filter" ? s?.cabin_filter_part : kind === "engine_filter" ? s?.air_filter_part : null;
     const c = costOf(pn);
     lines.push({ label: `${NAMES[kind] ?? kind} at our cost${c == null ? " (usual cost)" : ""}`, amount: r2((c ?? rr[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times) });
@@ -46,7 +40,20 @@ export async function familyPrice(id: string) {
   const rate = Number(rr.hst_rate ?? 0.14);
   for (const l of lines) { l.amount = r2(l.amount / (1 + rate)); l.label = l.label.replace(" at our cost", " at our cost before tax"); }
   const subtotal = r2(lines.reduce((t, l) => t + l.amount, 0));
-  return { ok: true as const, lines, subtotal, hst: r2(subtotal * rate), total: r2(subtotal * (1 + rate)), missing, before: charged };
+  return { lines, subtotal, hst: r2(subtotal * rate), total: r2(subtotal * (1 + rate)), missing };
+}
+
+/** What the family price would be for this booking. */
+export async function familyPrice(id: string) {
+  const [b] = await sbGet<{ status: string; cars: number | null; services: { job?: string; own?: string | null; addons?: string[] } | null;
+    quote_breakdown: { lines?: Line[]; family?: Line[] } | null; vehicles: { vehicle_specs: Spec } | null }>(
+    `bookings?select=status,cars,services,quote_breakdown,vehicles(vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part))&id=eq.${enc(id)}`);
+  if (!b) return { ok: false as const, error: "Booking not found" };
+  if (b.status === "done" || b.status === "cancelled") return { ok: false as const, error: "This job is already finished or cancelled" };
+  // the lines being charged (before any family price), so add-ons they dropped don't count
+  const charged = b.quote_breakdown?.family ? b.quote_breakdown.family : (b.quote_breakdown?.lines ?? []);
+  const f = await familyLines({ spec: b.vehicles?.vehicle_specs, job: b.services?.job ?? "oil_change", own: b.services?.own, charged, addons: b.services?.addons, cars: b.cars });
+  return { ok: true as const, ...f, before: charged };
 }
 
 /** Save the family price on the booking (the regular lines are kept, so it can be undone). */

@@ -120,7 +120,9 @@ export async function GET(req: NextRequest) {
   };
   const estimate = (c: ReturnType<typeof costsOf>) => (c ? Math.round((c.subtotal - c.oil - c.filter - c.supplies) * 100) / 100 : null);
   // ...and the gas to get there (each job's share of the last 60 days of gas receipts)
-  const afterGas = (p: number | null, r: Row) => (p == null || !gas ? p : Math.round((p - gas.perJob * (r.cars || 1)) * 100) / 100);
+  // family price jobs are where we live: no gas for them
+  const isFam = (r: Row) => !!(r.quote_breakdown as { family?: unknown } | null)?.family;
+  const afterGas = (p: number | null, r: Row) => (p == null || !gas || isFam(r) ? p : Math.round((p - gas.perJob * (r.cars || 1)) * 100) / 100);
   const jobs = rows.map((r) => {
     const s = r.vehicles?.vehicle_specs;
     const name = [r.customers?.first_name, r.customers?.last_name].filter(Boolean).join(" ") || "Customer";
@@ -156,7 +158,9 @@ export async function GET(req: NextRequest) {
         // not done yet: worked out live from what we last paid for the oil, filter and any add-on parts
         const c = costsOf(r, s); const ad = addonCostsOf(r, s);
         const base = estimate(c);
-        const live = base != null ? Math.round((base - ad.reduce((t, a) => t + a.cost, 0)) * 100) / 100 : null;
+        let live = base != null ? Math.round((base - ad.reduce((t, a) => t + a.cost, 0)) * 100) / 100 : null;
+        // family price: the parts were charged before tax, and the HST we paid on them comes back, so count them before tax too
+        if (live != null && c && isFam(r)) live = Math.round((c.subtotal - (c.subtotal - live) / 1.14) * 100) / 100;
         return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? null, r) : null, costs: money && live != null && c ? { ...c, addons: ad } : null, actual: false }; })(), notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       lastTime: lastTimeFor(r),
       groupId: r.pay_mode !== "fleet_invoice" ? r.group_id ?? null : null,   // several cars on one visit: one card in HQ

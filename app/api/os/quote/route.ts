@@ -39,7 +39,12 @@ export async function GET(req: NextRequest) {
       if (cr?.total) Object.assign(quote, addLines(quote, cr.lines, 0.14));
     }
     const { cost, profit, raised, needsReview, ...publicQuote } = quote;
-    return NextResponse.json({
+    // HQ "Family price" ticked: what it comes to (just the parts at our cost)
+    const family = boss && q.get("family") === "1"
+      ? await (await import("@/lib/os/family-price")).familyLines({ spec, job: q.get("job") || "oil_change", own: q.get("own"), charged: quote.lines,
+          addons: (q.get("addons") || "").split(",").filter(Boolean), cars: q.get("cars") ? Number(q.get("cars")) : 1 }).catch(() => null)
+      : null;
+    return NextResponse.json({ ...(family ? { family } : {}),
       vehicle: { year, make, model, class: vehicleClass },
       spec: spec ? { engine: spec.engine, grade: spec.oil_grade, oilSpec: spec.oil_spec, capacityL: Number(spec.capacity_l), filter: spec.oil_filter_part, fuel: spec.fuel ?? null,
         // the rest is for HQ: everything we know about this car's parts

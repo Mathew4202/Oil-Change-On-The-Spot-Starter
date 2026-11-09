@@ -18,7 +18,8 @@ type Slot = { time: string; label: string; start: string };
 export type CallPreset = { callId: string; customerId?: string | null; name?: string | null; lastName?: string | null; phone?: string | null; email?: string | null; address?: string | null;
   year?: number | null; make?: string | null; model?: string | null; engine?: string | null; job?: string | null; cars?: number; addons?: string[]; notes?: string | null; problem?: string | null;
   start?: string | null; date?: string | null; time?: string | null; summary?: string[] | null };
-type Quote = { lines: { label: string; amount: number }[]; subtotal: number; total: number; spec: HqSpec | null; engines?: string[]; error?: string };
+type Quote = { lines: { label: string; amount: number }[]; subtotal: number; total: number; spec: HqSpec | null; engines?: string[]; error?: string;
+  family?: { lines: { label: string; amount: number }[]; subtotal: number; total: number; missing: string[] } };
 
 const field = "h-12 rounded-xl border border-[#c8d0e0] px-3 text-base w-full bg-white";
 const lbl = "flex flex-col gap-1 text-sm font-semibold";
@@ -158,11 +159,12 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
       if (sent.length) p.set("addons", sent.join(","));
       if ((job === "oil_change" || job === "seasonal") && own) p.set("own", own);
       if (place?.km != null) p.set("km", String(place.km));
+      if (family) p.set("family", "1");
       const r = await fetch(`/api/os/quote?${p}`);
       setQuote(await r.json()); setPricing(false);
     }, 600);
     return () => clearTimeout(t);
-  }, [year, make, model, engine, addons, own, cars, carReady, job, date, place?.km, customer?.id]);
+  }, [year, make, model, engine, addons, own, cars, carReady, job, date, place?.km, customer?.id, family]);
 
   const startIso = useMemo(() => {
     if (otherTime) return halifaxIso(date, otherTime);
@@ -347,8 +349,16 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
             )}
             <label className="flex items-start gap-2 text-[15px] font-semibold">
               <input type="checkbox" checked={family} onChange={(e) => setFamily(e.target.checked)} className="w-5 h-5 mt-0.5" />
-              <span>Family price<span className="block text-sm font-normal text-[#4a5878]">Just the oil, filter and any add-on parts at what we paid, plus $1 of supplies. No labour, no gas. Parts before tax with HST on top, so they pay about what the parts cost us. The price above changes once it&apos;s booked.</span></span>
+              <span>Family price<span className="block text-sm font-normal text-[#4a5878]">Just the oil, filter and any add-on parts at what we paid, plus $1 of supplies. No labour, no gas. Parts before tax with HST on top, so they pay about what the parts cost us.</span></span>
             </label>
+            {family && quote?.family && (
+              <div className="rounded-xl border-2 p-3 flex flex-col gap-1 text-[15px]" style={{ borderColor: GOLD, background: "#fff6dd" }}>
+                {quote.family.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>${l.amount.toFixed(2)}</span></div>)}
+                <div className="flex justify-between font-extrabold text-lg"><span>Family total</span><span>${quote.family.total.toFixed(2)}</span></div>
+                <p className="text-sm font-semibold text-[#1d6b3a]">${Math.max(0, quote.total - quote.family.total).toFixed(2)} off the regular ${quote.total.toFixed(2)}{more.length ? " (first car; the other cars get the family price too)" : ""}</p>
+                {quote.family.missing.length > 0 && <p className="text-sm font-semibold text-[#9b1c1c]">Missing {quote.family.missing.join(" and ")}, so it&apos;ll be booked at the regular price. Fix the oil first.</p>}
+              </div>
+            )}
             {!family && <label className={lbl}>Special price before HST (optional)
               <input value={special} onChange={(e) => setSpecial(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="Leave empty for the normal price" className={field} />
             </label>}

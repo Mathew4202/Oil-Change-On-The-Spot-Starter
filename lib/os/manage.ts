@@ -205,7 +205,8 @@ async function tellNewPrice(id: string, total: number, oldTotal: number | null) 
   const { signed } = await import("@/lib/os/signer");
   const m = (n: number) => `$${n.toFixed(2)}`;
   const text = await signed(fill(t?.body || PRICE_TEXT, { first_name: c.first_name?.trim() || "there", when: when(b.starts_at), total: m(total), old_total: oldTotal != null ? m(oldTotal) : "", was: oldTotal != null ? ` (it was ${m(oldTotal)})` : "" }));
-  const r = await sendSms(c.phone, text, { kind: "price_changed", customerId: c.id, bookingId: id });
+  const { isFamily, noHstWords } = await import("@/lib/os/customer-texts");
+  const r = await sendSms(c.phone, (await isFamily(id)) ? noHstWords(text) : text, { kind: "price_changed", customerId: c.id, bookingId: id });
   return { sent: r.status === "sent" || r.status === "queued" || r.status === "delivered", status: r.status };
 }
 

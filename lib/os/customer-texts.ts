@@ -21,8 +21,19 @@ export async function textCustomer(key: string, who: Who | null | undefined, var
   const body = await template(key);
   if (!body) return { sent: false, status: "template_off" };
   const { beforeSignoff } = await import("@/lib/os/last-visit");
-  return sendSms(who.phone, beforeSignoff(fill(body, { first_name: who.first_name?.trim() || "there", phone: PHONE, ...vars }), extraLine || ""), { kind: key, customerId: who.id, bookingId });
+  let text = fill(body, { first_name: who.first_name?.trim() || "there", phone: PHONE, ...vars });
+  // family price: just the one total (tax included), no "with HST" next to it
+  if (bookingId && /HST/.test(text) && (await isFamily(bookingId))) text = noHstWords(text);
+  return sendSms(who.phone, beforeSignoff(text, extraLine || ""), { kind: key, customerId: who.id, bookingId });
 }
+
+/** Is this booking (or any car on its visit) on the family price? */
+export async function isFamily(bookingId: string) {
+  const [b] = await sbGet<{ quote_breakdown: { family?: unknown } | null }>(`bookings?select=quote_breakdown&id=eq.${bookingId}`).catch(() => []);
+  return !!b?.quote_breakdown?.family;
+}
+/** "Total $50.00 with HST" → "Total $50.00" (the amount already has the tax in it). */
+export const noHstWords = (t: string) => t.replace(/\s*(\(|,)?\s*(with|plus|incl\.?|including|\+)\s*HST\)?/gi, "");
 
 /** Booking confirmation (sent right after any booking, website or phone). */
 export async function sendBookingConfirmation(bookingId: string, opts: { payingNow?: boolean; car?: string; total?: number } = {}) {
