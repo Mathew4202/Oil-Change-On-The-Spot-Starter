@@ -101,6 +101,24 @@ export async function setCarOil(vehicleId: string, o: { grade?: string | null; l
   const grade = o.grade?.trim() ? cleanGrade(o.grade) : v.spec?.oil_grade ?? null;
   const litres = o.litres === undefined || o.litres === null || o.litres === "" ? (v.spec?.capacity_l != null ? Number(v.spec.capacity_l) : null) : Math.round(Number(o.litres) * 10) / 10;
   const filter = o.filter === undefined ? v.spec?.oil_filter_part ?? null : cleanFilter(o.filter);
+  // only the add-on parts changed (cabin, air, wipers) and no oil on file yet: save just the parts on this car's spec
+  const partsOnly = o.grade === undefined && o.litres === undefined && o.filter === undefined;
+  if (!grade && partsOnly) {
+    const w = (x: string | null | undefined) => (x ? x.replace(/[^0-9]/g, "").slice(0, 2) || null : null);
+    const parts: Record<string, string | null> = {};
+    if (o.cabin !== undefined) parts.cabin_filter_part = cleanFilter(o.cabin);
+    if (o.air !== undefined) parts.air_filter_part = cleanFilter(o.air);
+    if (o.wiperDriver !== undefined) parts.wiper_driver = w(o.wiperDriver);
+    if (o.wiperPassenger !== undefined) parts.wiper_passenger = w(o.wiperPassenger);
+    if (v.spec) {
+      if (!(await sbPatch("vehicle_specs", `id=eq.${v.spec.id}`, parts))) return { ok: false as const, error: "Couldn't save the parts" };
+      return { ok: true as const, specId: v.spec.id, grade: null, litres: null, filter: null };
+    }
+    const r = await sbInsert<{ id: string }>("vehicle_specs", { year_from: v.year, year_to: v.year, make: v.make, model: v.model, engine: v.engine || null, ...parts, source: "job_history", verified: true, times_done: 0 });
+    if (!r.ok || !r.data) return { ok: false as const, error: "Couldn't save the parts" };
+    await sbPatch("vehicles", `id=eq.${enc(v.id)}`, { spec_id: r.data.id });
+    return { ok: true as const, specId: r.data.id, grade: null, litres: null, filter: null };
+  }
   if (!grade) return { ok: false as const, error: "Add the oil, like 0W-20" };
   if (!/^(Euro |Diesel )?\d{1,2}W-\d{1,2}$/.test(grade)) return { ok: false as const, error: "Write the oil like 0W-20 or 5W-30" };
   if (!(litres && litres > 0 && litres < 30)) return { ok: false as const, error: "Add how many litres it takes (like 4.4)" };

@@ -210,21 +210,25 @@ async function tellNewPrice(id: string, total: number, oldTotal: number | null) 
 }
 
 export type BookingEdit = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; notes?: string;
-  car?: { year?: unknown; make?: unknown; model?: unknown; engine?: unknown }; oil?: { grade?: string; litres?: string | number; filter?: string } };
+  car?: { year?: unknown; make?: unknown; model?: unknown; engine?: unknown }; oil?: { grade?: string; litres?: string | number; filter?: string };
+  parts?: { cabin?: string; air?: string; wiperDriver?: string; wiperPassenger?: string } };
 
 /** Everything the edit screen shows for one booking. */
 export async function bookingForEdit(id: string) {
   const [b] = await sbGet<{ id: string; address: string | null; notes: string | null; vehicle_id: string | null; fleet_account_id: string | null;
     customers: { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
-    services: { job?: string } | null; cars: number | null;
+    services: { job?: string; addons?: string[] } | null; cars: number | null;
     vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null;
-      vehicle_specs: { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null } | null } | null }>(
-    `bookings?select=id,address,notes,vehicle_id,fleet_account_id,services,cars,customers(id,first_name,last_name,phone,email),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part))&id=eq.${enc(id)}`);
+      vehicle_specs: { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; cabin_filter_part: string | null; air_filter_part: string | null; wiper_driver: string | null; wiper_passenger: string | null } | null } | null }>(
+    `bookings?select=id,address,notes,vehicle_id,fleet_account_id,services,cars,customers(id,first_name,last_name,phone,email),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&id=eq.${enc(id)}`);
   if (!b) return null;
   const c = b.customers, v = b.vehicles, sp = v?.vehicle_specs;
   const { stockFor } = await import("@/lib/os/spec-learn");
   const job = b.services?.job;
-  return { withOil: !job || job === "oil_change" || job === "seasonal", cars: b.cars || 1,
+  // the add-ons they picked that take a part we can note (battery and top-ups don't)
+  const addons = (b.services?.addons ?? []).filter((a) => a === "cabin_filter" || a === "engine_filter" || a === "wipers");
+  const parts = { cabin: sp?.cabin_filter_part ?? "", air: sp?.air_filter_part ?? "", wiperDriver: sp?.wiper_driver ?? "", wiperPassenger: sp?.wiper_passenger ?? "" };
+  return { withOil: !job || job === "oil_change" || job === "seasonal", cars: b.cars || 1, addons, parts,
     oil: { grade: sp?.oil_grade ?? "", litres: sp?.capacity_l != null ? String(Number(sp.capacity_l)) : "", filter: sp?.oil_filter_part ?? "" },
     stock: await stockFor(sp?.oil_filter_part ?? null, sp?.oil_grade ?? null), firstName: c?.first_name ?? "", lastName: c?.last_name ?? "", phone: (c?.phone ?? "").replace(/^\+1/, ""), email: c?.email ?? "",
     address: b.address ?? "", notes: b.notes ?? "", hasCustomer: !!c, fleet: !!b.fleet_account_id,
@@ -282,6 +286,18 @@ export async function editBooking(id: string, e: BookingEdit, by: string) {
     // the "oil not found online" note on the card is answered now
     const [nb] = await sbGet<{ needs_review: string[] | null }>(`bookings?select=needs_review&id=eq.${enc(id)}`).catch(() => []);
     if (nb?.needs_review?.length) await sbPatch("bookings", `id=eq.${enc(id)}`, { needs_review: nb.needs_review.filter((n) => !/^(Oil spec not found online|Oil from our )/.test(n)) }).catch(() => null);
+  }
+  if (e.parts && typeof e.parts === "object") {   // part numbers for the add-ons (cabin, air filter, wiper sizes)
+    const carId = (patch.vehicle_id as string | undefined) ?? b.vehicle_id;
+    if (!carId) return { ok: false as const, error: "Add the car first, then the parts" };
+    const keep = (x: unknown) => (typeof x === "string" ? x.trim().slice(0, 40) : undefined);
+    const pp = { cabin: keep(e.parts.cabin), air: keep(e.parts.air), wiperDriver: keep(e.parts.wiperDriver), wiperPassenger: keep(e.parts.wiperPassenger) };
+    const only = Object.fromEntries(Object.entries(pp).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v || null]));
+    if (Object.keys(only).length) {
+      const { setCarOil } = await import("@/lib/os/spec-learn");
+      const r = await setCarOil(carId, only);
+      if (!r.ok) return r;
+    }
   }
   return { ok: true as const };
 }

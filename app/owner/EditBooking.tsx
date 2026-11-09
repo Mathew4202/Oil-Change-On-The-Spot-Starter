@@ -8,8 +8,9 @@ const lbl = "flex flex-col gap-1 text-sm font-semibold min-w-0";
 
 type Car = { year: string; make: string; model: string; engine: string };
 type Oil = { grade: string; litres: string; filter: string };
+type Parts = { cabin: string; air: string; wiperDriver: string; wiperPassenger: string };
 type Details = { firstName: string; lastName: string; phone: string; email: string; address: string; notes: string; hasCustomer: boolean; fleet: boolean; car: Car;
-  withOil: boolean; cars: number; oil: Oil; stock: { filter: number | null; oil: number | null } };
+  withOil: boolean; cars: number; oil: Oil; addons: string[]; parts: Parts; stock: { filter: number | null; oil: number | null } };
 
 export default function EditBooking({ bookingId, onClose }: { bookingId: string; onClose: (saved: boolean) => void }) {
   const [d, setD] = useState<Details | null>(null); const [start, setStart] = useState<Details | null>(null);
@@ -23,6 +24,7 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
   const set = (k: keyof Details, v: string) => setD((x) => (x ? { ...x, [k]: v } : x));
   const setCar = (k: keyof Car, v: string) => setD((x) => (x ? { ...x, car: { ...x.car, [k]: v } } : x));
   const setOil = (k: keyof Oil, v: string) => setD((x) => (x ? { ...x, oil: { ...x.oil, [k]: v } } : x));
+  const setPart = (k: keyof Parts, v: string) => setD((x) => (x ? { ...x, parts: { ...x.parts, [k]: v } } : x));
 
   async function save() {
     if (!d || !start) return;
@@ -32,6 +34,8 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
     for (const k of ["firstName", "lastName", "phone", "email", "address", "notes"] as const) if (d[k] !== start[k]) edit[k] = d[k];
     if (JSON.stringify(d.car) !== JSON.stringify(start.car)) edit.car = d.car;
     if (JSON.stringify(d.oil) !== JSON.stringify(start.oil)) edit.oil = d.oil;
+    const partsChanged = (Object.keys(d.parts ?? {}) as (keyof Parts)[]).filter((k) => d.parts[k] !== start.parts[k]);
+    if (partsChanged.length) edit.parts = Object.fromEntries(partsChanged.map((k) => [k, d.parts[k]]));
     if (!Object.keys(edit).length) return onClose(false);
     setBusy(true);
     const r = await fetch("/api/owner/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId, action: "edit", edit }) });
@@ -85,8 +89,21 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
                 {!start?.oil.grade && <p className="text-xs font-semibold" style={{ color: "#8a5a00" }}>No oil on file for this car yet. Add it and it&apos;s saved for this car and every one like it.</p>}
               </>
             )}
+            {d.addons?.length > 0 && (
+              <>
+                <p className="text-sm font-bold mt-1" style={{ color: NAVY }}>Add-on parts</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {d.addons.includes("cabin_filter") && <label className={lbl}>Cabin filter #<input id="eb-cabin" value={d.parts.cabin} onChange={(e) => setPart("cabin", e.target.value)} placeholder="e.g. CAF1882P" autoCapitalize="characters" className={field} style={{ borderColor: LINE }} /></label>}
+                  {d.addons.includes("engine_filter") && <label className={lbl}>Engine air filter #<input id="eb-air" value={d.parts.air} onChange={(e) => setPart("air", e.target.value)} placeholder="e.g. FA1883" autoCapitalize="characters" className={field} style={{ borderColor: LINE }} /></label>}
+                  {d.addons.includes("wipers") && <>
+                    <label className={lbl}>Wiper driver (in.)<input id="eb-wd" value={d.parts.wiperDriver} onChange={(e) => setPart("wiperDriver", e.target.value)} placeholder="26" inputMode="numeric" className={field} style={{ borderColor: LINE }} /></label>
+                    <label className={lbl}>Wiper passenger (in.)<input id="eb-wp" value={d.parts.wiperPassenger} onChange={(e) => setPart("wiperPassenger", e.target.value)} placeholder="18" inputMode="numeric" className={field} style={{ borderColor: LINE }} /></label>
+                  </>}
+                </div>
+              </>
+            )}
             <label className={lbl}>Note (just for you two)<textarea id="eb-notes" value={d.notes} onChange={(e) => set("notes", e.target.value)} rows={3} className="rounded-xl border px-3 py-2 text-base w-full font-normal" style={{ borderColor: LINE }} /></label>
-            <p className="text-xs text-[#4a5878]">Name, phone and email change on their customer file too. Oil, litres and filter are saved for this car (and the same car for other customers), so the bring list, the job sheet and the profit use them. Stock comes off when you finish the job. The price stays the same, so use Edit price if the new car costs more or less.</p>
+            <p className="text-xs text-[#4a5878]">Name, phone and email change on their customer file too. Oil, litres, filters and wiper sizes are saved for this car (and the same car for other customers), so the bring list, the job sheet and the profit use them. Stock comes off when you finish the job. The price stays the same, so use Edit price if the new car costs more or less.</p>
             {err && <p className="text-sm font-semibold text-[#9b1c1c]" role="alert">{err}</p>}
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => onClose(false)} className="h-12 rounded-xl border font-bold" style={{ borderColor: LINE }}>Back</button>
