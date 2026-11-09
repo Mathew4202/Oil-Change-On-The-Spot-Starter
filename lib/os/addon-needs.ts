@@ -33,10 +33,14 @@ export function sumNeeds(lists: Need[][]): Need[] {
   return Array.from(by.values());
 }
 
+/** A part number without spaces, dashes or a store prefix ("FIL 26195", "NAPA 2-6195" → "26195"), so the receipt's spelling matches the car's. */
+export const normPart = (pn: string | null | undefined) =>
+  (pn ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^(NAPA|PPF|PFG|FIL|FILTER|WIX|NAP)/, "");
+
 /** How many of a need are on the shelf: by part number for filters, by size for wipers, by name for the rest. */
 export function onShelf(x: Need, parts: { part_number: string; description: string | null; category: string | null; on_hand: number }[]): number | null {
   const sum = (ps: typeof parts) => ps.reduce((t, p) => t + Number(p.on_hand), 0);
-  if (x.part) return sum(parts.filter((p) => p.part_number === x.part));
+  if (x.part) return sum(parts.filter((p) => normPart(p.part_number) === normPart(x.part)));
   if (x.kind === "wiper") {
     const size = x.key.split(":")[1];
     if (size === "?") return null;
@@ -49,3 +53,15 @@ export function onShelf(x: Need, parts: { part_number: string; description: stri
   }
   return null;   // battery, or a filter with no part number yet: can't tell
 }
+
+/** Which charged add-ons a price list has, and how many of each part (a booked add-on on a 2-car visit = 2). */
+export const ADDON_NAMES: Record<string, RegExp> = { wipers: /wiper/i, cabin_filter: /cabin/i, engine_filter: /engine air/i, battery: /battery/i };
+export function chargedAddons(lines: { label: string; amount: number }[], booked: string[] | null | undefined, cars = 1) {
+  const out: { kind: string; times: number }[] = [];
+  for (const k of Object.keys(ADDON_NAMES)) {
+    const n = lines.filter((l) => ADDON_NAMES[k].test(l.label) && Number(l.amount) > 0).length;
+    if (n) out.push({ kind: k, times: (booked ?? []).includes(k) && n === 1 ? Math.max(1, cars || 1) : n });
+  }
+  return out;
+}
+export const ADDON_COST_DEFAULT: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200 };

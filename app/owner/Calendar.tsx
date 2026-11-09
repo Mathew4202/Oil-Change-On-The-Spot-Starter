@@ -22,7 +22,7 @@ type Job = {
   lastTime?: { now: string[]; soon: string[]; note: string | null } | null;
   groupId?: string | null;   // several cars on one visit
   actual?: boolean;           // profit is what the finished job made, not an estimate   // what we flagged on this car last visit
-  lines: { label: string; amount: number }[]; total: number | null; profit: number | null; costs?: { subtotal: number; litres: number; perL: number; oil: number; filter: number; filterGuess: boolean; supplies: number; grade: string } | null;
+  lines: { label: string; amount: number }[]; total: number | null; profit: number | null; costs?: { subtotal: number; litres: number; perL: number; oil: number; filter: number; filterGuess: boolean; supplies: number; grade: string; addons?: { kind: string; cost: number; guess: boolean }[] } | null;
   notes: string | null; checks: string[]; imported: boolean; photos?: string[]; vin?: string | null; vinCar?: string | null; job?: string; addons?: string[];
 };
 type Day = {
@@ -44,6 +44,8 @@ const dayLabel = (d: string) => { const [y, m, dd] = d.split("-").map(Number); r
 const shortDay = (d: string) => { const [y, m, dd] = d.split("-").map(Number); const x = new Date(Date.UTC(y, m - 1, dd, 12)); return { wd: x.toLocaleDateString("en-CA", { timeZone: "UTC", weekday: "short" }), n: dd }; };
 const money = (n: number | null | undefined) => n == null ? "" : `$${n.toFixed(n % 1 ? 2 : 0)}`;
 const ago = (iso: string) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+
+const ADDON_WORD: Record<string, string> = { cabin_filter: "cabin filter", engine_filter: "engine air filter", wipers: "wipers", battery: "battery" };
 
 export default function Calendar({ owner, initialDate, bookFor }: { owner: string; initialDate?: string; bookFor?: string }) {
   const { can } = useRole();
@@ -321,7 +323,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>{j.actual ? "Profit" : "Est. profit"}</span><span>{money(j.profit)}{j.sales ? <span className="ml-1.5 text-[13px] font-bold text-[#4a5878]">({Math.round((j.profit / j.sales) * 100)}%)</span> : null}</span></div>}
                   {j.profit != null && j.actual && <p className="text-xs text-[#4a5878]">What the job made: the price before HST, less the oil, filter and parts you used (at what you paid), $1 of supplies{day?.gasPerJob ? ` and about ${money(day.gasPerJob * (j.cars || 1))} of gas` : ""}.</p>}
                   {j.profit != null && !j.actual && (j.costs
-                    ? <p className="text-xs text-[#4a5878]">Takes off: oil {money(j.costs.oil)} ({j.costs.litres} L {j.costs.grade} at {money(j.costs.perL)}/L), filter {money(j.costs.filter)}{j.costs.filterGuess ? " (a guess, no filter price on file)" : ""}, supplies {money(j.costs.supplies)}{day?.gasPerJob ? `, gas about ${money(day.gasPerJob * (j.cars || 1))} (last 60 days of gas receipts)` : ""}. Prices are what we last paid, after HST.</p>
+                    ? <p className="text-xs text-[#4a5878]">Takes off: oil {money(j.costs.oil)} ({j.costs.litres} L {j.costs.grade} at {money(j.costs.perL)}/L), filter {money(j.costs.filter)}{j.costs.filterGuess ? " (a guess, no filter price on file)" : ""}{(j.costs.addons ?? []).map((a) => `, ${ADDON_WORD[a.kind] ?? a.kind} ${money(a.cost)}${a.guess ? " (usual cost, no receipt for this part yet)" : ""}`).join("")}, supplies {money(j.costs.supplies)}{day?.gasPerJob ? `, gas about ${money(day.gasPerJob * (j.cars || 1))} (last 60 days of gas receipts)` : ""}. Prices are what we last paid, after HST.</p>
                     : <p className="text-xs text-[#4a5878]">After the oil and filter at what we last paid, $1 of supplies{day?.gasPerJob ? ` and about ${money(day.gasPerJob)} of gas (from the last 60 days of gas receipts)` : ""}.</p>)}
                   {j.notes && <p className="text-[#4a5878] mt-1">Note: {j.notes}</p>}
                   {j.imported && <p className="text-xs text-[#4a5878] mt-1">Imported from Square</p>}

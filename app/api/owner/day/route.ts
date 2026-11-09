@@ -1,6 +1,6 @@
 // Everything the calendar needs for one day: jobs, totals, what to bring, time off.
 import { activeHolds, holdLink } from "@/lib/os/holds";
-import { addonNeeds, sumNeeds, onShelf } from "@/lib/os/addon-needs";
+import { addonNeeds, sumNeeds, onShelf, normPart, chargedAddons, ADDON_COST_DEFAULT } from "@/lib/os/addon-needs";
 import { dayRoute } from "@/lib/os/route";
 import { bookingPhotoLink } from "@/lib/os/vin-photo";
 import { lastVisit } from "@/lib/os/last-visit";
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
   // what we flagged on each car last visit ("tires coming up soon"), to offer it on this visit
   const vids = Array.from(new Set(rows.map((r) => r.vehicle_id).filter(Boolean))) as string[];
   const prevJobs: { vehicle_id: string; booking_id: string | null; done_at: string; inspection: Record<string, { status?: string }> | null; customer_note?: string | null }[] = [];
-  const [parts, , , route, shelf] = await Promise.all([
+  const [parts, , , route, , shelf] = await Promise.all([
     fl.length ? sbGet<{ part_number: string; on_hand: number }>(`parts?select=part_number,on_hand&part_number=in.(${fl.join(",")})`) : Promise.resolve([]),
     fl.length ? sbGet<{ our_cost: number; parts: { part_number: string } | null }>(`part_quotes?select=our_cost,parts!inner(part_number)&parts.part_number=in.(${fl.join(",")})&order=checked_at.desc`)
       .then((q) => { for (const x of q) if (x.parts && filterCosts[x.parts.part_number] == null) filterCosts[x.parts.part_number] = Number(x.our_cost); }).catch(() => null) : null,
@@ -79,10 +79,27 @@ export async function GET(req: NextRequest) {
       .catch(() => null) : null,   // migration 0019 not run yet
     dayRoute(date, rows).catch(() => null),
     vids.length ? sbGet<(typeof prevJobs)[number]>(`jobs?select=*&vehicle_id=in.(${vids.join(",")})&order=done_at.desc&limit=300`).then((x) => { prevJobs.push(...x); }).catch(() => null) : null,
-    addonList.length ? sbGet<{ part_number: string; description: string | null; category: string | null; on_hand: number }>("parts?select=part_number,description,category,on_hand&category=neq.oil").catch(() => []) : Promise.resolve([]),
+    addonList.length ? sbGet<{ part_number: string; description: string | null; category: string | null; on_hand: number }>("parts?select=part_number,description,category,on_hand&or=(category.is.null,category.neq.oil)").catch(() => []) : Promise.resolve([]),
   ]);
   const lastTimeFor = (r: Row) => { const p = prevJobs.find((j) => j.vehicle_id === r.vehicle_id && j.booking_id !== r.id && j.done_at < r.starts_at); return p ? lastVisit(p.inspection, p.customer_note) : null; };
   const stock = Object.fromEntries(parts.map((p) => [p.part_number, Number(p.on_hand)]));
+
+  // what we last paid for the cabin and air filters on these cars (receipts), matched loosely ("FIL 26195" = "26195")
+  const addonPns = Array.from(new Set(rows.flatMap((r) => [r.vehicles?.vehicle_specs?.cabin_filter_part, r.vehicles?.vehicle_specs?.air_filter_part]).filter(Boolean) as string[]));
+  const addonCosts: Record<string, number> = {};
+  if (money && addonPns.length) {
+    const quotes = await sbGet<{ our_cost: number | null; parts: { part_number: string } | null }>(`part_quotes?select=our_cost,parts!inner(part_number)&our_cost=not.is.null&order=checked_at.desc&limit=2000`).catch(() => []);
+    for (const pn of addonPns) { const q = quotes.find((x) => x.parts && normPart(x.parts.part_number) === normPart(pn)); if (q) addonCosts[pn] = Number(q.our_cost); }
+  }
+  /** The add-on parts on a booking that's not done yet: our cost for that part number if we've bought it, otherwise the usual cost. */
+  const addonCostsOf = (r: Row, s: { cabin_filter_part?: string | null; air_filter_part?: string | null } | null | undefined) => {
+    const items = chargedAddons(r.quote_breakdown?.lines ?? [], r.services?.addons, r.cars || 1).map(({ kind, times }) => {
+      const pn = kind === "cabin_filter" ? s?.cabin_filter_part : kind === "engine_filter" ? s?.air_filter_part : null;
+      const known = pn ? addonCosts[pn] : undefined;
+      return { kind, cost: Math.round((known ?? rr[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times * 100) / 100, guess: known == null };
+    });
+    return items;
+  };
 
   // No profit on the booking yet (priced before the oil was looked up, a Square job, a price typed in): estimate it
   // from the price and what the oil and filter on file cost us.
@@ -135,8 +152,11 @@ export async function GET(req: NextRequest) {
           const made = Math.round((Number(done.revenue ?? done.subtotal) - Number(done.cost_oil ?? 0) - Number(done.cost_parts ?? 0) - Number(done.cost_other ?? 0)) * 100) / 100;
           return { profit: money ? afterGas(made, r) : null, costs: null, actual: true };
         }
-        const c = costsOf(r, s); const live = !(r.services?.addons ?? []).length ? estimate(c) : null;
-        return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? estimate(c), r) : null, costs: money && live != null ? c : null, actual: false }; })(), notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
+        // not done yet: worked out live from what we last paid for the oil, filter and any add-on parts
+        const c = costsOf(r, s); const ad = addonCostsOf(r, s);
+        const base = estimate(c);
+        const live = base != null ? Math.round((base - ad.reduce((t, a) => t + a.cost, 0)) * 100) / 100 : null;
+        return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? null, r) : null, costs: money && live != null && c ? { ...c, addons: ad } : null, actual: false }; })(), notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       lastTime: lastTimeFor(r),
       groupId: r.pay_mode !== "fleet_invoice" ? r.group_id ?? null : null,   // several cars on one visit: one card in HQ
       vin: (r.services as { vin?: string } | null)?.vin ?? null, vinCar: (r.services as { vinCar?: string } | null)?.vinCar ?? null,

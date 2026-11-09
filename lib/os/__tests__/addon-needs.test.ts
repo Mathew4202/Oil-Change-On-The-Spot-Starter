@@ -20,3 +20,15 @@ test("what's on the shelf", () => {
   assert.equal(onShelf(addonNeeds(["wipers"], { wiper_driver: "16", wiper_passenger: "16" })[0], parts), 0);
   assert.equal(onShelf(addonNeeds(["battery"], null)[0], parts), null);
 });
+
+import { normPart, chargedAddons } from "../addon-needs.ts";
+test("part numbers match however the receipt spells them", () => {
+  assert.equal(normPart("FIL 26195"), normPart("26195"));
+  assert.equal(normPart("napa 2-6195"), "26195");
+  assert.equal(onShelf(addonNeeds(["engine_filter"], { air_filter_part: "26195" })[0], [{ part_number: "FIL26195", description: null, category: "engine_filter", on_hand: 1 }]), 1);
+});
+test("only add-ons on the bill count", () => {
+  assert.deepEqual(chargedAddons([{ label: "Cabin air filter", amount: 40 }, { label: "Engine air filter", amount: 40 }], ["cabin_filter", "engine_filter"], 1),
+    [{ kind: "cabin_filter", times: 1 }, { kind: "engine_filter", times: 1 }]);
+  assert.deepEqual(chargedAddons([{ label: "Full synthetic oil change", amount: 90 }], ["cabin_filter"], 1), []);
+});

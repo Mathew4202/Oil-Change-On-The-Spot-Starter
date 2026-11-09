@@ -1,5 +1,6 @@
 // The job screen: start, finish (record the work), take payment, update stock, email the receipt.
 import { checksFrom } from "@/lib/os/fleet-math";
+import { chargedAddons, normPart, ADDON_COST_DEFAULT } from "@/lib/os/addon-needs";
 import crypto from "crypto";
 import { Resend } from "resend";
 import { sbGet, sbInsert, sbPatch, sbRpc, enc } from "@/lib/os/db";
@@ -128,24 +129,16 @@ export async function finishJob(input: FinishInput, owner: string) {
     const [q] = filterId ? await sbGet<{ our_cost: number }>(`part_quotes?select=our_cost&part_id=eq.${filterId}&order=checked_at.desc&limit=1`) : [];
     costParts = r2(Number(q?.our_cost ?? rules.filter_estimate ?? 6.5) * (ctx.booking.cars || 1));
   }
-  // the add-on parts we bought for them (cabin filter, air filter, wipers, battery): what we paid for that part number
-  // if we have a price for it, otherwise the usual cost from the price settings
-  const ADDON_COST: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200 };
+  // the add-on parts we charged for (cabin filter, air filter, wipers, battery): what we paid for that part number
+  // if we have a price for it (matched loosely, "FIL 26195" = "26195"), otherwise the usual cost from the price settings
   const partFor: Record<string, string | null | undefined> = { cabin_filter: spec?.cabin_filter_part, engine_filter: spec?.air_filter_part };
-  // only the ones we actually charged for: booked add-ons still on the bill, or one added on site ("Cabin air filter")
-  const NAMES: Record<string, RegExp> = { wipers: /wiper/i, cabin_filter: /cabin/i, engine_filter: /engine air/i, battery: /battery/i };
-  const bookedAddons = ctx.booking.services?.addons ?? [];
-  for (const a of Object.keys(ADDON_COST)) {
-    const charged = lines.filter((l) => NAMES[a].test(l.label) && l.amount > 0).length;
-    if (!charged) continue;
-    const times = bookedAddons.includes(a) && charged === 1 ? (ctx.booking.cars || 1) : charged;
-    let cost: number | null = null;
-    const pn = partFor[a];
-    if (pn) {
-      const [q] = await sbGet<{ our_cost: number }>(`part_quotes?select=our_cost,parts!inner(part_number)&parts.part_number=eq.${enc(pn)}&order=checked_at.desc&limit=1`).catch(() => []);
-      if (q) cost = Number(q.our_cost);
-    }
-    costParts = r2(costParts + (cost ?? rules[`addon_part_${a}`] ?? ADDON_COST[a]) * times);
+  const charged = chargedAddons(lines, ctx.booking.services?.addons, ctx.booking.cars || 1);
+  const quotes = charged.some((c) => partFor[c.kind]) ? await sbGet<{ our_cost: number | null; parts: { part_number: string } | null }>(
+    "part_quotes?select=our_cost,parts!inner(part_number)&our_cost=not.is.null&order=checked_at.desc&limit=2000").catch(() => []) : [];
+  for (const { kind, times } of charged) {
+    const pn = partFor[kind];
+    const q = pn ? quotes.find((x) => x.parts && normPart(x.parts.part_number) === normPart(pn)) : undefined;
+    costParts = r2(costParts + (q ? Number(q.our_cost) : rules[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times);
   }
 
   // Next oil change
