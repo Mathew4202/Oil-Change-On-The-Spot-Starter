@@ -38,9 +38,9 @@ export const normPart = (pn: string | null | undefined) =>
   (pn ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^(NAPA|PPF|PFG|FIL|FILTER|WIX|NAP)/, "");
 
 /** How many of a need are on the shelf: by part number for filters, by size for wipers, by name for the rest. */
-export function onShelf(x: Need, parts: { part_number: string; description: string | null; category: string | null; on_hand: number }[]): number | null {
+export function onShelf(x: Need, parts: { part_number: string; description: string | null; category: string | null; on_hand: number }[], same?: (pn: string) => string[]): number | null {
   const sum = (ps: typeof parts) => ps.reduce((t, p) => t + Number(p.on_hand), 0);
-  if (x.part) return sum(parts.filter((p) => normPart(p.part_number) === normPart(x.part)));
+  if (x.part) { const set = new Set((same ? same(x.part) : [x.part]).map(normPart)); return sum(parts.filter((p) => set.has(normPart(p.part_number)))); }
   if (x.kind === "wiper") {
     const size = x.key.split(":")[1];
     if (size === "?") return null;

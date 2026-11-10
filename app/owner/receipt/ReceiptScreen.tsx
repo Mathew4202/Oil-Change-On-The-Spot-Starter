@@ -269,11 +269,11 @@ function SameAs({ part, category }: { part: string; category: string }) {
     const r = await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "link", from: part, to }) });
     const j = await r.json().catch(() => ({})); setBusy(false);
     if (!r.ok || !j.ok) return setMsg(j.error || "Couldn't link it");
-    setDone(true); setMsg(`Done. ${part} now counts as ${j.to}${j.moved ? ` (+${j.moved} moved to ${j.to} in Stock)` : ""}, and future receipts will do it by themselves.`);
+    setDone(true); setMsg(`Done. ${part} stays its own part in Stock, but cars that use ${j.to} count it too, and the Bring list will say "${j.to} or ${part}".`);
   }
   return (
     <div className="rounded-lg border p-2.5 flex flex-col gap-1.5 text-sm" style={{ borderColor: "#f2b01e", background: "#fff6dd" }}>
-      <p><strong>{part}</strong> isn&apos;t a {KIND[category] ?? "part"} any of our cars use yet. If it&apos;s the same as one they use (a different brand of NAPA 27356, say), type that number so stock, the price and the Bring list count it.</p>
+      <p><strong>{part}</strong> isn&apos;t a {KIND[category] ?? "part"} any of our cars use yet. If it&apos;s the same as one they use (a different brand of NAPA 27356, say), type that number. It stays as {part} in Stock, and the Bring list will say either one.</p>
       {!done && <div className="flex gap-2">
         <input value={to} onChange={(e) => setTo(e.target.value.toUpperCase())} placeholder="e.g. 27356" autoCapitalize="characters" className="h-10 flex-1 min-w-0 rounded-lg border border-[#c8d0e0] px-2 text-base bg-white font-mono" />
         <button disabled={busy || !to.trim()} onClick={link} className="h-10 px-3 rounded-lg font-extrabold disabled:opacity-60" style={{ background: "#0d1b3e", color: "#fff" }}>{busy ? "…" : "Same as"}</button>

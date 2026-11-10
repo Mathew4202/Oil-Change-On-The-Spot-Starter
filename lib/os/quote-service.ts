@@ -145,7 +145,9 @@ export const nearNote = (s: Pick<Spec, "near" | "make" | "model" | "engine">) =>
 
 export async function filterInStock(part: string | null | undefined): Promise<boolean> {
   if (!part) return false;
-  const rows = await sbGet<{ on_hand: number }>(`parts?select=on_hand&part_number=eq.${enc(part)}`);
+  const { loadLinks, sameParts } = await import("@/lib/os/part-alias");
+  const all = sameParts(part, await loadLinks());   // a filter linked as the same part counts too
+  const rows = await sbGet<{ on_hand: number }>(`parts?select=on_hand&part_number=in.(${all.map((x) => `"${x.replace(/"/g, "")}"`).join(",")})`);
   return rows.some((r) => Number(r.on_hand) >= 1);
 }
 

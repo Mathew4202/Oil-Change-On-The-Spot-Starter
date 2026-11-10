@@ -124,7 +124,16 @@ export async function finishJob(input: FinishInput, owner: string) {
   }
   let filterId: string | null = null, filterOnHand = 0;
   if (withOil && filterPart && own !== "both" && own !== "filter") {
-    const [p] = await sbGet<{ id: string; on_hand: number }>(`parts?select=id,on_hand&part_number=eq.${enc(filterPart)}&order=on_hand.desc&limit=1`);
+    let [p] = await sbGet<{ id: string; on_hand: number }>(`parts?select=id,on_hand&part_number=eq.${enc(filterPart)}&order=on_hand.desc&limit=1`);
+    // none left of that number: take it from a filter linked as the same part (Parts Source vs NAPA)
+    if (!p || Number(p.on_hand) < (ctx.booking.cars || 1)) {
+      const { loadLinks, sameParts } = await import("@/lib/os/part-alias");
+      const alts = sameParts(filterPart, await loadLinks()).slice(1);
+      for (const alt of alts) {
+        const [q] = await sbGet<{ id: string; on_hand: number }>(`parts?select=id,on_hand&part_number=eq.${enc(alt)}&order=on_hand.desc&limit=1`).catch(() => []);
+        if (q && Number(q.on_hand) >= 1) { p = q; break; }
+      }
+    }
     filterId = p?.id ?? null; filterOnHand = Number(p?.on_hand ?? 0);
     const [q] = filterId ? await sbGet<{ our_cost: number }>(`part_quotes?select=our_cost&part_id=eq.${filterId}&order=checked_at.desc&limit=1`) : [];
     costParts = r2(Number(q?.our_cost ?? rules.filter_estimate ?? 6.5) * (ctx.booking.cars || 1));

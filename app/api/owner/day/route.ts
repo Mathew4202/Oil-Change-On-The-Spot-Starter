@@ -63,7 +63,10 @@ export async function GET(req: NextRequest) {
   // the add-ons they picked: cabin and air filters, wipers, battery, top-ups (any kind of job)
   const addonList = sumNeeds(rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).map((r) => addonNeeds(r.services?.addons, r.vehicles?.vehicle_specs, r.cars || 1)));
   // then everything that needs the day's jobs, also all at once
-  const fl = Object.keys(filters);
+  // filters linked as the same part (Parts Source vs NAPA): count both, and say both on the Bring list
+  const { loadLinks, sameParts, onHandAll, eitherOf } = await import("@/lib/os/part-alias");
+  const links = await loadLinks();
+  const fl = Array.from(new Set(Object.keys(filters).flatMap((pn) => sameParts(pn, links))));
   const photoLinks: Record<string, string[]> = {};
   const filterCosts: Record<string, number> = {};
   // what we flagged on each car last visit ("tires coming up soon"), to offer it on this visit
@@ -82,7 +85,6 @@ export async function GET(req: NextRequest) {
     addonList.length ? sbGet<{ part_number: string; description: string | null; category: string | null; on_hand: number }>("parts?select=part_number,description,category,on_hand&or=(category.is.null,category.neq.oil)").catch(() => []) : Promise.resolve([]),
   ]);
   const lastTimeFor = (r: Row) => { const p = prevJobs.find((j) => j.vehicle_id === r.vehicle_id && j.booking_id !== r.id && j.done_at < r.starts_at); return p ? lastVisit(p.inspection, p.customer_note) : null; };
-  const stock = Object.fromEntries(parts.map((p) => [p.part_number, Number(p.on_hand)]));
 
   // what we last paid for the cabin and air filters on these cars (receipts), matched loosely ("FIL 26195" = "26195")
   const addonPns = Array.from(new Set(rows.flatMap((r) => [r.vehicles?.vehicle_specs?.cabin_filter_part, r.vehicles?.vehicle_specs?.air_filter_part]).filter(Boolean) as string[]));
@@ -138,7 +140,7 @@ export async function GET(req: NextRequest) {
       job: r.services?.job ?? "oil_change", addons: r.services?.addons ?? [],
       oil: s && (!r.services?.job || ["oil_change", "seasonal"].includes(r.services.job)) ? { grade: s.oil_grade, litres: Number(s.capacity_l), filter: s.oil_filter_part, spec: s.oil_spec,
         engine: s.engine, diesel: s.fuel === "diesel", wix: s.wix_filter, checked: !!s.verified, lowConfidence: s.source === "ai_lookup" && s.confidence === "low",
-        filterInStock: s.oil_filter_part ? (stock[s.oil_filter_part] ?? 0) >= 1 : null, filterCost: money && s.oil_filter_part ? filterCosts[s.oil_filter_part] ?? null : null,
+        filterInStock: s.oil_filter_part ? onHandAll(s.oil_filter_part, links, parts) >= 1 : null, filterAlt: s.oil_filter_part ? sameParts(s.oil_filter_part, links).slice(1) : [], filterCost: money && s.oil_filter_part ? filterCosts[s.oil_filter_part] ?? null : null,
         filterNote: s.filter_note ?? null }
         // finished: what the job actually got (even if the car has no oil on file)
         : r.jobs?.[0]?.oil_grade ? { grade: r.jobs[0].oil_grade, litres: Number(r.jobs[0].oil_litres ?? 0) / (r.cars || 1), filter: r.jobs[0].filter_part ?? null, spec: null, engine: null, diesel: false, wix: null,
@@ -179,8 +181,8 @@ export async function GET(req: NextRequest) {
     },
     bring: {
       oil: Object.entries(oil).map(([grade, litres]) => ({ grade, litres })),
-      filters: Object.entries(filters).map(([part, qty]) => ({ part, qty, inStock: stock[part] ?? 0 })),
-      addons: addonList.map((x) => ({ label: x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never) })),
+      filters: Object.entries(filters).map(([part, qty]) => ({ part: eitherOf(part, links), qty, inStock: onHandAll(part, links, parts) })),
+      addons: addonList.map((x) => ({ label: x.part ? x.label.replace(x.part, eitherOf(x.part, links)) : x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never, (pn) => sameParts(pn, links)) })),
     },
   });
 }

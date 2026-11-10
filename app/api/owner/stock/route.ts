@@ -29,13 +29,16 @@ export async function GET() {
   }
   // the add-ons they picked (cabin and air filters, wipers, battery, top-ups), for every kind of job
   const addons = sumNeeds(upcoming.map((b) => addonNeeds(b.services?.addons, b.vehicles?.vehicle_specs, b.cars)));
-  const have = (pn: string) => parts.filter((p) => p.part_number === pn).reduce((t, p) => t + Number(p.on_hand), 0);
+  // a filter linked as the same part (Parts Source vs NAPA) counts too
+  const { loadLinks, onHandAll, eitherOf, sameParts } = await import("@/lib/os/part-alias");
+  const links = await loadLinks();
+  const have = (pn: string) => onHandAll(pn, links, parts);
   const haveOil = (g: string) => parts.filter((p) => p.unit === "L" && (p.oil_grade === g || p.oil_grade === g.replace(/^Euro /, ""))).reduce((t, p) => t + Number(p.on_hand), 0);
   const toBuy = [
-    ...Object.entries(needFilters).map(([pn, need]) => ({ kind: "filter", label: `Oil filter ${pn}`, need, have: have(pn), unit: "" })),
+    ...Object.entries(needFilters).map(([pn, need]) => ({ kind: "filter", label: `Oil filter ${eitherOf(pn, links)}`, need, have: have(pn), unit: "" })),
     ...Object.entries(needOil).map(([g, need]) => ({ kind: "oil", label: `${g} oil`, need, have: Math.round(haveOil(g) * 10) / 10, unit: "L" })),
     // can't tell what's on the shelf (no part # yet, a battery): counted as 0 so it shows up to sort out
-    ...addons.map((x) => ({ kind: x.kind, label: x.label, need: x.qty, have: onShelf(x, parts) ?? 0, unit: "" })),
+    ...addons.map((x) => ({ kind: x.kind, label: x.part ? x.label.replace(x.part, eitherOf(x.part, links)) : x.label, need: x.qty, have: onShelf(x, parts, (pn) => sameParts(pn, links)) ?? 0, unit: "" })),
   ].map((x) => ({ ...x, buy: Math.max(0, Math.round((x.need - x.have) * 10) / 10) })).sort((a, b) => b.buy - a.buy);
   return NextResponse.json({ parts, toBuy, bookingsCounted: upcoming.length });
 }
@@ -51,9 +54,7 @@ async function addStock(b: Record<string, unknown>) {
   const grade = isOil ? String(b.oilGrade || "").toUpperCase().replace(/\s+/g, "").replace(/^(\d+)W(\d+)$/, "$1W-$2") : null;
   if (isOil && !/^\d+W-\d+$/.test(grade || "")) return { ok: false, error: "Type the oil grade, like 0W-20" };
   const sup = SUPPLY[category];
-  const typed = sup ? sup.pn : isOil ? `OIL-${grade}` : String(b.partNumber || "").trim().toUpperCase().replace(/^PPF\s*/, "").replace(/\s+/g, " ").slice(0, 30);
-  // another brand's number linked as "same as" one our cars use: count it under the cars' number
-  const partNumber = sup || isOil || !typed ? typed : await (await import("@/lib/os/part-alias")).partFor(typed);
+  const partNumber = sup ? sup.pn : isOil ? `OIL-${grade}` : String(b.partNumber || "").trim().toUpperCase().replace(/^PPF\s*/, "").replace(/\s+/g, " ").slice(0, 30);
   if (!partNumber) return { ok: false, error: "Type the part number" };
   const qty = Math.round(Number(b.qty) * 100) / 100;
   if (!(qty > 0 && qty <= (sup ? 20000 : 1000))) return { ok: false, error: isOil ? "How many litres?" : "How many?" };

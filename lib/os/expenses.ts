@@ -57,7 +57,8 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
   if (!exp.ok) return { ok: false as const, error: `Couldn't save: ${JSON.stringify(exp.error).slice(0, 200)}` };
 
   const stock: string[] = [], prices: string[] = [], unknown: { part: string; category: string }[] = [];
-  const { partFor, carPartNumbers } = await import("@/lib/os/part-alias");
+  const { carPartNumbers, loadLinks, sameParts } = await import("@/lib/os/part-alias");
+  const links = await loadLinks();
   const { normPart } = await import("@/lib/os/addon-needs");
   let carParts: Set<string> | null = null;
   for (const it of scan.items) {
@@ -65,11 +66,11 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
     const isOil = it.category === "oil", sup = SUPPLY[it.category];
     if (isOil && (!it.oilGrade || !it.litresPerUnit)) continue;                 // can't track oil without grade + size
     if (!isOil && !sup && !it.partNumber) continue;                             // filters etc. are tracked by part number
-    // a filter linked as "same as" one our cars use (Parts Source → NAPA 27356) goes under the cars' number
-    const partNumber = isOil ? `OIL-${it.oilGrade}` : sup ? sup.pn : await partFor(it.partNumber!);
+    const partNumber = isOil ? `OIL-${it.oilGrade}` : sup ? sup.pn : it.partNumber!;
+    // a filter none of our cars use and not linked yet: ask if it's the same as one they use (Parts Source vs NAPA)
     if (!isOil && !sup && ["oil_filter", "cabin_filter", "engine_filter"].includes(it.category)) {
       carParts ??= await carPartNumbers();
-      if (!carParts.has(normPart(partNumber))) unknown.push({ part: partNumber, category: it.category });
+      if (!sameParts(partNumber, links).some((x) => carParts!.has(normPart(x)))) unknown.push({ part: partNumber, category: it.category });
     }
     const brand = sup ? "Shop" : isOil ? (it.brand || scan.vendor) : it.brand || defaultBrand(scan, it.category);
     const perPack = it.category === "shop_towels" ? Math.max(1, it.unitsPerPack || 1) : 1;
