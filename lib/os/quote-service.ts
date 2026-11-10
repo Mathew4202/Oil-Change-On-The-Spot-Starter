@@ -1,5 +1,6 @@
 // Loads what the pricing engine needs, looks up unknown cars automatically, and returns a quote.
 import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
+import { halifaxToDate } from "@/lib/os/slots";
 import { normPart } from "@/lib/os/addon-needs";
 import { sameCar } from "@/lib/os/car-match";
 import { claimLookup, finishLookup, releaseLookup, forgetFailed, lookupKey } from "@/lib/os/ai-budget";
@@ -160,7 +161,7 @@ async function withRealCosts(addons: Addon[], spec: Spec | null, r: Record<strin
   }));
 }
 
-async function filterCostFor(part: string | null): Promise<{ cost: number; retail: number | null } | null> {
+async function filterCostFor(part: string | null, before?: string | null): Promise<{ cost: number; retail: number | null } | null> {
   if (!part) return null;
   // the receipt may spell it "FIL 26195" or "2-6195" when the car has "26195": match without spaces, dashes or a store prefix
   const all = await sbGet<{ our_cost: number | null; retail: number | null; parts: { part_number: string } | null }>(
@@ -176,6 +177,12 @@ async function filterCostFor(part: string | null): Promise<{ cost: number; retai
   const { loadLinks, sameParts, pickCost } = await import("@/lib/os/part-alias");
   const links = await loadLinks();
   if (sameParts(part, links).length < 2) return one(part);
+  // the oil filter on a booking day: the one left for it after the jobs booked before it take theirs
+  if (before) {
+    const { allocated } = await import("@/lib/os/part-alias");
+    const a = await allocated(part, before).catch(() => null);
+    if (a?.inStock) { const c = one(a.part); if (c) return c; }
+  }
   const stock = await sbGet<{ part_number: string; on_hand: number }>(`parts?select=part_number,on_hand&on_hand=gt.0`).catch(() => []);
   return pickCost(part, links, one, (pn) => stock.filter((x) => normPart(x.part_number) === normPart(pn)).reduce((t, x) => t + Number(x.on_hand), 0));
 }
@@ -216,7 +223,8 @@ export async function buildQuote(req: QuoteRequest) {
 
   const priceWith = async (spec: Spec | null) => {
     const diesel = !isEuro && isDiesel(spec);
-    const filterCost = (await filterCostFor(spec?.oil_filter_part ?? null))?.cost ?? (spec ? (isEuro ? r.euro_filter_estimate ?? 15 : diesel ? r.diesel_filter_estimate ?? 20 : r.filter_estimate ?? 6.5) : null);
+    const dayEnd = req.date ? halifaxToDate(req.date, 24 * 60 - 1).toISOString() : null;   // a new booking goes after what's already booked that day
+    const filterCost = (await filterCostFor(spec?.oil_filter_part ?? null, dayEnd))?.cost ?? (spec ? (isEuro ? r.euro_filter_estimate ?? 15 : diesel ? r.diesel_filter_estimate ?? 20 : r.filter_estimate ?? 6.5) : null);
     return quoteOilChange({
       vehicleClass, make,
       // European cars get the Westpier Euro oil that's approved for them (cheapest one that fits)

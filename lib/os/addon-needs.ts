@@ -65,3 +65,17 @@ export function chargedAddons(lines: { label: string; amount: number }[], booked
   return out;
 }
 export const ADDON_COST_DEFAULT: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200 };
+
+/** Which shelf a job's filter comes from when numbers are linked: bookings before it take theirs first,
+ *  the cars' own number (NAPA 27356) goes first, then the linked ones. Pure (tested).
+ *  order = [main, ...linked] with what's on hand; earlier = filters the earlier bookings need. */
+export function allocateFrom(order: { part: string; onHand: number }[], earlier: number, need = 1) {
+  let skip = Math.max(0, earlier);
+  for (const o of order) {
+    const h = Math.max(0, Math.floor(o.onHand));
+    if (skip >= h) { skip -= h; continue; }
+    return { part: o.part, inStock: h - skip >= need, left: h - skip };
+  }
+  return { part: order[0]?.part ?? "", inStock: false, left: 0 };
+}
+

@@ -11,6 +11,16 @@ import type { Addon } from "@/lib/os/pricing-engine";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;   // a first-time car lookup can take ~20 s
 
+/** HQ: which filter this new booking gets (a linked Parts Source one once earlier bookings take the NAPA ones). */
+async function filterUse(pn: string, date: string | null) {
+  const { allocated } = await import("@/lib/os/part-alias");
+  const { halifaxToDate, halifaxDate } = await import("@/lib/os/slots");
+  const d = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : halifaxDate(new Date());
+  const a = await allocated(pn, halifaxToDate(d, 24 * 60 - 1).toISOString()).catch(() => null);
+  if (!a) return { filterInStock: await filterInStock(pn).catch(() => null) };
+  return { filterInStock: a.inStock, ...(a.inStock && a.part !== pn ? { filterUse: a.part } : {}) };
+}
+
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams;
   const year = Number(q.get("year"));
@@ -42,7 +52,8 @@ export async function GET(req: NextRequest) {
     // HQ "Family price" ticked: what it comes to (just the parts at our cost)
     const family = boss && q.get("family") === "1"
       ? await (await import("@/lib/os/family-price")).familyLines({ spec, job: q.get("job") || "oil_change", own: q.get("own"), charged: quote.lines,
-          addons: (q.get("addons") || "").split(",").filter(Boolean), cars: q.get("cars") ? Number(q.get("cars")) : 1 }).catch(() => null)
+          addons: (q.get("addons") || "").split(",").filter(Boolean), cars: q.get("cars") ? Number(q.get("cars")) : 1,
+          before: (await import("@/lib/os/slots")).halifaxToDate(/^\d{4}-\d{2}-\d{2}$/.test(q.get("date") || "") ? q.get("date")! : (await import("@/lib/os/slots")).halifaxDate(new Date()), 24 * 60 - 1).toISOString() }).catch(() => null)
       : null;
     return NextResponse.json({ ...(family ? { family } : {}),
       vehicle: { year, make, model, class: vehicleClass },
@@ -50,7 +61,7 @@ export async function GET(req: NextRequest) {
         // the rest is for HQ: everything we know about this car's parts
         ...(owner ? { wix: (spec as { wix_filter?: string | null }).wix_filter ?? null, cabin: spec.cabin_filter_part ?? null, air: spec.air_filter_part ?? null,
           wiperDriver: spec.wiper_driver ?? null, wiperPassenger: spec.wiper_passenger ?? null, filterNote: spec.filter_note ?? null,
-          source: spec.source, confidence: spec.confidence, filterInStock: spec.oil_filter_part ? await filterInStock(spec.oil_filter_part).catch(() => null) : null } : {}) } : null,
+          source: spec.source, confidence: spec.confidence, ...(spec.oil_filter_part ? await filterUse(spec.oil_filter_part, q.get("date")) : {}) } : {}) } : null,
       engines,          // more than one engine: the booking page asks which one
       lookedUp,         // true the first time we see this car
       ...publicQuote,

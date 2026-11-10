@@ -2,7 +2,7 @@
 // part in Stock, but anything looking for 27356 also counts it, and the Bring list says "27356 or <other #>",
 // so whoever packs the van grabs either one.
 import { sbGet, sbInsert, enc } from "@/lib/os/db";
-import { normPart } from "@/lib/os/addon-needs";
+import { normPart, allocateFrom } from "@/lib/os/addon-needs";
 
 type Link = { alias: string; part_number: string };
 
@@ -57,4 +57,22 @@ export function pickCost<T>(pn: string, links: Link[], costOf: (pn: string) => T
   for (const x of all) { const c = costOf(x); if (c != null && onHand(x) >= 1) return c; }
   for (const x of all) { const c = costOf(x); if (c != null) return c; }
   return null;
+}
+
+/** The filter this job gets: before = the job's start (ISO), or the end of its day for a new booking. */
+export async function allocated(pn: string, before: string, opts: { excludeId?: string; cars?: number } = {}) {
+  const links = await loadLinks();
+  const group = sameParts(pn, links);
+  const parts = await sbGet<{ part_number: string; on_hand: number }>(`parts?select=part_number,on_hand&part_number=in.(${group.map((x) => `"${x.replace(/"/g, "")}"`).join(",")})`).catch(() => []);
+  const onHand = (x: string) => parts.filter((p) => normPart(p.part_number) === normPart(x)).reduce((t, p) => t + Number(p.on_hand), 0);
+  const order = group.map((x) => ({ part: x, onHand: onHand(x) }));
+  if (group.length < 2) return { ...allocateFrom(order, 0, opts.cars ?? 1), group };
+  // the bookings still to do before this one that use the same filter
+  const since = new Date(Date.now() - 14 * 3600000).toISOString();
+  const rows = await sbGet<{ id: string; cars: number | null; services: { job?: string; own?: string | null } | null; vehicles: { vehicle_specs: { oil_filter_part: string | null } | null } | null }>(
+    `bookings?select=id,cars,services,vehicles(vehicle_specs(oil_filter_part))&status=in.(requested,confirmed,in_progress)&starts_at=gte.${since}&starts_at=lt.${encodeURIComponent(before)}&limit=500`).catch(() => []);
+  const set = new Set(group.map(normPart));
+  const earlier = rows.filter((r) => r.id !== opts.excludeId && ["oil_change", "seasonal", undefined].includes(r.services?.job) && !r.services?.own
+    && r.vehicles?.vehicle_specs?.oil_filter_part && set.has(normPart(r.vehicles.vehicle_specs.oil_filter_part))).reduce((t, r) => t + (r.cars || 1), 0);
+  return { ...allocateFrom(order, earlier, opts.cars ?? 1), group };
 }

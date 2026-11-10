@@ -11,7 +11,7 @@ type Line = { label: string; amount: number };
 type Spec = { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; cabin_filter_part?: string | null; air_filter_part?: string | null } | null | undefined;
 
 /** The family price lines for a car: one line per part at what we last paid, before tax, plus supplies. */
-export async function familyLines(x: { spec: Spec; job: string; own?: string | null; charged: Line[]; addons?: string[] | null; cars?: number | null }) {
+export async function familyLines(x: { spec: Spec; job: string; own?: string | null; charged: Line[]; addons?: string[] | null; cars?: number | null; before?: string | null; excludeId?: string }) {
   const cars = Math.max(1, x.cars || 1), s = x.spec;
   const [prices, rulesRows, quotes] = await Promise.all([
     sbGet<{ grade: string; cost_per_l: number }>("oil_prices?select=grade,cost_per_l&active=is.true").catch(() => []),
@@ -29,8 +29,15 @@ export async function familyLines(x: { spec: Spec; job: string; own?: string | n
     // a filter linked as the same part (Parts Source vs NAPA): the one we'd grab
     const { loadLinks, pickCost } = await import("@/lib/os/part-alias");
     const stock = await sbGet<{ part_number: string; on_hand: number }>("parts?select=part_number,on_hand&on_hand=gt.0").catch(() => []);
-    const fc = s?.oil_filter_part ? pickCost(s.oil_filter_part, await loadLinks(), costOf, (pn) => stock.filter((x) => normPart(x.part_number) === normPart(pn)).reduce((t, x) => t + Number(x.on_hand), 0)) : null;
-    lines.push({ label: `Oil filter${s?.oil_filter_part ? ` ${s.oil_filter_part}` : ""} at our cost${fc == null ? " (usual cost)" : ""}`, amount: r2((fc ?? rr.filter_estimate ?? 6.5) * cars) });
+    // the filter left for this job after earlier bookings take theirs (NAPA first, then a linked one)
+    let fc: number | null = null, usePart = s?.oil_filter_part ?? null;
+    if (s?.oil_filter_part && x.before) {
+      const { allocated } = await import("@/lib/os/part-alias");
+      const a = await allocated(s.oil_filter_part, x.before, { excludeId: x.excludeId, cars }).catch(() => null);
+      if (a?.inStock) { fc = costOf(a.part); if (fc != null) usePart = a.part; }
+    }
+    if (fc == null) fc = s?.oil_filter_part ? pickCost(s.oil_filter_part, await loadLinks(), costOf, (pn) => stock.filter((x) => normPart(x.part_number) === normPart(pn)).reduce((t, x) => t + Number(x.on_hand), 0)) : null;
+    lines.push({ label: `Oil filter${usePart ? ` ${usePart}` : ""} at our cost${fc == null ? " (usual cost)" : ""}`, amount: r2((fc ?? rr.filter_estimate ?? 6.5) * cars) });
   }
   for (const { kind, times } of chargedAddons(x.charged, x.addons, cars)) {
     const pn = kind === "cabin_filter" ? s?.cabin_filter_part : kind === "engine_filter" ? s?.air_filter_part : null;
@@ -48,14 +55,14 @@ export async function familyLines(x: { spec: Spec; job: string; own?: string | n
 
 /** What the family price would be for this booking. */
 export async function familyPrice(id: string) {
-  const [b] = await sbGet<{ status: string; cars: number | null; services: { job?: string; own?: string | null; addons?: string[] } | null;
+  const [b] = await sbGet<{ status: string; starts_at: string; cars: number | null; services: { job?: string; own?: string | null; addons?: string[] } | null;
     quote_breakdown: { lines?: Line[]; family?: Line[] } | null; vehicles: { vehicle_specs: Spec } | null }>(
-    `bookings?select=status,cars,services,quote_breakdown,vehicles(vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part))&id=eq.${enc(id)}`);
+    `bookings?select=status,starts_at,cars,services,quote_breakdown,vehicles(vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part))&id=eq.${enc(id)}`);
   if (!b) return { ok: false as const, error: "Booking not found" };
   if (b.status === "done" || b.status === "cancelled") return { ok: false as const, error: "This job is already finished or cancelled" };
   // the lines being charged (before any family price), so add-ons they dropped don't count
   const charged = b.quote_breakdown?.family ? b.quote_breakdown.family : (b.quote_breakdown?.lines ?? []);
-  const f = await familyLines({ spec: b.vehicles?.vehicle_specs, job: b.services?.job ?? "oil_change", own: b.services?.own, charged, addons: b.services?.addons, cars: b.cars });
+  const f = await familyLines({ spec: b.vehicles?.vehicle_specs, job: b.services?.job ?? "oil_change", own: b.services?.own, charged, addons: b.services?.addons, cars: b.cars, before: b.starts_at, excludeId: id });
   return { ok: true as const, ...f, before: charged };
 }
 

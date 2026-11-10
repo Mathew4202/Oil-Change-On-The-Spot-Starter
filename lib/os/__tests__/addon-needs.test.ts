@@ -32,3 +32,11 @@ test("only add-ons on the bill count", () => {
     [{ kind: "cabin_filter", times: 1 }, { kind: "engine_filter", times: 1 }]);
   assert.deepEqual(chargedAddons([{ label: "Full synthetic oil change", amount: 90 }], ["cabin_filter"], 1), []);
 });
+
+import { allocateFrom } from "../addon-needs.ts";
+test("linked filters: earlier bookings take theirs first, the cars' own number first", () => {
+  const order = [{ part: "27356", onHand: 1 }, { part: "0175580", onHand: 20 }];
+  assert.deepEqual(allocateFrom(order, 0), { part: "27356", inStock: true, left: 1 });     // nothing booked before: the NAPA one
+  assert.deepEqual(allocateFrom(order, 1), { part: "0175580", inStock: true, left: 20 });  // tomorrow's job has the NAPA one
+  assert.equal(allocateFrom(order, 21).inStock, false);
+});

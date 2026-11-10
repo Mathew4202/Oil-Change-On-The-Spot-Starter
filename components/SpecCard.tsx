@@ -3,7 +3,7 @@ import { Fragment } from "react";
 export type HqSpec = {
   engine?: string | null; grade: string; oilSpec?: string | null; capacityL: number; filter?: string | null; fuel?: string | null; wix?: string | null;
   cabin?: string | null; air?: string | null; wiperDriver?: string | null; wiperPassenger?: string | null; filterNote?: string | null;
-  source?: string | null; confidence?: string | null; filterInStock?: boolean | null;
+  source?: string | null; confidence?: string | null; filterInStock?: boolean | null; filterUse?: string | null;
 };
 
 export default function SpecCard({ spec, engine }: { spec: HqSpec; engine?: string | null }) {
@@ -12,7 +12,7 @@ export default function SpecCard({ spec, engine }: { spec: HqSpec; engine?: stri
     ["Engine", `${engine || spec.engine || "not on file"}${diesel ? " (diesel)" : spec.fuel === "hybrid" ? " (hybrid)" : ""}`],
     ["Oil", `${spec.grade.replace(/^Euro /, "")} ${diesel ? "diesel oil" : "full synthetic"}, ${spec.capacityL} L`],
     ["Must meet", spec.oilSpec || "not on file yet"],
-    ["Oil filter", spec.filter ? `NAPA ${spec.filter}${spec.wix ? ` · WIX ${spec.wix}` : ""}${spec.filterInStock == null ? "" : spec.filterInStock ? " · in stock" : " · buy"}` : "find on site"],
+    ["Oil filter", spec.filter ? `${spec.filterUse ? `${spec.filterUse} (same as NAPA ${spec.filter}, the NAPA ones are for earlier jobs)` : `NAPA ${spec.filter}`}${spec.wix ? ` · WIX ${spec.wix}` : ""}${spec.filterInStock == null ? "" : spec.filterInStock ? " · in stock" : " · buy"}` : "find on site"],
   ];
   if (spec.cabin) rows.push(["Cabin filter", spec.cabin]);
   if (spec.air) rows.push(["Air filter", spec.air]);
