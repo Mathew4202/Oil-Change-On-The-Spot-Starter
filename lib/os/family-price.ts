@@ -77,7 +77,7 @@ export async function setFamilyPrice(id: string, by: string, on = true, tell = f
 }
 
 async function setFamilyPriceOnly(id: string, by: string, on: boolean) {
-  const [b] = await sbGet<{ quote_breakdown: Record<string, unknown> & { lines?: Line[]; family?: Line[] } | null }>(`bookings?select=quote_breakdown&id=eq.${enc(id)}`);
+  const [b] = await sbGet<{ quote_breakdown: Record<string, unknown> & { lines?: Line[]; family?: Line[] } | null; needs_review: string[] | null }>(`bookings?select=quote_breakdown,needs_review&id=eq.${enc(id)}`);
   if (!b) return { ok: false as const, error: "Booking not found" };
   const q = b.quote_breakdown ?? {};
   if (!on) {   // back to the regular price
@@ -94,6 +94,8 @@ async function setFamilyPriceOnly(id: string, by: string, on: boolean) {
   if (p.missing.length) return { ok: false as const, error: `Add ${p.missing.join(" and ")} first (Edit details), so the oil is counted` };
   const who = by ? by.charAt(0).toUpperCase() + by.slice(1) : "HQ";
   const bd = { ...q, lines: p.lines, subtotal: p.subtotal, hst: p.hst, total: p.total, profit: 0, family: q.family ?? q.lines ?? [], familyBy: who };
-  if (!(await sbPatch("bookings", `id=eq.${enc(id)}`, { quoted_total: p.total, quote_breakdown: bd }))) return { ok: false as const, error: "Couldn't save the price" };
+  // it's set now: drop the "Family price not set" note from when it was booked
+  const review = (b.needs_review ?? []).filter((n) => !n.startsWith("Family price not set"));
+  if (!(await sbPatch("bookings", `id=eq.${enc(id)}`, { quoted_total: p.total, quote_breakdown: bd, ...(review.length !== (b.needs_review ?? []).length ? { needs_review: review } : {}) }))) return { ok: false as const, error: "Couldn't save the price" };
   return { ok: true as const, total: p.total, subtotal: p.subtotal, oldTotal: q.total != null ? Number(q.total) : null };
 }

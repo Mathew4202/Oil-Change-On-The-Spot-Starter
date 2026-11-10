@@ -169,7 +169,9 @@ export async function GET(req: NextRequest) {
         // finished: what it actually made (the oil, filter and parts recorded on the job), not an estimate
         const done = r.jobs?.[0];
         if (done && done.subtotal != null) {
-          const made = Math.round((Number(done.revenue ?? done.subtotal) - Number(done.cost_oil ?? 0) - Number(done.cost_parts ?? 0) - Number(done.cost_other ?? 0)) * 100) / 100;
+          const spent = Number(done.cost_oil ?? 0) + Number(done.cost_parts ?? 0) + Number(done.cost_other ?? 0);
+          // family price: they paid the parts before tax and we get the HST we paid on them back, so count the parts before tax too
+          const made = Math.round((Number(done.revenue ?? done.subtotal) - (isFam(r) ? spent / 1.14 : spent)) * 100) / 100;
           return { profit: money ? afterGas(made, r) : null, costs: null, actual: true };
         }
         // not done yet: worked out live from what we last paid for the oil, filter and any add-on parts
@@ -178,7 +180,7 @@ export async function GET(req: NextRequest) {
         let live = base != null ? Math.round((base - ad.reduce((t, a) => t + a.cost, 0)) * 100) / 100 : null;
         // family price: the parts were charged before tax, and the HST we paid on them comes back, so count them before tax too
         if (live != null && c && isFam(r)) live = Math.round((c.subtotal - (c.subtotal - live) / 1.14) * 100) / 100;
-        return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? null, r) : null, costs: money && live != null && c ? { ...c, addons: ad } : null, actual: false }; })(), notes: r.notes, checks: r.needs_review ?? [], imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
+        return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? null, r) : null, costs: money && live != null && c ? { ...c, addons: ad } : null, actual: false }; })(), notes: r.notes, checks: (r.needs_review ?? []).filter((n) => !(isFam(r) && n.startsWith("Family price not set"))), imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       lastTime: lastTimeFor(r),
       groupId: r.pay_mode !== "fleet_invoice" ? r.group_id ?? null : null,   // several cars on one visit: one card in HQ
       vin: (r.services as { vin?: string } | null)?.vin ?? null, vinCar: (r.services as { vinCar?: string } | null)?.vinCar ?? null,
