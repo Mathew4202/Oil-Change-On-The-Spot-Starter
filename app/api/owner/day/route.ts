@@ -86,6 +86,9 @@ export async function GET(req: NextRequest) {
   ]);
   const lastTimeFor = (r: Row) => { const p = prevJobs.find((j) => j.vehicle_id === r.vehicle_id && j.booking_id !== r.id && j.done_at < r.starts_at); return p ? lastVisit(p.inspection, p.customer_note) : null; };
 
+  // oil filter price: a linked filter (Parts Source vs NAPA) counts, at the one we'd grab from the shelf
+  const { pickCost } = await import("@/lib/os/part-alias");
+  const filterCostOf = (pn: string) => pickCost(pn, links, (x) => filterCosts[x], (x) => onHandAll(x, [], parts));
   // what we last paid for the cabin and air filters on these cars (receipts), matched loosely ("FIL 26195" = "26195")
   const addonPns = Array.from(new Set(rows.flatMap((r) => [r.vehicles?.vehicle_specs?.cabin_filter_part, r.vehicles?.vehicle_specs?.air_filter_part]).filter(Boolean) as string[]));
   const addonCosts: Record<string, number> = {};
@@ -114,7 +117,7 @@ export async function GET(req: NextRequest) {
     const perL = oilPerL[s.oil_grade];
     if (!subtotal || perL == null) return null;
     const cars = r.cars || 1;
-    const known = s.oil_filter_part ? filterCosts[s.oil_filter_part] : undefined;
+    const known = s.oil_filter_part ? filterCostOf(s.oil_filter_part) ?? undefined : undefined;
     const filter = known ?? rr.filter_estimate ?? 6.5;
     const r2 = (n: number) => Math.round(n * 100) / 100;
     return { subtotal: r2(subtotal), litres: r2(Number(s.capacity_l) * cars), perL, oil: r2(Number(s.capacity_l) * perL * cars), filter: r2(filter * cars),
@@ -140,7 +143,7 @@ export async function GET(req: NextRequest) {
       job: r.services?.job ?? "oil_change", addons: r.services?.addons ?? [],
       oil: s && (!r.services?.job || ["oil_change", "seasonal"].includes(r.services.job)) ? { grade: s.oil_grade, litres: Number(s.capacity_l), filter: s.oil_filter_part, spec: s.oil_spec,
         engine: s.engine, diesel: s.fuel === "diesel", wix: s.wix_filter, checked: !!s.verified, lowConfidence: s.source === "ai_lookup" && s.confidence === "low",
-        filterInStock: s.oil_filter_part ? onHandAll(s.oil_filter_part, links, parts) >= 1 : null, filterAlt: s.oil_filter_part ? sameParts(s.oil_filter_part, links).slice(1) : [], filterCost: money && s.oil_filter_part ? filterCosts[s.oil_filter_part] ?? null : null,
+        filterInStock: s.oil_filter_part ? onHandAll(s.oil_filter_part, links, parts) >= 1 : null, filterAlt: s.oil_filter_part ? sameParts(s.oil_filter_part, links).slice(1) : [], filterCost: money && s.oil_filter_part ? filterCostOf(s.oil_filter_part) : null,
         filterNote: s.filter_note ?? null }
         // finished: what the job actually got (even if the car has no oil on file)
         : r.jobs?.[0]?.oil_grade ? { grade: r.jobs[0].oil_grade, litres: Number(r.jobs[0].oil_litres ?? 0) / (r.cars || 1), filter: r.jobs[0].filter_part ?? null, spec: null, engine: null, diesel: false, wix: null,

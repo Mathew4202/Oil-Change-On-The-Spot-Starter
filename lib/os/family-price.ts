@@ -26,7 +26,10 @@ export async function familyLines(x: { spec: Spec; job: string; own?: string | n
     if (!s?.oil_grade || !s.capacity_l) missing.push("the car's oil and litres");
     else if (perL == null) missing.push(`a price for ${s.oil_grade} oil`);
     else lines.push({ label: `Oil: ${r2(Number(s.capacity_l) * cars)} L ${s.oil_grade} at our cost`, amount: r2(Number(s.capacity_l) * Number(perL) * cars) });
-    const fc = costOf(s?.oil_filter_part);
+    // a filter linked as the same part (Parts Source vs NAPA): the one we'd grab
+    const { loadLinks, pickCost } = await import("@/lib/os/part-alias");
+    const stock = await sbGet<{ part_number: string; on_hand: number }>("parts?select=part_number,on_hand&on_hand=gt.0").catch(() => []);
+    const fc = s?.oil_filter_part ? pickCost(s.oil_filter_part, await loadLinks(), costOf, (pn) => stock.filter((x) => normPart(x.part_number) === normPart(pn)).reduce((t, x) => t + Number(x.on_hand), 0)) : null;
     lines.push({ label: `Oil filter${s?.oil_filter_part ? ` ${s.oil_filter_part}` : ""} at our cost${fc == null ? " (usual cost)" : ""}`, amount: r2((fc ?? rr.filter_estimate ?? 6.5) * cars) });
   }
   for (const { kind, times } of chargedAddons(x.charged, x.addons, cars)) {

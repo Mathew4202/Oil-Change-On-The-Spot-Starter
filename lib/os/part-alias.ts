@@ -49,3 +49,12 @@ export async function linkPart(from: string, to: string, by: string) {
   const [p] = await sbGet<{ on_hand: number }>(`parts?select=on_hand&part_number=eq.${enc(f)}&limit=1`).catch(() => []);
   return { ok: true as const, to: main, onHand: Number(p?.on_hand ?? 0) };
 }
+
+/** The filter price to use for pn when other numbers are linked to it: the one we'd actually grab (in stock,
+ *  the cars' own number first), otherwise the cars' own number, otherwise any linked one with a price. */
+export function pickCost<T>(pn: string, links: Link[], costOf: (pn: string) => T | null | undefined, onHand: (pn: string) => number): T | null {
+  const all = sameParts(pn, links);
+  for (const x of all) { const c = costOf(x); if (c != null && onHand(x) >= 1) return c; }
+  for (const x of all) { const c = costOf(x); if (c != null) return c; }
+  return null;
+}

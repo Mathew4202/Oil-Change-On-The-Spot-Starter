@@ -165,11 +165,19 @@ async function filterCostFor(part: string | null): Promise<{ cost: number; retai
   // the receipt may spell it "FIL 26195" or "2-6195" when the car has "26195": match without spaces, dashes or a store prefix
   const all = await sbGet<{ our_cost: number | null; retail: number | null; parts: { part_number: string } | null }>(
     `part_quotes?select=our_cost,retail,parts!inner(part_number)&order=checked_at.desc&limit=2000`);
-  const q = all.filter((x) => x.parts && normPart(x.parts.part_number) === normPart(part)).slice(0, 5);
-  const latest = q.find((x) => x.our_cost != null);
-  if (!latest) return null;
-  const withRetail = q.find((x) => x.retail != null);   // the newest retail we have (a later receipt may not show it)
-  return { cost: Number(latest.our_cost), retail: withRetail ? Number(withRetail.retail) : null };
+  const one = (pn: string) => {
+    const q = all.filter((x) => x.parts && normPart(x.parts.part_number) === normPart(pn)).slice(0, 5);
+    const latest = q.find((x) => x.our_cost != null);
+    if (!latest) return null;
+    const withRetail = q.find((x) => x.retail != null);   // the newest retail we have (a later receipt may not show it)
+    return { cost: Number(latest.our_cost), retail: withRetail ? Number(withRetail.retail) : null };
+  };
+  // a filter linked as the same part (Parts Source vs NAPA): price it at the one we'd use
+  const { loadLinks, sameParts, pickCost } = await import("@/lib/os/part-alias");
+  const links = await loadLinks();
+  if (sameParts(part, links).length < 2) return one(part);
+  const stock = await sbGet<{ part_number: string; on_hand: number }>(`parts?select=part_number,on_hand&on_hand=gt.0`).catch(() => []);
+  return pickCost(part, links, one, (pn) => stock.filter((x) => normPart(x.part_number) === normPart(pn)).reduce((t, x) => t + Number(x.on_hand), 0));
 }
 
 export async function buildQuote(req: QuoteRequest) {
