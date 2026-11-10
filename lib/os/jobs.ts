@@ -25,7 +25,7 @@ export type JobContext = {
     customer_id: string | null; vehicle_id: string | null };
   customer: { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; review_asked_at: string | null } | null;
   vehicle: { id: string; year: number | null; make: string | null; model: string | null; engine: string | null; last_km: number | null; vin: string | null;
-    vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null; cabin_filter_part?: string | null; air_filter_part?: string | null } | null } | null;
+    vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null; cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null } | null } | null;
   job: Record<string, unknown> | null;
   paid: number;   // all payments on this booking so far (a booking paid online when booked, tips included)
   group?: { cars: { bookingId: string; car: string; done: boolean }[]; index: number; open: number; othersOwed: number; othersTotal: number; allTotal: number; allOwed: number } | null;   // several cars, one visit
@@ -55,7 +55,7 @@ export async function jobContext(bookingId: string): Promise<JobContext | null> 
   if (!b) return null;
   const [[customer], [vehicle], [job], pays] = await Promise.all([
     b.customer_id ? sbGet<NonNullable<JobContext["customer"]>>(`customers?select=id,first_name,last_name,phone,email,review_asked_at&id=eq.${b.customer_id}`) : Promise.resolve([null]),
-    b.vehicle_id ? sbGet<NonNullable<JobContext["vehicle"]>>(`vehicles?select=id,year,make,model,engine,last_km,vin,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,cabin_filter_part,air_filter_part)&id=eq.${b.vehicle_id}`) : Promise.resolve([null]),
+    b.vehicle_id ? sbGet<NonNullable<JobContext["vehicle"]>>(`vehicles?select=id,year,make,model,engine,last_km,vin,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger)&id=eq.${b.vehicle_id}`) : Promise.resolve([null]),
     sbGet<Record<string, unknown>>(`jobs?select=*&booking_id=eq.${id}&order=done_at.desc&limit=1`),
     sbGet<{ amount: number }>(`payments?select=amount&booking_id=eq.${id}`),
   ]);
@@ -218,6 +218,9 @@ export async function finishJob(input: FinishInput, owner: string) {
       stock.push(`${grade}: ${r2(Number(o.on_hand) - used)} L left`);
     } else stock.push(`${grade} oil isn't in Stock (or is at 0), so nothing came off`);
   }
+
+  // The add-on parts we charged for come off the shelf too (cabin and air filters by part #, wipers by size)
+  await takeAddonParts(lines, ctx.booking.services?.addons, ctx.booking.cars || 1, spec, job.data!.id, stock).catch(() => null);
 
   // Gloves and shop towels used on every car (pricing rules: gloves_per_car 2, gloves_per_box 100, towels_per_car 2)
   await useSupplies(ctx.booking.cars || 1, rules, job.data!.id).catch(() => null);
@@ -394,6 +397,58 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       family: await familyOnReceipt(many ? visit.map((c) => ({ bookingId: c.bookingId, lines: c.job!.lines ?? [], name: c.job!.vehicle_text || c.car })) : j.booking_id ? [{ bookingId: j.booking_id, lines: j.lines ?? [], name: null }] : []),
     },
   };
+}
+
+/** Take the add-on parts a finished job used off Stock (never below zero), and say what came off or why not. */
+async function takeAddonParts(lines: { label: string; amount: number }[], booked: string[] | undefined, cars: number,
+  spec: { cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null } | null | undefined,
+  jobId: string, say: string[]) {
+  const charged = chargedAddons(lines, booked, cars);
+  if (!charged.length) return;
+  const { loadLinks, sameParts } = await import("@/lib/os/part-alias");
+  const links = await loadLinks();
+  const all = await sbGet<{ id: string; part_number: string; description: string | null; category: string | null; on_hand: number }>(
+    "parts?select=id,part_number,description,category,on_hand&on_hand=gt.0&limit=2000").catch(() => []);
+  const take = async (find: (p: (typeof all)[number]) => boolean, qty: number, name: string) => {
+    let left = qty;
+    for (const p of all.filter(find).sort((a, b) => Number(b.on_hand) - Number(a.on_hand))) {
+      if (left <= 0) break;
+      const used = Math.min(Number(p.on_hand), left);
+      if (used <= 0) continue;
+      p.on_hand = r2(Number(p.on_hand) - used); left -= used;
+      await sbPatch("parts", `id=eq.${p.id}`, { on_hand: p.on_hand });
+      await sbInsert("stock_moves", { part_id: p.id, qty: -used, reason: "job", job_id: jobId });
+      say.push(`${name} ${p.part_number}: ${p.on_hand} left`);
+    }
+    if (left > 0) say.push(`${name}: ${left === qty ? "none" : "not enough"} in Stock, so ${left} didn't come off`);
+  };
+  for (const { kind, times } of charged) {
+    if (kind === "cabin_filter" || kind === "engine_filter") {
+      const pn = kind === "cabin_filter" ? spec?.cabin_filter_part : spec?.air_filter_part;
+      const name = kind === "cabin_filter" ? "Cabin filter" : "Engine air filter";
+      if (!pn) { say.push(`${name}: no part # on this car, so nothing came off Stock (add it in Edit details)`); continue; }
+      // the cars' own number first, then a filter linked as the same part
+      let left = times;
+      for (const g of sameParts(pn, links).map(normPart)) {
+        if (left <= 0) break;
+        const n = all.filter((p) => normPart(p.part_number) === g).reduce((t, p) => t + Number(p.on_hand), 0);
+        if (n <= 0) continue;
+        const q = Math.min(n, left);
+        await take((p) => normPart(p.part_number) === g, q, name);
+        left -= q;
+      }
+      if (left > 0) say.push(`${name} ${pn}: ${left === times ? "none" : "not enough"} in Stock, so ${left} didn't come off`);
+    } else if (kind === "wipers") {
+      const sizes = [spec?.wiper_driver, spec?.wiper_passenger].filter(Boolean) as string[];
+      if (!sizes.length) { say.push("Wipers: no sizes on this car, so nothing came off Stock (add them in Edit details)"); continue; }
+      for (const size of sizes) {
+        const re = new RegExp(`(^|\\D)${size}(\\D|$)`);
+        await take((p) => p.category === "wiper" && re.test(`${p.part_number} ${p.description ?? ""}`), Math.max(1, Math.round(times)), `Wiper ${size}"`);
+      }
+    } else if (kind === "battery") {
+      await take((p) => p.category === "battery", 1, "Battery");
+    }
+  }
 }
 
 /** Family price receipt: the regular price lines (what it would have been), so the receipt can show the discount.
