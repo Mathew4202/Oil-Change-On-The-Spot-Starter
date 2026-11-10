@@ -23,6 +23,7 @@ export type ReceiptData = {
   late?: { label: string; amount: number }[];   // late fee / interest (no HST)
   dueBy?: string | null; lateTerms?: string | null;
   payUrl?: string | null;    // their pay page: card online, or e-transfer details
+  family?: { lines: { label: string; amount: number }[]; subtotal: number } | null;   // family price: the regular price, then the discount
   cars?: CarRecord[];        // several cars on one visit: a service record, the checks and the notes for each car
 };
 export type CarRecord = { name?: string | null; vin?: string | null; km?: number | null; oil?: string | null; filter?: string | null;
@@ -52,9 +53,10 @@ export function receiptHtml(r: ReceiptData): string {
   <p style="margin:0 0 4px;font-size:16px">Thanks, ${esc(r.customer.split(" ")[0] || "there")}. Here's your receipt.</p>
   <p style="margin:0 0 16px;font-size:14px;color:#4a5878">${esc(r.car)}${r.address ? ` · ${esc(r.address)}` : ""}</p>
   <table style="width:100%;border-collapse:collapse;font-size:15px">
-   ${r.lines.map((l) => row(esc(l.label), money(l.amount))).join("")}
+   ${(r.family ? r.family.lines : r.lines).map((l) => row(esc(l.label), money(l.amount))).join("")}
    <tr><td colspan="2" style="border-top:1px solid #c8d0e0;padding-top:4px"></td></tr>
-   ${row("Subtotal", money(r.subtotal))}
+   ${row("Subtotal", money(r.family ? r.family.subtotal : r.subtotal))}
+   ${r.family ? row("Family discount", money(-familyOff(r))) : ""}
    ${row("HST 14%", money(r.hst))}
    ${row("Total", money(r.total), true)}
    ${r.tip ? row("Tip, thank you!", money(r.tip)) : ""}
@@ -72,10 +74,10 @@ export function receiptHtml(r: ReceiptData): string {
    Happy with the service? A quick Google review helps other people in HRM find us and supports our small business.<br>
    <a href="${esc(r.reviewUrl)}" style="display:inline-block;margin-top:10px;background:#f2b01e;color:#0d1b3e;font-weight:700;text-decoration:none;padding:10px 16px;border-radius:8px">Leave a review</a>
   </div>` : ""}
-  <div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.5;background:#f4f6fa;color:#0d1b3e">
+  ${r.family ? "" : `<div style="border-radius:10px;padding:14px;margin-top:16px;font-size:14px;line-height:1.5;background:#f4f6fa;color:#0d1b3e">
    <strong>Refer a friend, get $5 off.</strong> ${r.referUrl ? `Send them your link. When they book with it and we've done their car, $5 comes off your next oil change on its own:<br>
    <a href="${esc(r.referUrl)}" style="color:#0d1b3e;font-weight:700">${esc(r.referUrl.replace(/^https?:\/\//, ""))}</a>` : "Tell them to mention your name when they book, and $5 comes off your next oil change."}
-  </div>
+  </div>`}
   <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#4a5878">${esc(BUSINESS.name)} · ${esc(BUSINESS.town)} · ${esc(BUSINESS.phone)} · ${esc(BUSINESS.email)}<br>HST # ${BUSINESS.hst}${r.receiptUrl ? ` · <a href="${esc(r.receiptUrl)}" style="color:#4a5878">View online</a>` : ""}</p>
  </div>
 </div></body></html>`;
@@ -107,10 +109,15 @@ function recordHtml(c: CarRecord): string {
   </div>` : ""}`;
 }
 
+/** Family price: how much came off the regular price (before tax). */
+export const familyOff = (r: ReceiptData) => (r.family ? Math.max(0, Math.round((r.family.subtotal - r.subtotal) * 100) / 100) : 0);
+
 export function receiptText(r: ReceiptData): string {
   return [
     `${BUSINESS.short} receipt #${r.receiptNo}, ${r.date}`, r.car, "",
-    ...r.lines.map((l) => `${l.label}: ${money(l.amount)}`), `HST 14%: ${money(r.hst)}`, `Total: ${money(r.total)}`,
+    ...(r.family ? r.family.lines : r.lines).map((l) => `${l.label}: ${money(l.amount)}`),
+    ...(r.family ? [`Subtotal: ${money(r.family.subtotal)}`, `Family discount: ${money(-familyOff(r))}`] : []),
+    `HST 14%: ${money(r.hst)}`, `Total: ${money(r.total)}`,
     r.tip ? `Tip, thank you!: ${money(r.tip)}` : "",
     r.paidWith ? `Paid: ${METHOD_NAMES[r.paidWith] || r.paidWith}, ${money(r.total + (r.tip || 0))}` : "",
     ...(r.cars?.length ? r.cars : [{ vin: r.vin, km: r.km, oil: r.oil, filter: r.filter, nextDueKm: r.nextDueKm, nextDueDate: r.nextDueDate, checks: r.checks, note: r.customerNote } as CarRecord]).flatMap((c) => [
@@ -121,7 +128,7 @@ export function receiptText(r: ReceiptData): string {
       c.checks?.now.length ? `Needs doing now: ${c.checks.now.join(", ")}` : "", c.checks?.soon.length ? `Coming up soon: ${c.checks.soon.join(", ")}` : ""]),
     ...(r.late ?? []).map((l) => `${l.label}: ${money(l.amount)}`),
     r.due && r.due > 0 ? `Amount due${r.dueBy ? ` by ${r.dueBy}` : ""}: ${money(r.due)}. E-transfer preferred: send to ${BUSINESS.email} with #${r.receiptNo} in the message${r.payUrl ? `. Or pay by card here: ${r.payUrl}` : ""}${r.lateTerms ? ` ${r.lateTerms}` : ""}` : "",
-    r.referUrl ? `Refer a friend, get $5 off your next oil change: ${r.referUrl}` : "",
+    r.referUrl && !r.family ? `Refer a friend, get $5 off your next oil change: ${r.referUrl}` : "",
     "", `${BUSINESS.name}, HST # ${BUSINESS.hst}, ${BUSINESS.phone}`,
   ].filter((x) => x !== "").join("\n");
 }

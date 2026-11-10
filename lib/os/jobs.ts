@@ -391,8 +391,23 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
       logoUrl: `${siteUrl()}/email-logo.png`,
       reviewUrl: j.review_requested ? await reviewLink() : null,
       referUrl: j.customer_id ? await ensureRefCode(j.customer_id).then((c) => (c ? refLink(c) : null)).catch(() => null) : null,
+      family: await familyOnReceipt(many ? visit.map((c) => ({ bookingId: c.bookingId, lines: c.job!.lines ?? [], name: c.job!.vehicle_text || c.car })) : j.booking_id ? [{ bookingId: j.booking_id, lines: j.lines ?? [], name: null }] : []),
     },
   };
+}
+
+/** Family price receipt: the regular price lines (what it would have been), so the receipt can show the discount.
+ *  null when no car on the visit is on the family price. */
+async function familyOnReceipt(cars: { bookingId: string; lines: { label: string; amount: number }[]; name: string | null }[]) {
+  if (!cars.length) return null;
+  const rows = await sbGet<{ id: string; quote_breakdown: { family?: { label: string; amount: number }[] } | null }>(
+    `bookings?select=id,quote_breakdown&id=in.(${cars.map((c) => c.bookingId).join(",")})`).catch(() => []);
+  if (!rows.some((b) => b.quote_breakdown?.family?.length)) return null;
+  const lines = cars.flatMap((c) => {
+    const regular = rows.find((b) => b.id === c.bookingId)?.quote_breakdown?.family ?? c.lines;
+    return regular.map((l) => ({ label: c.name ? `${c.name}: ${l.label}` : l.label, amount: Number(l.amount) }));
+  });
+  return { lines, subtotal: r2(lines.reduce((t, l) => t + l.amount, 0)) };
 }
 
 /** Email the receipt. (The review request is its own message, sent separately.) */
