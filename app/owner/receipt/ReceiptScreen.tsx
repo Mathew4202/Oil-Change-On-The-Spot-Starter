@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import OwnerNav from "../OwnerNav";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
-type Item = { description: string; partNumber: string | null; brand: string | null; qty: number; unitPrice: number; lineTotal: number; category: string; litresPerUnit: number | null; oilGrade: string | null; unitsPerPack?: number | null };
+type Item = { description: string; partNumber: string | null; brand: string | null; qty: number; unitPrice: number; lineTotal: number; category: string; litresPerUnit: number | null; oilGrade: string | null; unitsPerPack?: number | null; listPrice?: number | null; sameAs?: string | null };
 type Scan = { vendor: string; supplier: string; date: string | null; invoiceNo: string | null; subtotal: number | null; hst: number | null; total: number; paidWith: string; category: string; items: Item[]; warnings: string[] };
 type Exp = { id: string; vendor: string | null; description: string | null; total: number; hst: number | null; spent_at: string; category: string | null; paid_with: string | null; added_by: string | null };
 // what an expense counts as on the Money page
@@ -36,7 +36,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
   const camRef = useRef<HTMLInputElement>(null); const pickRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<"idle" | "reading" | "review" | "saving" | "done">("idle");
   const [preview, setPreview] = useState(""); const [scan, setScan] = useState<Scan | null>(null); const [photoPath, setPhotoPath] = useState<string | null>(null);
-  const [err, setErr] = useState(""); const [result, setResult] = useState<{ stock: string[]; prices: string[]; unknown?: { part: string; category: string }[]; banked?: boolean; converted?: { usd: number; cad: number } | null } | null>(null);
+  const [err, setErr] = useState(""); const [result, setResult] = useState<{ stock: string[]; prices: string[]; unknown?: { part: string; category: string }[]; linked?: string[]; banked?: boolean; converted?: { usd: number; cad: number } | null } | null>(null);
   const [recent, setRecent] = useState<Exp[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -66,7 +66,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
     const r = await fetch("/api/owner/receipt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save", scan, photoPath }) });
     const j = await r.json();
     if (!r.ok) { setErr(j.error || "Couldn't save"); setStage("review"); return; }
-    setResult({ stock: j.stock, prices: j.prices, unknown: j.unknown, banked: j.banked, converted: j.converted }); setStage("done"); loadRecent();
+    setResult({ stock: j.stock, prices: j.prices, unknown: j.unknown, linked: j.linked, banked: j.banked, converted: j.converted }); setStage("done"); loadRecent();
   }
 
   const upd = (p: Partial<Scan>) => setScan((s) => s ? { ...s, ...p } : s);
@@ -108,6 +108,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
             <p className="font-bold text-[#1d6b3a]">Saved.</p>
             {result.stock.length > 0 && <p className="text-sm">Stock: {result.stock.join(", ")}</p>}
             {result.prices.length > 0 && <p className="text-sm">Prices updated: {result.prices.join(", ")}</p>}
+            {(result.linked?.length ?? 0) > 0 && <p className="text-sm">Same as: {result.linked!.join(", ")}. The Bring list will say either one.</p>}
             {(result.unknown ?? []).map((u) => <SameAs key={u.part} part={u.part} category={u.category} />)}
             {result.banked && <p className="text-sm">Matched to its line on the bank statement.</p>}
             {result.converted && <p className="text-sm">It was in US dollars: saved as ${result.converted.cad.toFixed(2)} CAD (US${"$"}{result.converted.usd.toFixed(2)} at the Bank of Canada rate).</p>}
@@ -151,6 +152,12 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
                     <label className="flex items-center gap-2 text-xs font-semibold text-[#4a5878] whitespace-nowrap">Each $
                       <DecimalInput value={it.unitPrice} onChange={(n) => updItem(i, { unitPrice: n ?? 0 })} className={field} style={{ borderColor: LINE }} /></label>
                   </div>
+                  {["oil_filter", "cabin_filter", "engine_filter"].includes(it.category) && it.partNumber && (
+                    <label className="text-xs font-semibold flex items-center gap-2 text-[#4a5878]">Same as (optional)
+                      <input value={it.sameAs ?? ""} onChange={(e) => updItem(i, { sameAs: e.target.value.toUpperCase() || null })} placeholder="e.g. 27356" autoCapitalize="characters"
+                        className="h-9 flex-1 min-w-0 rounded-lg border px-2 font-mono bg-white text-base" style={{ borderColor: LINE }} />
+                    </label>
+                  )}
                   {it.category === "shop_towels" && (
                     <label className="text-xs font-semibold flex items-center gap-2">Towels in each pack or roll
                       <DecimalInput value={it.unitsPerPack ?? null} onChange={(n) => updItem(i, { unitsPerPack: n })} className="h-9 w-20 rounded-lg border px-2" style={{ borderColor: LINE }} />
