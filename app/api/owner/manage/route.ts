@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   const r = action === "cancel" ? await cancelBooking(b, owner, String(reason || "").slice(0, 200), { chargeFee: chargeFee === true })
     : action === "move" ? await moveBooking(b, String(start || ""), owner)
     : action === "familyPreview" ? await familyPrice(b.id)
-    : action === "family" ? await setFamilyPrice(b.id, owner, on !== false)
+    : action === "family" ? await setFamilyPrice(b.id, owner, on !== false, tell === true)
     : action === "price" ? await setPrice(b.id, Number(price), owner, tell === true)
     : action === "edit" ? await editBooking(b.id, edit && typeof edit === "object" ? edit : {}, owner)
     : { ok: false, error: "Unknown action" };

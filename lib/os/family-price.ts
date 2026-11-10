@@ -67,7 +67,16 @@ export async function familyPrice(id: string) {
 }
 
 /** Save the family price on the booking (the regular lines are kept, so it can be undone). */
-export async function setFamilyPrice(id: string, by: string, on = true) {
+export async function setFamilyPrice(id: string, by: string, on = true, tell = false) {
+  const r = await setFamilyPriceOnly(id, by, on);
+  if (r.ok && tell && r.total !== r.oldTotal) {   // text them the new total (just the one number, tax in)
+    const { tellNewPrice } = await import("@/lib/os/manage");
+    await tellNewPrice(id, r.total, r.oldTotal ?? null, undefined, on ? "on" : "off").catch(() => null);
+  }
+  return r;
+}
+
+async function setFamilyPriceOnly(id: string, by: string, on: boolean) {
   const [b] = await sbGet<{ quote_breakdown: Record<string, unknown> & { lines?: Line[]; family?: Line[] } | null }>(`bookings?select=quote_breakdown&id=eq.${enc(id)}`);
   if (!b) return { ok: false as const, error: "Booking not found" };
   const q = b.quote_breakdown ?? {};
@@ -78,7 +87,7 @@ export async function setFamilyPrice(id: string, by: string, on = true) {
     const { family: _drop, familyBy: _by, ...rest } = q as Record<string, unknown>; void _drop; void _by;
     const bd = { ...rest, lines, subtotal, hst: r2(subtotal * rate), total: r2(subtotal * (1 + rate)) };
     if (!(await sbPatch("bookings", `id=eq.${enc(id)}`, { quoted_total: bd.total, quote_breakdown: bd }))) return { ok: false as const, error: "Couldn't save" };
-    return { ok: true as const, total: bd.total };
+    return { ok: true as const, total: bd.total, oldTotal: q.total != null ? Number(q.total) : null };
   }
   const p = await familyPrice(id);
   if (!p.ok) return p;
@@ -86,5 +95,5 @@ export async function setFamilyPrice(id: string, by: string, on = true) {
   const who = by ? by.charAt(0).toUpperCase() + by.slice(1) : "HQ";
   const bd = { ...q, lines: p.lines, subtotal: p.subtotal, hst: p.hst, total: p.total, profit: 0, family: q.family ?? q.lines ?? [], familyBy: who };
   if (!(await sbPatch("bookings", `id=eq.${enc(id)}`, { quoted_total: p.total, quote_breakdown: bd }))) return { ok: false as const, error: "Couldn't save the price" };
-  return { ok: true as const, total: p.total, subtotal: p.subtotal };
+  return { ok: true as const, total: p.total, subtotal: p.subtotal, oldTotal: q.total != null ? Number(q.total) : null };
 }

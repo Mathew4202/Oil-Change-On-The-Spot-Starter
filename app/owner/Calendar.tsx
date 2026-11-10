@@ -502,7 +502,7 @@ function EditPrice({ id, subtotal, onSaved }: { id: string; subtotal: number; on
 /** Family discount: the price becomes just what the parts cost us (oil, filter, add-on parts) + $1 supplies, no labour or gas. */
 function FamilyPrice({ id, on, onSaved }: { id: string; on?: boolean; onSaved: () => void }) {
   const [p, setP] = useState<{ lines: { label: string; amount: number }[]; subtotal: number; total: number; missing: string[] } | null>(null);
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [tell, setTell] = useState(true);
   const call = async (body: object) => {
     setBusy(true); setErr("");
     const r = await fetch("/api/owner/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId: id, ...body }) });
@@ -512,7 +512,8 @@ function FamilyPrice({ id, on, onSaved }: { id: string; on?: boolean; onSaved: (
   };
   if (on) return (
     <div className="self-start mt-2 flex flex-col gap-1">
-      <button disabled={busy} onClick={async () => { if (await call({ action: "family", on: false })) onSaved(); }} className="h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Back to regular price</button>
+      <button disabled={busy} onClick={async () => { if (await call({ action: "family", on: false, tell })) onSaved(); }} className="h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Back to regular price</button>
+      <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={tell} onChange={(e) => setTell(e.target.checked)} className="w-5 h-5" />Text them the new price</label>
       {err && <p className="text-sm font-semibold text-[#9b1c1c]">{err}</p>}
     </div>
   );
@@ -529,10 +530,11 @@ function FamilyPrice({ id, on, onSaved }: { id: string; on?: boolean; onSaved: (
       <div className="flex justify-between font-bold"><span>Total with HST</span><span>${p.total.toFixed(2)}</span></div>
       <p className="text-xs text-[#4a5878]">No labour and no gas. Parts are before tax and HST goes on top, so the total is about what the parts cost us.</p>
       {p.missing.length > 0 && <p className="text-sm font-semibold text-[#9b1c1c]">Missing {p.missing.join(" and ")}. Add it in Edit details first.</p>}
+      <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={tell} onChange={(e) => setTell(e.target.checked)} className="w-5 h-5" />Text them the new price</label>
       {err && <p className="text-sm font-semibold text-[#9b1c1c]">{err}</p>}
       <div className="flex gap-2">
         <button onClick={() => setP(null)} className="h-10 px-3 rounded-lg border border-[#c8d0e0] font-bold text-sm">Cancel</button>
-        <button disabled={busy || p.missing.length > 0} onClick={async () => { if (await call({ action: "family" })) { setP(null); onSaved(); } }}
+        <button disabled={busy || p.missing.length > 0} onClick={async () => { if (await call({ action: "family", tell })) { setP(null); onSaved(); } }}
           className="h-10 px-4 rounded-lg font-extrabold text-sm disabled:opacity-60" style={{ background: "#f2b01e", color: "#0d1b3e" }}>{busy ? "Saving…" : "Use family price"}</button>
       </div>
     </div>

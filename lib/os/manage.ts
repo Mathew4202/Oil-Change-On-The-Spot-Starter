@@ -190,11 +190,12 @@ export async function setPrice(id: string, subtotalIn: number, by: string, tell 
   return { ok: true as const, total: breakdown.total, profit, told };
 }
 
+const FAMILY_TEXT = "Hi {first_name}, we've put your appointment {when} on our family price. Your new total is {total}{was}. See you then!\n- {signer}, Oil Change On The Spot";
 const REMOVED_TEXT = "Hi {first_name}, quick update on your appointment {when}: we took off {change} like you asked. Your new total is {total} with HST{was}. If you have any questions, just reply here.\n- {signer}, Oil Change On The Spot";
 const PRICE_TEXT = "Hi {first_name}, quick update on your appointment {when}: the new total is {total} with HST{was}. If you have any questions, just reply here.\n- {signer}, Oil Change On The Spot";
 
 /** Text the customer their new price (owners tick "Text them the new price"). Fleets get it on their invoice, not by text. */
-async function tellNewPrice(id: string, total: number, oldTotal: number | null, change?: string) {
+export async function tellNewPrice(id: string, total: number, oldTotal: number | null, change?: string, family?: "on" | "off") {
   const [b] = await sbGet<{ starts_at: string; fleet_account_id: string | null; customers: { id: string; first_name: string | null; phone: string | null; sms_opt_out: boolean | null } | null }>(
     `bookings?select=starts_at,fleet_account_id,customers(id,first_name,phone,sms_opt_out)&id=eq.${enc(id)}`);
   const c = b?.customers;
@@ -206,7 +207,7 @@ async function tellNewPrice(id: string, total: number, oldTotal: number | null, 
   const { signed } = await import("@/lib/os/signer");
   const m = (n: number) => `$${n.toFixed(2)}`;
   // something was taken off: say what, then the new total
-  const body = change ? REMOVED_TEXT : t?.body || PRICE_TEXT;
+  const body = family === "on" ? FAMILY_TEXT : change ? REMOVED_TEXT : t?.body || PRICE_TEXT;
   const text = await signed(fill(body, { change: change ?? "", first_name: c.first_name?.trim() || "there", when: when(b.starts_at), total: m(total), old_total: oldTotal != null ? m(oldTotal) : "", was: oldTotal != null ? ` (it was ${m(oldTotal)})` : "" }));
   const { isFamily, noHstWords } = await import("@/lib/os/customer-texts");
   const r = await sendSms(c.phone, (await isFamily(id)) ? noHstWords(text) : text, { kind: "price_changed", customerId: c.id, bookingId: id });
