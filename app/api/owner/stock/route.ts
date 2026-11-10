@@ -51,7 +51,9 @@ async function addStock(b: Record<string, unknown>) {
   const grade = isOil ? String(b.oilGrade || "").toUpperCase().replace(/\s+/g, "").replace(/^(\d+)W(\d+)$/, "$1W-$2") : null;
   if (isOil && !/^\d+W-\d+$/.test(grade || "")) return { ok: false, error: "Type the oil grade, like 0W-20" };
   const sup = SUPPLY[category];
-  const partNumber = sup ? sup.pn : isOil ? `OIL-${grade}` : String(b.partNumber || "").trim().toUpperCase().replace(/^PPF\s*/, "").replace(/\s+/g, " ").slice(0, 30);
+  const typed = sup ? sup.pn : isOil ? `OIL-${grade}` : String(b.partNumber || "").trim().toUpperCase().replace(/^PPF\s*/, "").replace(/\s+/g, " ").slice(0, 30);
+  // another brand's number linked as "same as" one our cars use: count it under the cars' number
+  const partNumber = sup || isOil || !typed ? typed : await (await import("@/lib/os/part-alias")).partFor(typed);
   if (!partNumber) return { ok: false, error: "Type the part number" };
   const qty = Math.round(Number(b.qty) * 100) / 100;
   if (!(qty > 0 && qty <= (sup ? 20000 : 1000))) return { ok: false, error: isOil ? "How many litres?" : "How many?" };
@@ -81,6 +83,11 @@ export async function POST(req: NextRequest) {
   const owner = currentOwner();
   if (!owner) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
+  if (body.action === "link") {   // "same as": another brand's number for a part our cars use
+    const { linkPart } = await import("@/lib/os/part-alias");
+    const r = await linkPart(String(body.from || ""), String(body.to || ""), owner);
+    return NextResponse.json(r, { status: r.ok ? 200 : 400 });
+  }
   if (body.action === "add") { const r = await addStock(body); return NextResponse.json(r, { status: r.ok ? 200 : 400 }); }
   const { partId, delta, setTo, reorderAt } = body;
   if (!/^[0-9a-f-]{36}$/i.test(String(partId || ""))) return NextResponse.json({ error: "bad id" }, { status: 400 });

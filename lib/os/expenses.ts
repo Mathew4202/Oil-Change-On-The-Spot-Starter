@@ -56,13 +56,21 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
   });
   if (!exp.ok) return { ok: false as const, error: `Couldn't save: ${JSON.stringify(exp.error).slice(0, 200)}` };
 
-  const stock: string[] = [], prices: string[] = [];
+  const stock: string[] = [], prices: string[] = [], unknown: { part: string; category: string }[] = [];
+  const { partFor, carPartNumbers } = await import("@/lib/os/part-alias");
+  const { normPart } = await import("@/lib/os/addon-needs");
+  let carParts: Set<string> | null = null;
   for (const it of scan.items) {
     if (!STOCK_CATS.includes(it.category) || it.qty <= 0) continue;
     const isOil = it.category === "oil", sup = SUPPLY[it.category];
     if (isOil && (!it.oilGrade || !it.litresPerUnit)) continue;                 // can't track oil without grade + size
     if (!isOil && !sup && !it.partNumber) continue;                             // filters etc. are tracked by part number
-    const partNumber = isOil ? `OIL-${it.oilGrade}` : sup ? sup.pn : it.partNumber!;
+    // a filter linked as "same as" one our cars use (Parts Source → NAPA 27356) goes under the cars' number
+    const partNumber = isOil ? `OIL-${it.oilGrade}` : sup ? sup.pn : await partFor(it.partNumber!);
+    if (!isOil && !sup && ["oil_filter", "cabin_filter", "engine_filter"].includes(it.category)) {
+      carParts ??= await carPartNumbers();
+      if (!carParts.has(normPart(partNumber))) unknown.push({ part: partNumber, category: it.category });
+    }
     const brand = sup ? "Shop" : isOil ? (it.brand || scan.vendor) : it.brand || defaultBrand(scan, it.category);
     const perPack = it.category === "shop_towels" ? Math.max(1, it.unitsPerPack || 1) : 1;
     const addQty = isOil ? r2(it.qty * it.litresPerUnit!) : r2(it.qty * perPack);
@@ -93,7 +101,7 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
   }
   // if this month's bank statement is already uploaded, tick off its line
   const banked = await linkReceiptToBank(exp.data!.id, scan.total, scan.date || new Date().toISOString().slice(0, 10), scan.paidWith).catch(() => null);
-  return { ok: true as const, expenseId: exp.data!.id, stock, prices, banked: !!banked, converted: usd != null && scan !== scanIn ? { usd, cad: scan.total } : null };
+  return { ok: true as const, expenseId: exp.data!.id, stock, prices, unknown, banked: !!banked, converted: usd != null && scan !== scanIn ? { usd, cad: scan.total } : null };
 }
 
 /** Fix a saved expense: amount, HST, date, what it was, category, how it was paid. */

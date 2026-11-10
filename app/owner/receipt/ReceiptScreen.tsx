@@ -36,7 +36,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
   const camRef = useRef<HTMLInputElement>(null); const pickRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<"idle" | "reading" | "review" | "saving" | "done">("idle");
   const [preview, setPreview] = useState(""); const [scan, setScan] = useState<Scan | null>(null); const [photoPath, setPhotoPath] = useState<string | null>(null);
-  const [err, setErr] = useState(""); const [result, setResult] = useState<{ stock: string[]; prices: string[]; banked?: boolean; converted?: { usd: number; cad: number } | null } | null>(null);
+  const [err, setErr] = useState(""); const [result, setResult] = useState<{ stock: string[]; prices: string[]; unknown?: { part: string; category: string }[]; banked?: boolean; converted?: { usd: number; cad: number } | null } | null>(null);
   const [recent, setRecent] = useState<Exp[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -66,7 +66,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
     const r = await fetch("/api/owner/receipt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save", scan, photoPath }) });
     const j = await r.json();
     if (!r.ok) { setErr(j.error || "Couldn't save"); setStage("review"); return; }
-    setResult({ stock: j.stock, prices: j.prices, banked: j.banked, converted: j.converted }); setStage("done"); loadRecent();
+    setResult({ stock: j.stock, prices: j.prices, unknown: j.unknown, banked: j.banked, converted: j.converted }); setStage("done"); loadRecent();
   }
 
   const upd = (p: Partial<Scan>) => setScan((s) => s ? { ...s, ...p } : s);
@@ -108,6 +108,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
             <p className="font-bold text-[#1d6b3a]">Saved.</p>
             {result.stock.length > 0 && <p className="text-sm">Stock: {result.stock.join(", ")}</p>}
             {result.prices.length > 0 && <p className="text-sm">Prices updated: {result.prices.join(", ")}</p>}
+            {(result.unknown ?? []).map((u) => <SameAs key={u.part} part={u.part} category={u.category} />)}
             {result.banked && <p className="text-sm">Matched to its line on the bank statement.</p>}
             {result.converted && <p className="text-sm">It was in US dollars: saved as ${result.converted.cad.toFixed(2)} CAD (US${"$"}{result.converted.usd.toFixed(2)} at the Bank of Canada rate).</p>}
           </div>
@@ -257,4 +258,27 @@ function DecimalInput({ value, onChange, className, style }: { value: number | n
   useEffect(() => { if (Number(text) !== value && !(text === "" && value == null)) setText(value == null ? "" : String(value)); }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
   return <input value={text} inputMode="decimal" className={className} style={style}
     onChange={(e) => { const t = e.target.value.replace(/,/g, ".").replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1"); setText(t); onChange(t === "" || t === "." ? null : Number(t)); }} />;
+}
+
+const KIND: Record<string, string> = { oil_filter: "oil filter", cabin_filter: "cabin filter", engine_filter: "air filter" };
+/** A filter no car of ours uses yet (another brand's number): link it to the number our cars use, like NAPA 27356. */
+function SameAs({ part, category }: { part: string; category: string }) {
+  const [to, setTo] = useState(""); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(""); const [done, setDone] = useState(false);
+  async function link() {
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "link", from: part, to }) });
+    const j = await r.json().catch(() => ({})); setBusy(false);
+    if (!r.ok || !j.ok) return setMsg(j.error || "Couldn't link it");
+    setDone(true); setMsg(`Done. ${part} now counts as ${j.to}${j.moved ? ` (+${j.moved} moved to ${j.to} in Stock)` : ""}, and future receipts will do it by themselves.`);
+  }
+  return (
+    <div className="rounded-lg border p-2.5 flex flex-col gap-1.5 text-sm" style={{ borderColor: "#f2b01e", background: "#fff6dd" }}>
+      <p><strong>{part}</strong> isn&apos;t a {KIND[category] ?? "part"} any of our cars use yet. If it&apos;s the same as one they use (a different brand of NAPA 27356, say), type that number so stock, the price and the Bring list count it.</p>
+      {!done && <div className="flex gap-2">
+        <input value={to} onChange={(e) => setTo(e.target.value.toUpperCase())} placeholder="e.g. 27356" autoCapitalize="characters" className="h-10 flex-1 min-w-0 rounded-lg border border-[#c8d0e0] px-2 text-base bg-white font-mono" />
+        <button disabled={busy || !to.trim()} onClick={link} className="h-10 px-3 rounded-lg font-extrabold disabled:opacity-60" style={{ background: "#0d1b3e", color: "#fff" }}>{busy ? "…" : "Same as"}</button>
+      </div>}
+      {msg && <p className={done ? "text-[#1d6b3a] font-semibold" : "text-[#9b1c1c] font-semibold"}>{msg}</p>}
+    </div>
+  );
 }
