@@ -190,10 +190,11 @@ export async function setPrice(id: string, subtotalIn: number, by: string, tell 
   return { ok: true as const, total: breakdown.total, profit, told };
 }
 
+const REMOVED_TEXT = "Hi {first_name}, quick update on your appointment {when}: we took off {change} like you asked. Your new total is {total} with HST{was}. If you have any questions, just reply here.\n- {signer}, Oil Change On The Spot";
 const PRICE_TEXT = "Hi {first_name}, quick update on your appointment {when}: the new total is {total} with HST{was}. If you have any questions, just reply here.\n- {signer}, Oil Change On The Spot";
 
 /** Text the customer their new price (owners tick "Text them the new price"). Fleets get it on their invoice, not by text. */
-async function tellNewPrice(id: string, total: number, oldTotal: number | null) {
+async function tellNewPrice(id: string, total: number, oldTotal: number | null, change?: string) {
   const [b] = await sbGet<{ starts_at: string; fleet_account_id: string | null; customers: { id: string; first_name: string | null; phone: string | null; sms_opt_out: boolean | null } | null }>(
     `bookings?select=starts_at,fleet_account_id,customers(id,first_name,phone,sms_opt_out)&id=eq.${enc(id)}`);
   const c = b?.customers;
@@ -204,7 +205,9 @@ async function tellNewPrice(id: string, total: number, oldTotal: number | null) 
   const { fill, sendSms } = await import("@/lib/os/sms");
   const { signed } = await import("@/lib/os/signer");
   const m = (n: number) => `$${n.toFixed(2)}`;
-  const text = await signed(fill(t?.body || PRICE_TEXT, { first_name: c.first_name?.trim() || "there", when: when(b.starts_at), total: m(total), old_total: oldTotal != null ? m(oldTotal) : "", was: oldTotal != null ? ` (it was ${m(oldTotal)})` : "" }));
+  // something was taken off: say what, then the new total
+  const body = change ? REMOVED_TEXT : t?.body || PRICE_TEXT;
+  const text = await signed(fill(body, { change: change ?? "", first_name: c.first_name?.trim() || "there", when: when(b.starts_at), total: m(total), old_total: oldTotal != null ? m(oldTotal) : "", was: oldTotal != null ? ` (it was ${m(oldTotal)})` : "" }));
   const { isFamily, noHstWords } = await import("@/lib/os/customer-texts");
   const r = await sendSms(c.phone, (await isFamily(id)) ? noHstWords(text) : text, { kind: "price_changed", customerId: c.id, bookingId: id });
   return { sent: r.status === "sent" || r.status === "queued" || r.status === "delivered", status: r.status };
@@ -212,16 +215,17 @@ async function tellNewPrice(id: string, total: number, oldTotal: number | null) 
 
 export type BookingEdit = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; notes?: string;
   car?: { year?: unknown; make?: unknown; model?: unknown; engine?: unknown }; oil?: { grade?: string; litres?: string | number; filter?: string };
-  parts?: { cabin?: string; air?: string; wiperDriver?: string; wiperPassenger?: string } };
+  parts?: { cabin?: string; air?: string; wiperDriver?: string; wiperPassenger?: string };
+  removeLines?: number[]; tell?: boolean };   // price lines they don't want any more (a cabin filter they changed their mind on)
 
 /** Everything the edit screen shows for one booking. */
 export async function bookingForEdit(id: string) {
   const [b] = await sbGet<{ id: string; address: string | null; notes: string | null; vehicle_id: string | null; fleet_account_id: string | null;
     customers: { id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
-    services: { job?: string; addons?: string[] } | null; cars: number | null;
+    services: { job?: string; addons?: string[] } | null; cars: number | null; quote_breakdown: { lines?: { label: string; amount: number }[] } | null;
     vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null;
       vehicle_specs: { oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; cabin_filter_part: string | null; air_filter_part: string | null; wiper_driver: string | null; wiper_passenger: string | null } | null } | null }>(
-    `bookings?select=id,address,notes,vehicle_id,fleet_account_id,services,cars,customers(id,first_name,last_name,phone,email),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&id=eq.${enc(id)}`);
+    `bookings?select=id,address,notes,vehicle_id,fleet_account_id,services,cars,quote_breakdown,customers(id,first_name,last_name,phone,email),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&id=eq.${enc(id)}`);
   if (!b) return null;
   const c = b.customers, v = b.vehicles, sp = v?.vehicle_specs;
   const { stockFor } = await import("@/lib/os/spec-learn");
@@ -229,7 +233,7 @@ export async function bookingForEdit(id: string) {
   // the add-ons they picked that take a part we can note (battery and top-ups don't)
   const addons = (b.services?.addons ?? []).filter((a) => a === "cabin_filter" || a === "engine_filter" || a === "wipers");
   const parts = { cabin: sp?.cabin_filter_part ?? "", air: sp?.air_filter_part ?? "", wiperDriver: sp?.wiper_driver ?? "", wiperPassenger: sp?.wiper_passenger ?? "" };
-  return { withOil: !job || job === "oil_change" || job === "seasonal", cars: b.cars || 1, addons, parts,
+  return { withOil: !job || job === "oil_change" || job === "seasonal", cars: b.cars || 1, addons, parts, lines: b.quote_breakdown?.lines ?? [],
     oil: { grade: sp?.oil_grade ?? "", litres: sp?.capacity_l != null ? String(Number(sp.capacity_l)) : "", filter: sp?.oil_filter_part ?? "" },
     stock: await stockFor(sp?.oil_filter_part ?? null, sp?.oil_grade ?? null), firstName: c?.first_name ?? "", lastName: c?.last_name ?? "", phone: (c?.phone ?? "").replace(/^\+1/, ""), email: c?.email ?? "",
     address: b.address ?? "", notes: b.notes ?? "", hasCustomer: !!c, fleet: !!b.fleet_account_id,
@@ -241,6 +245,35 @@ export async function bookingForEdit(id: string) {
  * Name/phone/email are the customer's own (so they're right everywhere). A car with finished jobs on it that's
  * changed to a different make/model becomes a new car on their file, so the old car's history stays true.
  */
+const andList = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/** Take lines off a booking's price (an add-on they don't want any more) and drop that add-on from the job. */
+async function removeLines(id: string, idx: number[], by: string) {
+  type L = { label: string; amount: number };
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const [b] = await sbGet<{ status: string; services: { addons?: string[] } & Record<string, unknown> | null; quote_breakdown: Record<string, unknown> & { lines?: L[]; family?: L[] } | null }>(
+    `bookings?select=status,services,quote_breakdown&id=eq.${enc(id)}`);
+  if (!b?.quote_breakdown?.lines?.length) return { ok: false as const, error: "No price on this booking" };
+  if (b.status === "done") return { ok: false as const, error: "This job is already finished" };
+  const q = b.quote_breakdown, lines = q.lines!;
+  const drop = new Set(idx.filter((i) => Number.isInteger(i) && i >= 0 && i < lines.length));
+  if (drop.size >= lines.length) return { ok: false as const, error: "Can't take everything off. Use Move or cancel instead" };
+  const { ADDON_NAMES } = await import("@/lib/os/addon-needs");
+  const kindOf = (l: L) => Object.keys(ADDON_NAMES).find((k) => ADDON_NAMES[k].test(l.label)) ?? null;
+  const gone = lines.filter((_, i) => drop.has(i));
+  const goneKinds = new Set(gone.map(kindOf).filter(Boolean) as string[]);
+  const kept = lines.filter((_, i) => !drop.has(i));
+  const rate = Number(q.hst ?? 0) > 0 && Number(q.subtotal ?? 0) > 0 ? Math.round((Number(q.hst) / Number(q.subtotal)) * 100) / 100 : 0.14;
+  const subtotal = r2(kept.reduce((t, l) => t + Number(l.amount), 0));
+  const bd: Record<string, unknown> = { ...q, lines: kept, subtotal, hst: r2(subtotal * rate), total: r2(subtotal * (1 + rate)),
+    removed: [...((q.removed as unknown[]) ?? []), ...gone.map((l) => ({ ...l, by, at: new Date().toISOString() }))] };
+  // family price keeps the regular lines for "back to regular": take the same add-on off those too
+  if (q.family && goneKinds.size) bd.family = q.family.filter((l) => { const k = kindOf(l); return !k || !goneKinds.has(k); });
+  const services = { ...(b.services ?? {}), addons: (b.services?.addons ?? []).filter((a) => !goneKinds.has(a)) };
+  const ok = await sbPatch("bookings", `id=eq.${enc(id)}`, { quote_breakdown: bd, quoted_total: bd.total, services });
+  return ok ? { ok: true as const, total: bd.total as number, removed: andList(gone.map((l) => `the ${l.label.replace(/^(.)/, (c) => c.toLowerCase())}`)), oldTotal: q.total != null ? Number(q.total) : null } : { ok: false as const, error: "Couldn't save the price" };
+}
+
 export async function editBooking(id: string, e: BookingEdit, by: string) {
   const [b] = await sbGet<{ id: string; status: string; customer_id: string | null; vehicle_id: string | null; address: string | null;
     vehicles: { year: number | null; make: string | null; model: string | null } | null }>(
@@ -252,6 +285,11 @@ export async function editBooking(id: string, e: BookingEdit, by: string) {
     if (!r.ok) return r;
   }
   const patch: Record<string, unknown> = {};
+  if (Array.isArray(e.removeLines) && e.removeLines.length) {
+    const r = await removeLines(id, e.removeLines, by);
+    if (!r.ok) return r;
+    if (e.tell && r.total !== r.oldTotal) await tellNewPrice(id, r.total, r.oldTotal, r.removed).catch(() => null);
+  }
   if (e.address !== undefined) {
     const a = e.address.trim().slice(0, 200);
     if (!a) return { ok: false as const, error: "Add the address we're going to" };

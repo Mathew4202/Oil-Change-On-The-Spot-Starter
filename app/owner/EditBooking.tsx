@@ -10,7 +10,7 @@ type Car = { year: string; make: string; model: string; engine: string };
 type Oil = { grade: string; litres: string; filter: string };
 type Parts = { cabin: string; air: string; wiperDriver: string; wiperPassenger: string };
 type Details = { firstName: string; lastName: string; phone: string; email: string; address: string; notes: string; hasCustomer: boolean; fleet: boolean; car: Car;
-  withOil: boolean; cars: number; oil: Oil; addons: string[]; parts: Parts; stock: { filter: number | null; oil: number | null } };
+  withOil: boolean; cars: number; oil: Oil; addons: string[]; parts: Parts; lines: { label: string; amount: number }[]; stock: { filter: number | null; oil: number | null } };
 
 export default function EditBooking({ bookingId, onClose }: { bookingId: string; onClose: (saved: boolean) => void }) {
   const [d, setD] = useState<Details | null>(null); const [start, setStart] = useState<Details | null>(null);
@@ -25,6 +25,7 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
   const setCar = (k: keyof Car, v: string) => setD((x) => (x ? { ...x, car: { ...x.car, [k]: v } } : x));
   const setOil = (k: keyof Oil, v: string) => setD((x) => (x ? { ...x, oil: { ...x.oil, [k]: v } } : x));
   const setPart = (k: keyof Parts, v: string) => setD((x) => (x ? { ...x, parts: { ...x.parts, [k]: v } } : x));
+  const [gone, setGone] = useState<number[]>([]); const [tell, setTell] = useState(true);   // price lines to take off (they don't want the cabin filter any more)
 
   async function save() {
     if (!d || !start) return;
@@ -36,6 +37,7 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
     if (JSON.stringify(d.oil) !== JSON.stringify(start.oil)) edit.oil = d.oil;
     const partsChanged = (Object.keys(d.parts ?? {}) as (keyof Parts)[]).filter((k) => d.parts[k] !== start.parts[k]);
     if (partsChanged.length) edit.parts = Object.fromEntries(partsChanged.map((k) => [k, d.parts[k]]));
+    if (gone.length) { edit.removeLines = gone; edit.tell = tell; }
     if (!Object.keys(edit).length) return onClose(false);
     setBusy(true);
     const r = await fetch("/api/owner/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId, action: "edit", edit }) });
@@ -59,6 +61,31 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
                 <label className={lbl}>Mobile<input id="eb-phone" value={d.phone} onChange={(e) => set("phone", e.target.value)} inputMode="tel" className={field} style={{ borderColor: LINE }} /></label>
                 <label className={lbl}>Email<input id="eb-email" value={d.email} onChange={(e) => set("email", e.target.value)} inputMode="email" autoCapitalize="none" className={field} style={{ borderColor: LINE }} /></label>
               </>
+            )}
+            {(d.lines?.length ?? 0) > 1 && (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-sm font-bold" style={{ color: NAVY }}>What they&apos;re getting</p>
+                {d.lines.map((l, i) => {
+                  const off = gone.includes(i), only = d.lines.length - gone.length <= 1 && !off;
+                  return (
+                    <div key={i} className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2" style={{ borderColor: LINE, opacity: off ? 0.5 : 1 }}>
+                      <span className={off ? "line-through" : ""}>{l.label}</span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className={off ? "line-through" : ""}>${Number(l.amount).toFixed(2)}</span>
+                        <button type="button" disabled={only} onClick={() => setGone((g) => (off ? g.filter((x) => x !== i) : [...g, i]))}
+                          className="h-9 px-3 rounded-lg border text-sm font-bold disabled:opacity-40" style={{ borderColor: LINE }}>{off ? "Undo" : "Remove"}</button>
+                      </span>
+                    </div>
+                  );
+                })}
+                {gone.length > 0 && (() => {
+                  const sub = d.lines.filter((_, i) => !gone.includes(i)).reduce((t, l) => t + Number(l.amount), 0);
+                  return (<>
+                    <p className="text-sm font-semibold">New total ${(sub * 1.14).toFixed(2)} with HST (before tax ${sub.toFixed(2)}).</p>
+                    <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={tell} onChange={(e) => setTell(e.target.checked)} className="w-5 h-5" />Text them the new price</label>
+                  </>);
+                })()}
+              </div>
             )}
             <label className={lbl}>Address we&apos;re going to<input id="eb-address" value={d.address} onChange={(e) => set("address", e.target.value)} className={field} style={{ borderColor: LINE }} /></label>
             {d.hasCustomer && (
