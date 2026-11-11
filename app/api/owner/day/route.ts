@@ -124,18 +124,24 @@ export async function GET(req: NextRequest) {
   // What the oil, filter and supplies cost us on this booking, at today's prices (so a new receipt updates it right away)
   const costsOf = (r: Row, s: NonNullable<NonNullable<Row["vehicles"]>["vehicle_specs"]> | null | undefined) => {
     const job = r.services?.job ?? "oil_change";
-    if (!s || !["oil_change", "seasonal"].includes(job) || r.services?.own) return null;
+    if (!["oil_change", "seasonal"].includes(job)) return null;
+    // they bring the oil, the filter or both: we don't pay for what they bring, just the rest
+    const own = r.services?.own ?? null;
+    const weOil = own !== "both" && own !== "oil", weFilter = own !== "both" && own !== "filter";
     const lines = r.quote_breakdown?.lines ?? [];
     const subtotal = lines.reduce((t, l) => t + Number(l.amount), 0) || (r.quoted_total != null ? Number(r.quoted_total) / 1.14 : 0);
-    const paidPerL = oilPerL[s.oil_grade];
-    if (!subtotal || paidPerL == null) return null;
+    if (!subtotal) return null;
+    if ((weOil || weFilter) && !s) return null;
+    const paidPerL = weOil && s ? oilPerL[s.oil_grade] : 0;
+    if (paidPerL == null) return null;
     const perL = exTax(paidPerL);
     const cars = r.cars || 1;
-    const known = s.oil_filter_part ? filterCostFor(r, s.oil_filter_part) ?? undefined : undefined;
-    const filter = exTax(known ?? rr.filter_estimate ?? 6.5);
+    const known = weFilter && s?.oil_filter_part ? filterCostFor(r, s.oil_filter_part) ?? undefined : undefined;
+    const filter = weFilter ? exTax(known ?? rr.filter_estimate ?? 6.5) : 0;
     const r2 = (n: number) => Math.round(n * 100) / 100;
-    return { subtotal: r2(subtotal), litres: r2(Number(s.capacity_l) * cars), perL: r2(perL), oil: r2(Number(s.capacity_l) * perL * cars), filter: r2(filter * cars),
-      filterGuess: known == null, supplies: r2(exTax(rr.consumables ?? 1) * cars), grade: s.oil_grade };
+    const litres = weOil && s ? Number(s.capacity_l) * cars : 0;
+    return { subtotal: r2(subtotal), litres: r2(litres), perL: r2(perL), oil: r2(litres * perL), filter: r2(filter * cars),
+      filterGuess: weFilter && known == null, supplies: r2(exTax(rr.consumables ?? 1) * cars), grade: s?.oil_grade ?? "", own };
   };
   const estimate = (c: ReturnType<typeof costsOf>) => (c ? Math.round((c.subtotal - c.oil - c.filter - c.supplies) * 100) / 100 : null);
   // ...and the gas to get there (each job's share of the last 60 days of gas receipts)
