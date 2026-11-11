@@ -48,6 +48,9 @@ export async function GET(req: NextRequest) {
   ]);
   const oilPerL = Object.fromEntries(oilPrices.map((o) => [o.grade, Number(o.cost_per_l)]));
   const rr = Object.fromEntries(rulesRows.map((x) => [x.key, Number(x.value)]));
+  // Job card profit counts parts before tax: we're HST registered, so the HST we pay on oil and parts comes back
+  // on the return (gas per job is already before tax). The $45 price check still uses the with-tax cost, to be safe.
+  const exTax = (n: number) => n / (1 + Number(rr.hst_rate ?? 0.14));
 
   // What to bring: litres per oil grade and filters per part number, checked against stock
   const oil: Record<string, number> = {};
@@ -111,7 +114,7 @@ export async function GET(req: NextRequest) {
     const items = chargedAddons(r.quote_breakdown?.lines ?? [], r.services?.addons, r.cars || 1).map(({ kind, times }) => {
       const pn = kind === "cabin_filter" ? s?.cabin_filter_part : kind === "engine_filter" ? s?.air_filter_part : null;
       const known = pn ? addonCosts[pn] : undefined;
-      return { kind, cost: Math.round((known ?? rr[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times * 100) / 100, guess: known == null };
+      return { kind, cost: Math.round(exTax((known ?? rr[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times) * 100) / 100, guess: known == null };
     });
     return items;
   };
@@ -124,14 +127,15 @@ export async function GET(req: NextRequest) {
     if (!s || !["oil_change", "seasonal"].includes(job) || r.services?.own) return null;
     const lines = r.quote_breakdown?.lines ?? [];
     const subtotal = lines.reduce((t, l) => t + Number(l.amount), 0) || (r.quoted_total != null ? Number(r.quoted_total) / 1.14 : 0);
-    const perL = oilPerL[s.oil_grade];
-    if (!subtotal || perL == null) return null;
+    const paidPerL = oilPerL[s.oil_grade];
+    if (!subtotal || paidPerL == null) return null;
+    const perL = exTax(paidPerL);
     const cars = r.cars || 1;
     const known = s.oil_filter_part ? filterCostFor(r, s.oil_filter_part) ?? undefined : undefined;
-    const filter = known ?? rr.filter_estimate ?? 6.5;
+    const filter = exTax(known ?? rr.filter_estimate ?? 6.5);
     const r2 = (n: number) => Math.round(n * 100) / 100;
-    return { subtotal: r2(subtotal), litres: r2(Number(s.capacity_l) * cars), perL, oil: r2(Number(s.capacity_l) * perL * cars), filter: r2(filter * cars),
-      filterGuess: known == null, supplies: r2((rr.consumables ?? 1) * cars), grade: s.oil_grade };
+    return { subtotal: r2(subtotal), litres: r2(Number(s.capacity_l) * cars), perL: r2(perL), oil: r2(Number(s.capacity_l) * perL * cars), filter: r2(filter * cars),
+      filterGuess: known == null, supplies: r2(exTax(rr.consumables ?? 1) * cars), grade: s.oil_grade };
   };
   const estimate = (c: ReturnType<typeof costsOf>) => (c ? Math.round((c.subtotal - c.oil - c.filter - c.supplies) * 100) / 100 : null);
   // ...and the gas to get there (each job's share of the last 60 days of gas receipts)
@@ -170,16 +174,14 @@ export async function GET(req: NextRequest) {
         const done = r.jobs?.[0];
         if (done && done.subtotal != null) {
           const spent = Number(done.cost_oil ?? 0) + Number(done.cost_parts ?? 0) + Number(done.cost_other ?? 0);
-          // family price: they paid the parts before tax and we get the HST we paid on them back, so count the parts before tax too
-          const made = Math.round((Number(done.revenue ?? done.subtotal) - (isFam(r) ? spent / 1.14 : spent)) * 100) / 100;
+          // the oil and parts recorded on the job are what we paid with tax: before tax here (the HST comes back)
+          const made = Math.round((Number(done.revenue ?? done.subtotal) - exTax(spent)) * 100) / 100;
           return { profit: money ? afterGas(made, r) : null, costs: null, actual: true };
         }
         // not done yet: worked out live from what we last paid for the oil, filter and any add-on parts
         const c = costsOf(r, s); const ad = addonCostsOf(r, s);
         const base = estimate(c);
-        let live = base != null ? Math.round((base - ad.reduce((t, a) => t + a.cost, 0)) * 100) / 100 : null;
-        // family price: the parts were charged before tax, and the HST we paid on them comes back, so count them before tax too
-        if (live != null && c && isFam(r)) live = Math.round((c.subtotal - (c.subtotal - live) / 1.14) * 100) / 100;
+        const live = base != null ? Math.round((base - ad.reduce((t, a) => t + a.cost, 0)) * 100) / 100 : null;
         return { profit: money ? afterGas(live ?? r.quote_breakdown?.profit ?? null, r) : null, costs: money && live != null && c ? { ...c, addons: ad } : null, actual: false }; })(), notes: r.notes, checks: (r.needs_review ?? []).filter((n) => !(isFam(r) && n.startsWith("Family price not set"))), imported: r.source === "square_import", photos: photoLinks[r.id] ?? [],
       lastTime: lastTimeFor(r),
       groupId: r.pay_mode !== "fleet_invoice" ? r.group_id ?? null : null,   // several cars on one visit: one card in HQ
