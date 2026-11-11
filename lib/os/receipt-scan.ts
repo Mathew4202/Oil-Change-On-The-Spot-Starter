@@ -1,7 +1,7 @@
 // Read a receipt photo with Claude (vision) and turn it into clean data. The parsing/checking is pure (tested).
 export type ScanItem = {
   description: string; partNumber: string | null; brand: string | null; qty: number; unitPrice: number; lineTotal: number;
-  category: "oil_filter" | "cabin_filter" | "engine_filter" | "wiper" | "battery" | "oil" | "fluid" | "tool" | "supply" | "gloves" | "shop_towels" | "fuel" | "other";
+  category: "oil_filter" | "cabin_filter" | "engine_filter" | "wiper" | "battery" | "oil" | "fluid" | "washer_fluid" | "coolant" | "tool" | "supply" | "gloves" | "shop_towels" | "fuel" | "other";
   litresPerUnit: number | null; oilGrade: string | null;
   unitsPerPack?: number | null;   // shop towels: towels in each pack or roll
   listPrice?: number | null;      // the store's regular/retail price for one (NAPA "List"), before tax: what we charge for add-on parts
@@ -13,7 +13,13 @@ export type Scan = {
   warnings: string[]; currency?: "CAD" | "USD";
 };
 
-const CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "tool", "supply", "gloves", "shop_towels", "fuel", "other"] as const;
+/** Litres in a jug from the name: "3.78L", "4 L", "1 gal" (a washer fluid jug is usually 3.78 L). */
+function jugLitres(words: string) {
+  const l = words.match(/(\d+(?:\.\d+)?)\s*(l|lt|litre|liter)s?\b/i); if (l) return Number(l[1]);
+  const g = words.match(/(\d+(?:\.\d+)?)\s*(gal|gallon)/i); if (g) return Math.round(Number(g[1]) * 3.785 * 100) / 100;
+  return 3.78;
+}
+const CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "washer_fluid", "coolant", "tool", "supply", "gloves", "shop_towels", "fuel", "other"] as const;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const num = (v: unknown) => { const n = typeof v === "string" ? Number(v.replace(/[$,\s]/g, "")) : Number(v); return Number.isFinite(n) ? n : null; };
 
@@ -63,12 +69,14 @@ export function cleanScan(raw: unknown): Scan | null {
     const words = String(it.description ?? "");
     if (/\bgloves?\b|nitrile/i.test(words)) cat = "gloves";
     else if (/shop\s*towel|blue\s*towel|wypall|wipers? towel|paper towel/i.test(words)) cat = "shop_towels";
+    else if (/washer|windshield\s*(wash|fluid)|w\/s\s*fluid|-40\b|bug\s*wash/i.test(words) && cat !== "oil") cat = "washer_fluid";
+    else if (/coolant|antifreeze|anti-freeze/i.test(words) && cat !== "oil") cat = "coolant";
     const pn = it.part_number ? String(it.part_number).toUpperCase().replace(/^(PPF|NAPA|PFG)\s*/, "").replace(/[^A-Z0-9-]/g, "").slice(0, 20) || null : null;
     const grade = it.oil_grade ? String(it.oil_grade).toUpperCase().replace(/\s+/g, "").match(/^(\d{1,2})W-?(\d{1,2})$/) : null;
     return {
       description: String(it.description ?? "").trim().slice(0, 120) || "Item", partNumber: pn,
       brand: it.brand ? String(it.brand).trim().slice(0, 40) : null, qty: r2(qty), unitPrice: r2(unit), lineTotal: r2(line), category: cat,
-      litresPerUnit: num(it.litres_per_unit), oilGrade: grade ? `${grade[1]}W-${grade[2]}` : null,
+      litresPerUnit: num(it.litres_per_unit) ?? (cat === "washer_fluid" || cat === "coolant" ? jugLitres(words) : null), oilGrade: grade ? `${grade[1]}W-${grade[2]}` : null,
       ...(cat === "shop_towels" ? { unitsPerPack: num(it.units_per_pack) ?? towelsIn(words) } : {}),
       ...(num(it.list_price) != null && (num(it.list_price) as number) > 0 ? { listPrice: r2(num(it.list_price) as number) } : {}),
     };
@@ -93,7 +101,7 @@ export function cleanScan(raw: unknown): Scan | null {
   for (const i of items) if (i.category === "shop_towels" && !i.unitsPerPack) warnings.push(`How many towels are in each pack of "${i.description}"? Type it in so the count is right`);
   const pw = String(o.paid_with ?? "unknown");
   const main = items.some((i) => i.category === "oil") ? "oil" : items.some((i) => /filter|wiper|battery/.test(i.category)) ? "parts"
-    : items.some((i) => i.category === "fuel") ? "gas" : items.some((i) => i.category === "tool") ? "tools" : items.some((i) => ["supply", "fluid", "gloves", "shop_towels"].includes(i.category)) ? "supplies" : "other";
+    : items.some((i) => i.category === "fuel") ? "gas" : items.some((i) => i.category === "tool") ? "tools" : items.some((i) => ["supply", "fluid", "washer_fluid", "coolant", "gloves", "shop_towels"].includes(i.category)) ? "supplies" : "other";
   return {
     vendor, supplier: supplierOf(vendor), date, invoiceNo: o.invoice_no ? String(o.invoice_no).slice(0, 40) : null,
     subtotal, hst, total, paidWith: (["card", "cash", "on_account", "etransfer"].includes(pw) ? pw : "unknown") as Scan["paidWith"],
@@ -108,7 +116,7 @@ Read it carefully. Reply with ONLY this JSON (no other text):
  "items":[{"description":"","part_number":"string or null","brand":"string or null","qty":1,"unit_price":0,"line_total":0,"list_price":"number or null",
    "category":"oil_filter|cabin_filter|engine_filter|wiper|battery|oil|fluid|tool|supply|gloves|shop_towels|fuel|other",
    "litres_per_unit":null,"oil_grade":null,"units_per_pack":null}]}
-Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). unit_price is the price of ONE of what qty counts (one case, jug or pail): if the invoice shows a price per litre and qty in cases or jugs, unit_price = price per litre x litres in each. For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". Disposable/nitrile gloves -> category "gloves", qty = number of boxes. Shop towels (blue towels, WypAll, rolls or boxes of wipes) -> category "shop_towels", qty = number of packs/rolls/boxes, units_per_pack = towels in each one (from "200 CT", "55 sheets" etc.). list_price: when the invoice shows a regular/list/retail price for one item next to the price we paid (NAPA "LIST" and "NET" or "YOUR PRICE" columns), give the list/retail price for one, before tax; otherwise null. unit_price is always what we actually paid. Environmental fee lines (e.g. NAPA "035 FILTERS LESS THAN 8IN") are their own items. "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". If something is unreadable use null.`;
+Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). unit_price is the price of ONE of what qty counts (one case, jug or pail): if the invoice shows a price per litre and qty in cases or jugs, unit_price = price per litre x litres in each. For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". Disposable/nitrile gloves -> category "gloves", qty = number of boxes. Shop towels (blue towels, WypAll, rolls or boxes of wipes) -> category "shop_towels", qty = number of packs/rolls/boxes, units_per_pack = towels in each one (from "200 CT", "55 sheets" etc.). list_price: when the invoice shows a regular/list/retail price for one item next to the price we paid (NAPA "LIST" and "NET" or "YOUR PRICE" columns), give the list/retail price for one, before tax; otherwise null. unit_price is always what we actually paid. Windshield washer fluid -> category "washer_fluid", coolant/antifreeze -> category "coolant", both with litres_per_unit (3.78 for a 1 gallon jug, 4 for a 4 L jug). Environmental fee lines (e.g. NAPA "035 FILTERS LESS THAN 8IN") are their own items. "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". If something is unreadable use null.`;
 
 export async function scanReceipt(imageBase64: string, mediaType: string): Promise<{ scan: Scan | null; error?: string }> {
   const { askAI, aiLastError } = await import("@/lib/os/ai");   // loaded here so this file stays testable on its own

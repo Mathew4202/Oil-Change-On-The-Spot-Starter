@@ -28,7 +28,9 @@ export async function photoLink(path: string): Promise<string | null> {
 const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "gloves", "shop_towels"];
 // supplies kept as one count each, whatever brand: gloves in boxes, shop towels in towels
 const SUPPLY: Record<string, { pn: string; unit: string; name: string }> = {
-  gloves: { pn: "GLOVES", unit: "box", name: "Gloves" }, shop_towels: { pn: "SHOP-TOWELS", unit: "towels", name: "Shop towels" } };
+  gloves: { pn: "GLOVES", unit: "box", name: "Gloves" }, shop_towels: { pn: "SHOP-TOWELS", unit: "towels", name: "Shop towels" },
+  // top-up fluids are kept in litres, like oil: a 3.78 L jug adds 3.78 L, a top-up takes off what it used
+  washer_fluid: { pn: "WASHER-FLUID", unit: "L", name: "Washer fluid" }, coolant: { pn: "COOLANT", unit: "L", name: "Coolant" } };
 const defaultBrand = (s: Scan, cat: string) =>
   s.supplier === "napa" && cat === "oil_filter" ? "NAPA ProFormer" : s.supplier === "napa" ? "NAPA" : s.supplier === "partsource" ? "PartSource" : s.vendor;
 
@@ -73,7 +75,7 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
       if (!sameParts(partNumber, links).some((x) => carParts!.has(normPart(x)))) unknown.push({ part: partNumber, category: it.category });
     }
     const brand = sup ? "Shop" : isOil ? (it.brand || scan.vendor) : it.brand || defaultBrand(scan, it.category);
-    const perPack = it.category === "shop_towels" ? Math.max(1, it.unitsPerPack || 1) : 1;
+    const perPack = it.category === "shop_towels" ? Math.max(1, it.unitsPerPack || 1) : sup?.unit === "L" ? Math.max(0.5, it.litresPerUnit || 3.78) : 1;
     const addQty = isOil ? r2(it.qty * it.litresPerUnit!) : r2(it.qty * perPack);
     const unitCostAfterTax = isOil ? r2((it.unitPrice * HST) / it.litresPerUnit!) : r2((it.unitPrice * HST) / perPack);
 
@@ -89,8 +91,8 @@ export async function saveExpense(scanIn: Scan, photoPath: string | null, owner:
     // our price (after HST) for profit, and the store's retail price for what we charge customers for the part
     const retail = !isOil && !sup && it.listPrice && it.listPrice >= it.unitPrice ? r2(it.listPrice / perPack) : null;
     await sbInsert("part_quotes", { part_id: p.id, supplier: scan.supplier, our_cost: unitCostAfterTax, ...(retail ? { retail } : {}) });
-    stock.push(isOil ? `+${addQty} L ${it.oilGrade}` : sup ? `+${addQty} ${sup.unit === "box" ? (addQty === 1 ? "box" : "boxes") : "towels"} of ${sup.name.toLowerCase()}` : `+${it.qty} × ${partNumber}`);
-    prices.push(isOil ? `${it.oilGrade} now $${unitCostAfterTax.toFixed(2)}/L` : sup ? `${sup.name} now $${unitCostAfterTax.toFixed(2)} a ${sup.unit === "box" ? "box" : "towel"}` : `${partNumber} now $${unitCostAfterTax.toFixed(2)}${retail ? ` (retail $${retail.toFixed(2)} before tax)` : ["cabin_filter", "engine_filter", "wiper", "battery"].includes(it.category) ? " (no retail price on the receipt)" : ""}`);
+    stock.push(isOil ? `+${addQty} L ${it.oilGrade}` : sup ? (sup.unit === "L" ? `+${addQty} L ${sup.name.toLowerCase()}` : `+${addQty} ${sup.unit === "box" ? (addQty === 1 ? "box" : "boxes") : "towels"} of ${sup.name.toLowerCase()}`) : `+${it.qty} × ${partNumber}`);
+    prices.push(isOil ? `${it.oilGrade} now $${unitCostAfterTax.toFixed(2)}/L` : sup ? `${sup.name} now $${unitCostAfterTax.toFixed(2)} a ${sup.unit === "box" ? "box" : sup.unit === "L" ? "litre" : "towel"}` : `${partNumber} now $${unitCostAfterTax.toFixed(2)}${retail ? ` (retail $${retail.toFixed(2)} before tax)` : ["cabin_filter", "engine_filter", "wiper", "battery"].includes(it.category) ? " (no retail price on the receipt)" : ""}`);
     if (isOil && (unitCostAfterTax < 2 || unitCostAfterTax > 40)) {
       // a misread (litres per jug or the price): don't let it change what jobs are priced and costed at
       prices[prices.length - 1] = `${it.oilGrade} at $${unitCostAfterTax.toFixed(2)}/L looks wrong, so the oil price wasn't changed. Check the litres per jug`;

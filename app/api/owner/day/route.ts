@@ -43,11 +43,12 @@ export async function GET(req: NextRequest) {
       `time_off?select=id,starts_at,ends_at,reason&starts_at=lt.${to}&ends_at=gt.${from}&order=starts_at`),
     activeHolds(from, to),
     sbGet<{ grade: string; cost_per_l: number }>("oil_prices?select=grade,cost_per_l&active=is.true").catch(() => []),
-    sbGet<{ key: string; value: number }>("pricing_rules?select=key,value&key=in.(consumables,filter_estimate)").catch(() => []),
+    sbGet<{ key: string; value: number }>("pricing_rules?select=key,value&key=in.(consumables,filter_estimate,hst_rate,topup_washer_l,topup_coolant_l)").catch(() => []),
     money ? gasPerJob().catch(() => null) : Promise.resolve(null),
   ]);
   const oilPerL = Object.fromEntries(oilPrices.map((o) => [o.grade, Number(o.cost_per_l)]));
   const rr = Object.fromEntries(rulesRows.map((x) => [x.key, Number(x.value)]));
+  const topupRules = { washer: rr.topup_washer_l, coolant: rr.topup_coolant_l };   // litres a top-up takes (undefined = 2 L washer, 1 L coolant)
   // Job card profit counts parts before tax: we're HST registered, so the HST we pay on oil and parts comes back
   // on the return (gas per job is already before tax). The $45 price check still uses the with-tax cost, to be safe.
   const exTax = (n: number) => n / (1 + Number(rr.hst_rate ?? 0.14));
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
     if (s.oil_filter_part && r.services?.own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
   }
   // the add-ons they picked: cabin and air filters, wipers, battery, top-ups (any kind of job)
-  const addonList = sumNeeds(rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).map((r) => addonNeeds(r.services?.addons, r.vehicles?.vehicle_specs, r.cars || 1)));
+  const addonList = sumNeeds(rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).map((r) => addonNeeds(r.services?.addons, r.vehicles?.vehicle_specs, r.cars || 1, { washer_fluid: topupRules.washer, coolant: topupRules.coolant })));
   // then everything that needs the day's jobs, also all at once
   // filters linked as the same part (Parts Source vs NAPA): count both, and say both on the Bring list
   const { loadLinks, sameParts, onHandAll, eitherOf } = await import("@/lib/os/part-alias");
@@ -207,7 +208,7 @@ export async function GET(req: NextRequest) {
     bring: {
       oil: Object.entries(oil).map(([grade, litres]) => ({ grade, litres })),
       filters: Object.entries(filters).map(([part, qty]) => ({ part: eitherOf(part, links), qty, inStock: onHandAll(part, links, parts) })),
-      addons: addonList.map((x) => ({ label: x.part ? x.label.replace(x.part, eitherOf(x.part, links)) : x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never, (pn) => sameParts(pn, links)) })),
+      addons: addonList.map((x) => ({ unit: x.unit ?? null, label: x.part ? x.label.replace(x.part, eitherOf(x.part, links)) : x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never, (pn) => sameParts(pn, links)) })),
     },
   });
 }

@@ -38,14 +38,15 @@ export async function GET() {
     ...Object.entries(needFilters).map(([pn, need]) => ({ kind: "filter", label: `Oil filter ${eitherOf(pn, links)}`, need, have: have(pn), unit: "" })),
     ...Object.entries(needOil).map(([g, need]) => ({ kind: "oil", label: `${g} oil`, need, have: Math.round(haveOil(g) * 10) / 10, unit: "L" })),
     // can't tell what's on the shelf (no part # yet, a battery): counted as 0 so it shows up to sort out
-    ...addons.map((x) => ({ kind: x.kind, label: x.part ? x.label.replace(x.part, eitherOf(x.part, links)) : x.label, need: x.qty, have: onShelf(x, parts, (pn) => sameParts(pn, links)) ?? 0, unit: "" })),
+    ...addons.map((x) => ({ kind: x.kind, label: x.part ? x.label.replace(x.part, eitherOf(x.part, links)) : x.label, need: x.qty, have: onShelf(x, parts, (pn) => sameParts(pn, links)) ?? 0, unit: x.unit ?? "" })),
   ].map((x) => ({ ...x, buy: Math.max(0, Math.round((x.need - x.have) * 10) / 10) })).sort((a, b) => b.buy - a.buy);
   return NextResponse.json({ parts, toBuy, bookingsCounted: upcoming.length });
 }
 
-const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "gloves", "shop_towels", "other"];
+const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "washer_fluid", "coolant", "gloves", "shop_towels", "other"];
 const SUPPLY: Record<string, { pn: string; unit: string; name: string }> = {
-  gloves: { pn: "GLOVES", unit: "box", name: "Gloves" }, shop_towels: { pn: "SHOP-TOWELS", unit: "towels", name: "Shop towels" } };
+  gloves: { pn: "GLOVES", unit: "box", name: "Gloves" }, shop_towels: { pn: "SHOP-TOWELS", unit: "towels", name: "Shop towels" },
+  washer_fluid: { pn: "WASHER-FLUID", unit: "L", name: "Washer fluid" }, coolant: { pn: "COOLANT", unit: "L", name: "Coolant" } };
 
 /** Stock already on the shelf (or bought without a receipt): adds to the part if HQ knows it, otherwise adds the part. */
 async function addStock(b: Record<string, unknown>) {

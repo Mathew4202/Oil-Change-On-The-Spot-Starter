@@ -7,7 +7,7 @@ import { useRole } from "../RoleContext";
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null };
 type Buy = { kind: string; label: string; need: number; have: number; buy: number; unit: string };
-const CAT: Record<string, string> = { oil: "Oil", oil_filter: "Oil filters", cabin_filter: "Cabin filters", engine_filter: "Engine air filters", wiper: "Wipers", battery: "Batteries", gloves: "Gloves (boxes)", shop_towels: "Shop towels" };
+const CAT: Record<string, string> = { oil: "Oil", oil_filter: "Oil filters", cabin_filter: "Cabin filters", engine_filter: "Engine air filters", wiper: "Wipers", battery: "Batteries", gloves: "Gloves (boxes)", shop_towels: "Shop towels", washer_fluid: "Washer fluid (litres)", coolant: "Coolant (litres)" };
 
 export default function StockScreen() {
   const { can } = useRole();
@@ -42,7 +42,7 @@ export default function StockScreen() {
   }
 
   async function setCountTo(p: Part) {
-    const v = window.prompt(`How many ${p.unit === "L" ? `litres of ${p.oil_grade}` : p.part_number} do you have?`, String(Number(p.on_hand)));
+    const v = window.prompt(`How many ${p.unit === "L" ? `litres of ${p.oil_grade ?? (p.category === "coolant" ? "coolant" : "washer fluid")}` : p.part_number} do you have?`, String(Number(p.on_hand)));
     if (v == null || v.trim() === "" || !Number.isFinite(Number(v)) || Number(v) < 0) return;
     await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partId: p.id, setTo: Number(v) }) });
     load();
@@ -120,7 +120,7 @@ export default function StockScreen() {
               return (
                 <div key={p.id} className="flex items-center justify-between gap-2 py-2 px-1 border-t first:border-t-0" style={{ borderColor: "#eef1f6" }}>
                   <div className="min-w-0">
-                    <p className="font-bold truncate">{p.unit === "L" ? `${p.oil_grade ?? ""} oil` : p.part_number}</p>
+                    <p className="font-bold truncate">{p.unit === "L" ? (p.oil_grade ? `${p.oil_grade} oil` : p.category === "coolant" ? "Coolant" : "Washer fluid") : p.part_number}</p>
                     <p className="text-xs text-[#4a5878] truncate">{p.brand}{low ? " · low" : ""}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -142,12 +142,13 @@ export default function StockScreen() {
 
 /** Add stock by hand: what's already on the shelf, or bought without a receipt to snap. */
 function AddStock({ onAdded }: { onAdded: () => void }) {
-  const KINDS: [string, string][] = [["oil_filter", "Oil filter"], ["oil", "Oil"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["wiper", "Wiper"], ["battery", "Battery"], ["gloves", "Gloves (boxes)"], ["shop_towels", "Shop towels (count of towels)"], ["other", "Other"]];
+  const KINDS: [string, string][] = [["oil_filter", "Oil filter"], ["oil", "Oil"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["wiper", "Wiper"], ["battery", "Battery"], ["washer_fluid", "Washer fluid (litres)"], ["coolant", "Coolant (litres)"], ["gloves", "Gloves (boxes)"], ["shop_towels", "Shop towels (count of towels)"], ["other", "Other"]];
   const [open, setOpen] = useState(false); const [kind, setKind] = useState("oil_filter");
   const [pn, setPn] = useState(""); const [grade, setGrade] = useState(""); const [brand, setBrand] = useState(""); const [qty, setQty] = useState(""); const [cost, setCost] = useState(""); const [retail, setRetail] = useState("");
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(""); const [ok, setOk] = useState(true);
   const field = "h-11 rounded-lg border px-2 text-base w-full bg-white";
-  const oil = kind === "oil", supply = kind === "gloves" || kind === "shop_towels";
+  const fluid = kind === "washer_fluid" || kind === "coolant";
+  const oil = kind === "oil", supply = kind === "gloves" || kind === "shop_towels" || fluid;
   if (!open) return <button onClick={() => { setOpen(true); setMsg(""); }} className="h-12 rounded-xl font-extrabold" style={{ background: GOLD, color: NAVY }}>+ Add stock</button>;
   async function save() {
     setBusy(true); setMsg("");
@@ -155,7 +156,7 @@ function AddStock({ onAdded }: { onAdded: () => void }) {
       body: JSON.stringify({ action: "add", category: kind, partNumber: pn, oilGrade: grade, brand, qty: Number(qty), unitCost: cost === "" ? null : Number(cost), retail: retail === "" ? null : Number(retail) }) });
     const j = await r.json().catch(() => ({})); setBusy(false); setOk(!!j.ok);
     if (!j.ok) { setMsg(j.error || "Couldn't add it"); return; }
-    setMsg(`Added. ${oil ? `${j.partNumber.replace("OIL-", "")} oil` : j.partNumber}: ${j.onHand}${oil ? " L" : ""} on hand now.`);
+    setMsg(`Added. ${oil ? `${j.partNumber.replace("OIL-", "")} oil` : j.partNumber}: ${j.onHand}${oil || fluid ? " L" : ""} on hand now.`);
     setPn(""); setQty(""); setCost(""); onAdded();
   }
   return (
@@ -169,8 +170,8 @@ function AddStock({ onAdded }: { onAdded: () => void }) {
         <label className="text-sm font-semibold flex flex-col gap-1">Part number<input value={pn} onChange={(e) => setPn(e.target.value)} placeholder="e.g. 27356" autoCapitalize="characters" className={field} style={{ borderColor: LINE }} /></label>
       )}
       <div className="grid grid-cols-2 gap-2">
-        <label className="text-sm font-semibold flex flex-col gap-1">{oil ? "Litres" : kind === "gloves" ? "Boxes" : kind === "shop_towels" ? "Towels" : "How many"}<input value={qty} onChange={(e) => setQty(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder={oil ? "e.g. 18.9" : "e.g. 6"} className={field} style={{ borderColor: LINE }} /></label>
-        <label className="text-sm font-semibold flex flex-col gap-1">{oil ? "Cost per litre" : kind === "gloves" ? "Cost per box" : kind === "shop_towels" ? "Cost per towel" : "Cost each"} <span className="font-normal text-[#4a5878] text-xs">with HST, if you know</span>
+        <label className="text-sm font-semibold flex flex-col gap-1">{oil || fluid ? "Litres" : kind === "gloves" ? "Boxes" : kind === "shop_towels" ? "Towels" : "How many"}<input value={qty} onChange={(e) => setQty(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder={oil ? "e.g. 18.9" : fluid ? "e.g. 3.78 a jug" : "e.g. 6"} className={field} style={{ borderColor: LINE }} /></label>
+        <label className="text-sm font-semibold flex flex-col gap-1">{oil || fluid ? "Cost per litre" : kind === "gloves" ? "Cost per box" : kind === "shop_towels" ? "Cost per towel" : "Cost each"} <span className="font-normal text-[#4a5878] text-xs">with HST, if you know</span>
           <input value={cost} onChange={(e) => setCost(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" placeholder="optional" className={field} style={{ borderColor: LINE }} /></label>
       </div>
       {["cabin_filter", "engine_filter", "wiper", "battery"].includes(kind) && (

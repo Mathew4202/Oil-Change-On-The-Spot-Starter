@@ -4,7 +4,7 @@ import { sbGet, sbPatch, enc } from "@/lib/os/db";
 import { chargedAddons, normPart, ADDON_COST_DEFAULT } from "@/lib/os/addon-needs";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const NAMES: Record<string, string> = { cabin_filter: "Cabin filter (part)", engine_filter: "Engine air filter (part)", wipers: "Wiper blades (parts)", battery: "Battery (part)" };
+const NAMES: Record<string, string> = { cabin_filter: "Cabin filter (part)", engine_filter: "Engine air filter (part)", wipers: "Wiper blades (parts)", battery: "Battery (part)", washer_fluid: "Washer fluid", coolant: "Coolant" };
 
 type Line = { label: string; amount: number };
 

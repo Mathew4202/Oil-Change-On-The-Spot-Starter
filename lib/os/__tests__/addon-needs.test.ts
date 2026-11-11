@@ -4,7 +4,7 @@ import { addonNeeds, sumNeeds, onShelf } from "../addon-needs.ts";
 
 test("every add-on they picked becomes something to bring", () => {
   const n = addonNeeds(["cabin_filter", "engine_filter", "wipers", "battery", "washer_fluid", "tires"], { cabin_filter_part: "CAF1882P", air_filter_part: null, wiper_driver: "26", wiper_passenger: "16" });
-  assert.deepEqual(n.map((x) => [x.label, x.qty]), [["Cabin filter CAF1882P", 1], ["Engine air filter (part # not on file)", 1], ['Wiper blade 26"', 1], ['Wiper blade 16"', 1], ["Battery (check the size)", 1], ["Washer fluid", 1]]);
+  assert.deepEqual(n.map((x) => [x.label, x.qty]), [["Cabin filter CAF1882P", 1], ["Engine air filter (part # not on file)", 1], ['Wiper blade 26"', 1], ['Wiper blade 16"', 1], ["Battery (check the size)", 1], ["Washer fluid", 2]]);
 });
 
 test("unknown wiper sizes are a pair; two cars double it; same parts add up", () => {

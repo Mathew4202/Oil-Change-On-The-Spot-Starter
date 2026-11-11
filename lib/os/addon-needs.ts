@@ -2,10 +2,12 @@
 // "Bring this day" line and Stock's "next 7 days". Pure (tested in __tests__/addon-needs.test.ts).
 
 export type AddonSpec = { cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null } | null | undefined;
-export type Need = { key: string; label: string; qty: number; part: string | null; kind: "cabin_filter" | "engine_filter" | "wiper" | "battery" | "fluid" };
+export type Need = { key: string; label: string; qty: number; part: string | null; kind: "cabin_filter" | "engine_filter" | "wiper" | "battery" | "fluid"; unit?: "L" };
+/** Litres a top-up usually takes (HQ setting topup_washer_l / topup_coolant_l). */
+export const TOPUP_L = { washer_fluid: 2, coolant: 1 };
 
 /** What one booking's add-ons need. part = a part number to check against Stock (null = not on file yet). */
-export function addonNeeds(addons: string[] | null | undefined, spec: AddonSpec, cars = 1): Need[] {
+export function addonNeeds(addons: string[] | null | undefined, spec: AddonSpec, cars = 1, topup: { washer_fluid?: number; coolant?: number } = {}): Need[] {
   const n = Math.max(1, cars || 1), out: Need[] = [];
   for (const a of addons ?? []) {
     if (a === "cabin_filter") {
@@ -20,8 +22,8 @@ export function addonNeeds(addons: string[] | null | undefined, spec: AddonSpec,
         : { key: "wiper:?", label: "Wiper blade (size not on file)", qty: n, part: null, kind: "wiper" });
       else out.push({ key: "wiper:?", label: "Wiper blade (size not on file)", qty: 2 * n, part: null, kind: "wiper" });
     } else if (a === "battery") out.push({ key: "battery", label: "Battery (check the size)", qty: n, part: null, kind: "battery" });
-    else if (a === "coolant") out.push({ key: "coolant", label: "Coolant", qty: n, part: null, kind: "fluid" });
-    else if (a === "washer_fluid") out.push({ key: "washer", label: "Washer fluid", qty: n, part: null, kind: "fluid" });
+    else if (a === "coolant") out.push({ key: "coolant", label: "Coolant", qty: (topup.coolant ?? TOPUP_L.coolant) * n, part: null, kind: "fluid", unit: "L" });
+    else if (a === "washer_fluid") out.push({ key: "washer", label: "Washer fluid", qty: (topup.washer_fluid ?? TOPUP_L.washer_fluid) * n, part: null, kind: "fluid", unit: "L" });
   }
   return out;
 }
@@ -47,15 +49,15 @@ export function onShelf(x: Need, parts: { part_number: string; description: stri
     return sum(parts.filter((p) => p.category === "wiper" && new RegExp(`(^|\\D)${size}(\\D|$)`).test(`${p.part_number} ${p.description ?? ""}`)));
   }
   if (x.kind === "fluid") {
-    const re = x.key === "coolant" ? /coolant|antifreeze/i : /washer/i;
-    const ps = parts.filter((p) => re.test(`${p.part_number} ${p.description ?? ""}`));
+    // in litres: the WASHER-FLUID / COOLANT stock (receipts and Stock keep them in litres)
+    const ps = parts.filter((p) => p.part_number === (x.key === "coolant" ? "COOLANT" : "WASHER-FLUID") || p.category === (x.key === "coolant" ? "coolant" : "washer_fluid"));
     return ps.length ? sum(ps) : null;
   }
   return null;   // battery, or a filter with no part number yet: can't tell
 }
 
 /** Which charged add-ons a price list has, and how many of each part (a booked add-on on a 2-car visit = 2). */
-export const ADDON_NAMES: Record<string, RegExp> = { wipers: /wiper/i, cabin_filter: /cabin/i, engine_filter: /engine air/i, battery: /battery/i };
+export const ADDON_NAMES: Record<string, RegExp> = { wipers: /wiper/i, cabin_filter: /cabin/i, engine_filter: /engine air/i, battery: /battery/i, washer_fluid: /washer/i, coolant: /coolant|antifreeze/i };
 export function chargedAddons(lines: { label: string; amount: number }[], booked: string[] | null | undefined, cars = 1) {
   const out: { kind: string; times: number }[] = [];
   for (const k of Object.keys(ADDON_NAMES)) {
@@ -64,7 +66,7 @@ export function chargedAddons(lines: { label: string; amount: number }[], booked
   }
   return out;
 }
-export const ADDON_COST_DEFAULT: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200 };
+export const ADDON_COST_DEFAULT: Record<string, number> = { wipers: 22, cabin_filter: 22, engine_filter: 21, battery: 200, washer_fluid: 4, coolant: 10 };
 
 /** Which shelf a job's filter comes from when numbers are linked: bookings before it take theirs first,
  *  the cars' own number (NAPA 27356) goes first, then the linked ones. Pure (tested).

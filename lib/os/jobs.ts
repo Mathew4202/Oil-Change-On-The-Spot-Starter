@@ -1,6 +1,6 @@
 // The job screen: start, finish (record the work), take payment, update stock, email the receipt.
 import { checksFrom } from "@/lib/os/fleet-math";
-import { chargedAddons, normPart, ADDON_COST_DEFAULT } from "@/lib/os/addon-needs";
+import { chargedAddons, normPart, ADDON_COST_DEFAULT, TOPUP_L } from "@/lib/os/addon-needs";
 import crypto from "crypto";
 import { Resend } from "resend";
 import { sbGet, sbInsert, sbPatch, sbRpc, enc } from "@/lib/os/db";
@@ -145,6 +145,12 @@ export async function finishJob(input: FinishInput, owner: string) {
   const quotes = charged.some((c) => partFor[c.kind]) ? await sbGet<{ our_cost: number | null; parts: { part_number: string } | null }>(
     "part_quotes?select=our_cost,parts!inner(part_number)&our_cost=not.is.null&order=checked_at.desc&limit=2000").catch(() => []) : [];
   for (const { kind, times } of charged) {
+    if (kind === "washer_fluid" || kind === "coolant") {   // top-ups: the litres used at what a litre cost us
+      const litres = topupLitres(kind, rules) * times;
+      const [q] = await sbGet<{ our_cost: number }>(`part_quotes?select=our_cost,parts!inner(part_number)&parts.part_number=eq.${kind === "coolant" ? "COOLANT" : "WASHER-FLUID"}&order=checked_at.desc&limit=1`).catch(() => []);
+      costParts = r2(costParts + (q ? Number(q.our_cost) * litres : (rules[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times));
+      continue;
+    }
     const pn = partFor[kind];
     const q = pn ? quotes.find((x) => x.parts && normPart(x.parts.part_number) === normPart(pn)) : undefined;
     costParts = r2(costParts + (q ? Number(q.our_cost) : rules[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times);
@@ -220,7 +226,7 @@ export async function finishJob(input: FinishInput, owner: string) {
   }
 
   // The add-on parts we charged for come off the shelf too (cabin and air filters by part #, wipers by size)
-  await takeAddonParts(lines, ctx.booking.services?.addons, ctx.booking.cars || 1, spec, job.data!.id, stock).catch(() => null);
+  await takeAddonParts(lines, ctx.booking.services?.addons, ctx.booking.cars || 1, spec, job.data!.id, stock, rules).catch(() => null);
 
   // Gloves and shop towels used on every car (pricing rules: gloves_per_car 2, gloves_per_box 100, towels_per_car 2)
   await useSupplies(ctx.booking.cars || 1, rules, job.data!.id).catch(() => null);
@@ -399,10 +405,14 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
   };
 }
 
+/** Litres a top-up takes: HQ settings topup_washer_l / topup_coolant_l, or 2 L of washer fluid and 1 L of coolant. */
+const topupLitres = (kind: "washer_fluid" | "coolant", rules: Record<string, number>) =>
+  Number(rules[kind === "coolant" ? "topup_coolant_l" : "topup_washer_l"] ?? TOPUP_L[kind]);
+
 /** Take the add-on parts a finished job used off Stock (never below zero), and say what came off or why not. */
 async function takeAddonParts(lines: { label: string; amount: number }[], booked: string[] | undefined, cars: number,
   spec: { cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null } | null | undefined,
-  jobId: string, say: string[]) {
+  jobId: string, say: string[], rules: Record<string, number> = {}) {
   const charged = chargedAddons(lines, booked, cars);
   if (!charged.length) return;
   const { loadLinks, sameParts } = await import("@/lib/os/part-alias");
@@ -445,6 +455,16 @@ async function takeAddonParts(lines: { label: string; amount: number }[], booked
         const re = new RegExp(`(^|\\D)${size}(\\D|$)`);
         await take((p) => p.category === "wiper" && re.test(`${p.part_number} ${p.description ?? ""}`), Math.max(1, Math.round(times)), `Wiper ${size}"`);
       }
+    } else if (kind === "washer_fluid" || kind === "coolant") {
+      // kept in litres: a top-up takes the usual amount (HQ setting), from the WASHER-FLUID / COOLANT stock
+      const litres = r2(topupLitres(kind, rules) * times), pn = kind === "coolant" ? "COOLANT" : "WASHER-FLUID";
+      const name = kind === "coolant" ? "Coolant" : "Washer fluid";
+      const [p] = await sbGet<{ id: string; on_hand: number }>(`parts?select=id,on_hand&part_number=eq.${pn}&order=on_hand.desc&limit=1`).catch(() => []);
+      if (!p || Number(p.on_hand) <= 0) { say.push(`${name}: none in Stock, so nothing came off`); continue; }
+      const used = Math.min(Number(p.on_hand), litres), left = r2(Number(p.on_hand) - used);
+      await sbPatch("parts", `id=eq.${p.id}`, { on_hand: left });
+      await sbInsert("stock_moves", { part_id: p.id, qty: -used, reason: "job", job_id: jobId });
+      say.push(`${name}: -${used} L, ${left} L left`);
     } else if (kind === "battery") {
       await take((p) => p.category === "battery", 1, "Battery");
     }
