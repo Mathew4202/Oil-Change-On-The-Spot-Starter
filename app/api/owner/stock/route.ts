@@ -85,6 +85,11 @@ export async function POST(req: NextRequest) {
   const owner = currentOwner();
   if (!owner) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
+  if (body.action === "fits") {   // a filter from a receipt: which car it fits
+    const { fitsCar } = await import("@/lib/os/part-alias");
+    const r = await fitsCar(String(body.part || ""), String(body.category || ""), String(body.years || ""), String(body.make || ""), String(body.model || ""));
+    return NextResponse.json(r, { status: r.ok ? 200 : 400 });
+  }
   if (body.action === "link") {   // "same as": another brand's number for a part our cars use
     const { linkPart } = await import("@/lib/os/part-alias");
     const r = await linkPart(String(body.from || ""), String(body.to || ""), owner);

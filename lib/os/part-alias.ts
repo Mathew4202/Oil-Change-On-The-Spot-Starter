@@ -1,7 +1,7 @@
 // Same filter, different number: a Parts Source "Verified" filter linked as the same as NAPA 27356 stays its own
 // part in Stock, but anything looking for 27356 also counts it, and the Bring list says "27356 or <other #>",
 // so whoever packs the van grabs either one.
-import { sbGet, sbInsert, enc } from "@/lib/os/db";
+import { sbGet, sbInsert, sbPatch, enc } from "@/lib/os/db";
 import { normPart, allocateFrom } from "@/lib/os/addon-needs";
 
 type Link = { alias: string; part_number: string };
@@ -75,4 +75,25 @@ export async function allocated(pn: string, before: string, opts: { excludeId?: 
   const earlier = rows.filter((r) => r.id !== opts.excludeId && ["oil_change", "seasonal", undefined].includes(r.services?.job) && !r.services?.own
     && r.vehicles?.vehicle_specs?.oil_filter_part && set.has(normPart(r.vehicles.vehicle_specs.oil_filter_part))).reduce((t, r) => t + (r.cars || 1), 0);
   return { ...allocateFrom(order, earlier, opts.cars ?? 1), group };
+}
+
+/** "This cabin filter fits a 2016–2021 Honda Civic": put the part # on those cars' specs, so their quotes use its
+ *  retail price and the Bring list knows it. Makes our own spec if HQ has none for that car yet. */
+export async function fitsCar(part: string, category: string, years: string, make: string, model: string) {
+  const col = category === "cabin_filter" ? "cabin_filter_part" : category === "engine_filter" ? "air_filter_part" : category === "oil_filter" ? "oil_filter_part" : null;
+  if (!col) return { ok: false as const, error: "Only filters can be matched to a car" };
+  const m = years.trim().match(/^(\d{4})(?:\s*[-–to]+\s*(\d{4}))?$/);
+  if (!m || !make.trim() || !model.trim()) return { ok: false as const, error: "Type the year (or 2016-2021), make and model" };
+  const from = Number(m[1]), to = Number(m[2] ?? m[1]);
+  if (from < 1980 || to > 2035 || to < from) return { ok: false as const, error: "Check the years" };
+  const pn = part.trim().toUpperCase();
+  const specs = await sbGet<{ id: string; year_from: number | null; year_to: number | null }>(
+    `vehicle_specs?select=id,year_from,year_to&make=ilike.${enc(make.trim())}&model=ilike.${enc(model.trim())}&limit=200`).catch(() => []);
+  const hit = specs.filter((s) => (s.year_from ?? 0) <= to && (s.year_to ?? s.year_from ?? 9999) >= from);
+  for (const s of hit) await sbPatch("vehicle_specs", `id=eq.${s.id}`, { [col]: pn });
+  if (!hit.length) {
+    const r = await sbInsert("vehicle_specs", { year_from: from, year_to: to, make: make.trim(), model: model.trim(), [col]: pn, source: "job_history", verified: true, times_done: 0 });
+    if (!r.ok) return { ok: false as const, error: "Couldn't save it" };
+  }
+  return { ok: true as const, cars: hit.length || 1, label: `${from === to ? from : `${from}-${to}`} ${make.trim()} ${model.trim()}` };
 }

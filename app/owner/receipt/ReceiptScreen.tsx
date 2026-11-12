@@ -286,6 +286,33 @@ function SameAs({ part, category }: { part: string; category: string }) {
         <button disabled={busy || !to.trim()} onClick={link} className="h-10 px-3 rounded-lg font-extrabold disabled:opacity-60" style={{ background: "#0d1b3e", color: "#fff" }}>{busy ? "…" : "Same as"}</button>
       </div>}
       {msg && <p className={done ? "text-[#1d6b3a] font-semibold" : "text-[#9b1c1c] font-semibold"}>{msg}</p>}
+      {!done && <FitsCar part={part} category={category} onDone={(m) => { setDone(true); setMsg(m); }} />}
+    </div>
+  );
+}
+
+/** Or: which car it fits (2016-2021 Honda Civic), so that car's price uses this filter's retail price. */
+function FitsCar({ part, category, onDone }: { part: string; category: string; onDone: (msg: string) => void }) {
+  const [y, setY] = useState(""); const [mk, setMk] = useState(""); const [md, setMd] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const box = "h-10 min-w-0 rounded-lg border border-[#c8d0e0] px-2 text-base bg-white";
+  async function save() {
+    setBusy(true); setErr("");
+    const r = await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "fits", part, category, years: y, make: mk, model: md }) });
+    const j = await r.json().catch(() => ({})); setBusy(false);
+    if (!r.ok || !j.ok) return setErr(j.error || "Couldn't save it");
+    onDone(`Done. ${part} is now the ${KIND[category] ?? "part"} for the ${j.label}, so its price uses this filter's retail price and the Bring list knows it.`);
+  }
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-[#f2d58a] pt-2">
+      <p>Or tell HQ which car it fits:</p>
+      <div className="grid grid-cols-[5.5rem_1fr_1fr] gap-1.5">
+        <input value={y} onChange={(e) => setY(e.target.value)} placeholder="2019" inputMode="numeric" className={box} />
+        <input value={mk} onChange={(e) => setMk(e.target.value)} placeholder="Honda" className={box} />
+        <input value={md} onChange={(e) => setMd(e.target.value)} placeholder="Civic" className={box} />
+      </div>
+      <p className="text-xs text-[#4a5878]">A range works too, like 2016-2021.</p>
+      <button disabled={busy || !y || !mk || !md} onClick={save} className="h-10 rounded-lg font-extrabold disabled:opacity-60" style={{ background: "#0d1b3e", color: "#fff" }}>{busy ? "…" : "It fits this car"}</button>
+      {err && <p className="text-[#9b1c1c] font-semibold">{err}</p>}
     </div>
   );
 }
