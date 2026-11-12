@@ -231,7 +231,10 @@ export async function buildQuote(req: QuoteRequest) {
       spec: spec ? { grade: isEuro || /^euro/i.test(spec.oil_grade) ? euroOilKey(make, spec.oil_grade, spec.oil_spec) : diesel ? `Diesel ${spec.oil_grade.replace(/^diesel\s*/i, "")}` : spec.oil_grade,
         capacityL: Number(spec.capacity_l), euro: isEuro || /^euro/i.test(spec.oil_grade), diesel } : null,
       costs: { oilPerL, filterCost, consumables: r.consumables ?? 1 },
-      rules: { ...DEFAULT_RULES, profitFloor: r.profit_floor ?? 45, bumpTo: r.profit_floor ?? 45, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30,
+      rules: { ...DEFAULT_RULES, profitFloor: r.profit_floor ?? 45, bumpTo: r.profit_floor ?? 45,
+        // by size (settings profit_floor_sedan / _suv / _large_suv / _truck / _sports override)
+        floorByClass: { Sedan: r.profit_floor_sedan ?? r.profit_floor ?? 45, "SUV/Crossover": r.profit_floor_suv ?? 55, "Large SUV": r.profit_floor_large_suv ?? 60,
+          Truck: r.profit_floor_truck ?? 65, "Sports Car": r.profit_floor_sports ?? r.profit_floor ?? 45 }, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30,
         // the floor is after gas (gas_in_floor = 0 in pricing_rules turns this off)
         gasPerJob: r.gas_in_floor === 0 ? 0 : await gasPerJob().then((g) => g.perJob).catch(() => 0) },
       ownParts: req.own ?? null, addons: await withRealCosts(addons, spec, r), distanceKm: req.km ?? null,

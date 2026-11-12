@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
   const rr = Object.fromEntries(rulesRows.map((x) => [x.key, Number(x.value)]));
   const topupRules = { washer: rr.topup_washer_l, coolant: rr.topup_coolant_l };   // litres a top-up takes (undefined = 2 L washer, 1 L coolant)
   // Job card profit counts parts before tax: we're HST registered, so the HST we pay on oil and parts comes back
-  // on the return (gas per job is already before tax). The $45 price check still uses the with-tax cost, to be safe.
+  // on the return (gas per job is already before tax). The minimum-profit price check still uses the with-tax cost, to be safe.
   const exTax = (n: number) => n / (1 + Number(rr.hst_rate ?? 0.14));
 
   // What to bring: litres per oil grade and filters per part number, checked against stock

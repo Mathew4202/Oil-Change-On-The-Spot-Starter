@@ -263,3 +263,13 @@ test("add-ons are charged at the part's retail price, and the margin counts as p
   const plain = quoteOilChange({ vehicleClass: "Sedan", spec: { grade: "0W-20", capacityL: 3.5 }, costs: { oilPerL: { "0W-20": 7.07 }, filterCost: 5.12, consumables: 1 }, rules: { ...DEFAULT_RULES } });
   assert.equal(Math.round((q.profit! - plain.profit!) * 100) / 100, 15 + 38 + 10 + 12);
 });
+
+test("bigger vehicles have a bigger minimum: sedan 45, SUV 55, large SUV 60, truck 65", () => {
+  const made = (q: { subtotal?: number; lines: { amount: number }[] }, cost: number) => q.lines.reduce((t, l) => t + l.amount, 0) - cost;
+  // a truck with 8 L at $6.84/L and a $7 filter: $130 would only make about $60, so it goes up to clear $65
+  const t = quoteOilChange({ vehicleClass: "Truck", spec: { grade: "5W-30", capacityL: 8 }, costs: { oilPerL: { "5W-30": 6.84 }, filterCost: 7, consumables: 1 } });
+  assert.ok(made(t, 8 * 6.84 + 7 + 1) >= 65);
+  // the same oil job on a sedan only has to clear $45
+  const s = quoteOilChange({ vehicleClass: "Sedan", spec: { grade: "5W-30", capacityL: 4.4 }, costs: { oilPerL: { "5W-30": 6.84 }, filterCost: 7, consumables: 1 } });
+  assert.ok(made(s, 4.4 * 6.84 + 7 + 1) >= 45 && made(s, 4.4 * 6.84 + 7 + 1) < 55);
+});

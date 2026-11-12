@@ -24,10 +24,13 @@ export type Rules = {
   roundTo: number;         // raised prices round up to a tidy number, e.g. 5
   hstRate: number;         // 0.14
   freeTravelKm: number;    // 30
-  gasPerJob?: number;      // average gas per job (from gas receipts): counted when checking the floor, so a job still clears $45 after gas
+  floorByClass?: Partial<Record<VehicleClass, number>>;   // bigger vehicles take longer: their own minimum (sedan 45, SUV 55, large SUV 60, truck 65)
+  gasPerJob?: number;      // average gas per job (from gas receipts): counted when checking the floor, so a job still clears its minimum after gas
 };
 
-export const DEFAULT_RULES: Rules = { profitFloor: 45, bumpTo: 45, roundTo: 5, hstRate: 0.14, freeTravelKm: 30 };
+/** The least an oil change can make after oil, filter, supplies and gas, by size (owners set Nov 12). */
+export const FLOOR_BY_CLASS: Record<VehicleClass, number> = { Sedan: 45, "SUV/Crossover": 55, "Large SUV": 60, Truck: 65, "Sports Car": 45 };
+export const DEFAULT_RULES: Rules = { profitFloor: 45, bumpTo: 45, roundTo: 5, hstRate: 0.14, freeTravelKm: 30, floorByClass: FLOOR_BY_CLASS };
 
 // Normal prices (same as the current website)
 export const OIL_BASE: Record<VehicleClass, number> = {
@@ -209,8 +212,9 @@ export function quoteOilChange(input: QuoteInput): Quote {
       if (perL != null) {
         cost = r2(input.spec.capacityL * perL + (input.costs.filterCost ?? 0) + input.costs.consumables);
         const gas = rules.gasPerJob ?? 0;
-        if (price - cost - gas < rules.profitFloor) {
-          price = ceilTo(cost + gas + rules.bumpTo, rules.roundTo);
+        const floor = rules.floorByClass?.[cls] ?? rules.profitFloor;
+        if (price - cost - gas < floor) {
+          price = ceilTo(cost + gas + floor, rules.roundTo);   // raised to just clear this size's minimum
           raised = true;
         }
       }
