@@ -1,6 +1,7 @@
 // Runs once a day (Vercel Cron, ~5-6 pm Halifax): day-before reminders + "oil change due" texts.
 // Can also be run by hand: /api/cron/daily?key=ADMIN_SECRET
 import { runPlanBilling } from "@/lib/os/plans";
+import { planFor } from "@/lib/os/plans";
 import { backfillSpecs } from "@/lib/os/spec-backfill";
 import { attachUpcoming } from "@/lib/os/spec-learn";
 import { offerRouteMoves, closeRouteOffers } from "@/lib/os/route";
@@ -52,7 +53,7 @@ export async function GET(req: NextRequest) {
 
   // 2) Oil change due soon (latest job per car, nothing already booked)
   const until = new Date(halifaxToDate(today, 0).getTime() + (rules.due_reminder_days_before ?? 3) * 86400000).toISOString().slice(0, 10);
-  const due = await sbGet<{ id: string; vehicle_id: string | null; customer_id: string | null; done_at: string; inspection: Record<string, { status?: string }> | null; customer_note?: string | null; customers: Who | null;
+  const due = await sbGet<{ id: string; vehicle_id: string | null; customer_id: string | null; done_at: string; next_due_date: string | null; inspection: Record<string, { status?: string }> | null; customer_note?: string | null; customers: Who | null;
     vehicles: { year: number | null; make: string | null; model: string | null; fleet_account_id: string | null } | null }>(
     `jobs?select=*,customers(id,first_name,phone,sms_opt_out),vehicles(year,make,model,fleet_account_id)` +
     `&due_reminder_sent_at=is.null&next_due_date=lte.${until}&next_due_date=gte.${addDays(today, -30)}&order=done_at.desc`);
@@ -62,7 +63,13 @@ export async function GET(req: NextRequest) {
     const [upcoming] = await sbGet<{ id: string }>(`bookings?select=id&customer_id=eq.${j.customer_id}&status=in.(confirmed,requested)&starts_at=gt.${new Date().toISOString()}&limit=1`);
     if (newer || upcoming) { out.dueSkipped++; await sbPatch("jobs", `id=eq.${j.id}`, { due_reminder_sent_at: new Date().toISOString() }); continue; }
     const car = [j.vehicles?.year, j.vehicles?.make, j.vehicles?.model].filter(Boolean).join(" ") || "car";
-    const r = await textCustomer("oil_due", j.customers, { car, book_link: `${siteUrl()}/booking` }, null, lastVisitText(lastVisit(j.inspection, j.customer_note)));
+    // their details already filled in (pick a time and go), for the day it's due or tomorrow
+    const day = j.next_due_date && j.next_due_date > today ? j.next_due_date : addDays(today, 1);
+    const link = `${siteUrl()}/f/${j.customer_id.slice(0, 8)}${day.slice(2, 4)}${day.slice(5, 7)}${day.slice(8, 10)}`;
+    // on a maintenance plan with oil changes left: tell them it's covered
+    const pl = await planFor(j.customer_id, j.vehicle_id, `${day}T12:00:00Z`).catch(() => null);
+    const planLine = pl?.oilLeft ? "It's covered by your maintenance plan, so you only pay for any extra parts." : "";
+    const r = await textCustomer("oil_due", j.customers, { car, book_link: link }, null, [planLine, lastVisitText(lastVisit(j.inspection, j.customer_note))].filter(Boolean).join(" "));
     if (r.sent) { out.due++; await sbPatch("jobs", `id=eq.${j.id}`, { due_reminder_sent_at: new Date().toISOString() }); } else out.dueSkipped++;
   }
   // 3) Maintenance plans: this month's pay link on each plan's bill day, and plans that finished their year

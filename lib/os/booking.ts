@@ -244,7 +244,7 @@ async function createOne(b: BookingInput, opts: Opts & {
   }
 
   // 4b) On a maintenance plan? The oil change (and their swaps) are covered, filter and wiper labour free, small top-ups included.
-  let planId: string | null = null;
+  let planId: string | null = null, planNote: string | undefined;
   if (!opts.fleetAccountId && opts.priceOverride == null && (withOil || b.job === "tires")) {
     const pl = await planFor(customer.id, vehicle.id, b.start).catch(() => null);
     if (pl) {   // even when this month's oil change is used, labour on filters and wipers is still free
@@ -252,6 +252,13 @@ async function createOne(b: BookingInput, opts: Opts & {
       quote.lines = c.lines; quote.subtotal = c.subtotal; quote.hst = c.hst; quote.total = c.total;
       if (quote.cost != null) quote.profit = Math.round((c.subtotal - quote.cost + (c.oilCovered ? Number(pl.plan.per_visit) : 0)) * 100) / 100;   // the plan's monthly payments pay for the oil change
       if (c.oilCovered || c.lines.some((l) => /^Tire change, covered/.test(l.label))) planId = pl.plan.id;   // only covered visits count toward the plan
+      // on a plan but this oil change isn't covered: say why, so the price isn't a surprise
+      if (withOil && !c.oilCovered) {
+        const total = Number(pl.plan.visits_per_year);
+        planNote = pl.used >= total
+          ? `You've used ${total === 1 ? "the oil change" : `all ${total} oil changes`} on your maintenance plan this year, so this one is at the regular price (filter and wiper labour is still free).`
+          : `Your maintenance plan covers one oil change a month and this month's is already used, so this one is at the regular price. Want it next month instead? Just reply and we'll move it.`;
+      }
     }
   }
 
@@ -324,7 +331,7 @@ async function createOne(b: BookingInput, opts: Opts & {
   ]);
 
   // 7) Confirmation text to the customer (with their change/cancel link)
-  await Promise.race([sendBookingConfirmation(bk.data!.id, { payingNow: b.payMode === "online" && !opts.bookedBy }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
+  await Promise.race([sendBookingConfirmation(bk.data!.id, { payingNow: b.payMode === "online" && !opts.bookedBy, note: planNote }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
 
   return { ok: true, bookingId: bk.data!.id, date, when, total: quote.total, subtotal: quote.subtotal, hst: quote.hst, lines: quote.lines,
     message: `You're booked for ${when}. See you then!`, ...(b.payMode === "online" && !opts.bookedBy ? { payUrl: `/pay/${manageToken}` } : {}) };
