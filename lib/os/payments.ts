@@ -79,7 +79,7 @@ export async function payTarget(token: string): Promise<PayTarget | null> {
     const month = new Date(`${pb.period}T12:00:00Z`).toLocaleDateString("en-CA", { month: "long", year: "numeric", timeZone: "UTC" });
     const [fn, ...ln] = (pb.plans?.name || "").split(/\s+/);
     return { kind: "plan", bookingId: null, jobId: null, planBillId: pb.id, token, title: `Maintenance plan, ${month}`, car: pb.plans?.car ?? "", when: null,
-      lines: [{ label: `Maintenance plan, ${month}`, amount: Number(pb.subtotal) }], subtotal: Number(pb.subtotal), hst: Number(pb.hst), total, paid, due: amountDue(total, paid),
+      lines: await planBillLines(pb.id, month, Number(pb.subtotal)), subtotal: Number(pb.subtotal), hst: Number(pb.hst), total, paid, due: amountDue(total, paid),
       firstName: fn || null, lastName: ln.join(" ") || null, email: null, receiptUrl: null };
   }
   // a fleet invoice
@@ -298,4 +298,11 @@ export async function claimByTxn(bookingId: string, txnIdIn: string): Promise<{ 
     return { ok: false, error: `Converge doesn't show it as approved: ${now?.message ?? r.status}` };
   }
   return { ok: true, amount: Number(q.ssl_amount) || undefined };
+}
+
+/** A plan bill's lines: the month, then the parts from plan visits it picked up. */
+async function planBillLines(billId: string, month: string, subtotal: number) {
+  const extras = await sbGet<{ label: string; subtotal: number }>(`plan_extras?select=label,subtotal&bill_id=eq.${billId}&order=created_at`).catch(() => []);
+  const ex = extras.reduce((t, e) => t + Number(e.subtotal), 0);
+  return [{ label: `Maintenance plan, ${month}`, amount: Math.round((subtotal - ex) * 100) / 100 }, ...extras.map((e) => ({ label: `Parts, ${e.label}`, amount: Number(e.subtotal) }))];
 }

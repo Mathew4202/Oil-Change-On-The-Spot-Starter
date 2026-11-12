@@ -25,6 +25,7 @@ const Finish = z.object({
   tip: z.number().min(0).max(1000).nullable().optional(),
   email: z.string().email().nullable().optional().or(z.literal("")), sendReceipt: z.boolean().optional(),
   bill: z.boolean().optional(),   // not paid on site: email the receipt with a Pay button and text them the pay link
+  planBill: z.boolean().optional(),   // maintenance plan: put what's owed on their next monthly bill
 });
 
 export async function GET(req: NextRequest) {

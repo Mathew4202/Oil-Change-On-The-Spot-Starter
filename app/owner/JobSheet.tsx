@@ -13,6 +13,7 @@ type Ctx = {
     vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null; oil_spec?: string | null; engine?: string | null; fuel?: string | null; wix_filter?: string | null } | null } | null;
   job: { receipt_no: number; total: number; tip?: number | null; late_fee?: number | null; late_interest?: number | null; bill_due_at?: string | null; payment_method: string | null; receipt_sent_at: string | null; imported_from?: string | null; done_at?: string | null; revenue?: number | null; customer_note?: string | null } | null;
   paid: number; payOnline: boolean;
+  planId?: string | null;
   group?: { cars: { bookingId: string; car: string; done: boolean }[]; index: number; open: number; othersOwed: number; othersTotal: number; allTotal: number; allOwed: number } | null;   // several cars, one visit
 };
 const CHECKS: [string, string][] = [
@@ -95,7 +96,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   const fleetJob = ctx?.booking.pay_mode === "fleet_invoice";   // billed on the fleet's invoice
   // Finishing with nothing picked used to send nothing at all (no bill, no receipt): make them choose
   const needPay = !!ctx && !fleetJob && !notLastCar && !pay && balance > 0;
-  const payChoices = prepaid > 0 ? PAY.filter(([k]) => k !== "card_online") : PAY;
+  const payChoices: [string, string][] = [...(prepaid > 0 ? PAY.filter(([k]) => k !== "card_online") : PAY), ...(ctx?.planId ? [["plan", "On next plan bill"] as [string, string]] : [])];
 
   async function post(body: object) {
     setBusy(true); setErr("");
@@ -119,13 +120,14 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
       oilGrade: withOil ? grade || null : null, oilLitres: withOil && litres ? Number(litres) : null, filterPart: withOil ? filter || null : null,
       inspection: withOil ? Object.fromEntries(Object.entries(checks).map(([k, v]) => [k, { status: v }])) : undefined,
       extraLines: lines.slice((ctx?.booking.quote_breakdown?.lines ?? []).length), doneBy, notes: notes || undefined, customerNote: custNote.trim() || undefined,
-      payMethod: pay && pay !== "bill" ? pay : null, tip: pay && pay !== "bill" && Number(tip) > 0 ? Number(tip) : null, email: email.trim() || null, sendReceipt: true, bill: pay === "bill",
+      payMethod: pay && pay !== "bill" && pay !== "plan" ? pay : null, tip: pay && pay !== "bill" && pay !== "plan" && Number(tip) > 0 ? Number(tip) : null, email: email.trim() || null, sendReceipt: true, bill: pay === "bill", planBill: pay === "plan",
     });
     if (j) clearDraft(bookingId);
     const stockLine = (j?.stock ?? []).length ? ` Stock: ${j.stock.join(". ")}.` : "";
     if (j?.partial) { setNext({ id: j.nextBookingId, car: j.nextCar, left: j.carsLeft }); setResult(`Car done (${money(j.total)}). Next: ${j.nextCar}. Payment, the receipt and the texts come after the last car.${stockLine}`); return; }
     const paidLine = j?.prepaid > 0 ? (j.refund > 0 ? `, paid online. They paid ${money(j.refund)} too much, refund it in Converge` : balance > 0 && !pay ? `, ${money(balance)} still owed` : ", paid online") : pay ? ", paid" : ", not paid yet";
     const billLine = pay === "bill" ? ` Bill sent: ${[j?.receipt?.sent ? "emailed" : null, j?.billText?.sent ? "texted the pay link" : null].filter(Boolean).join(" and ") || "nothing went out (no email or texts on file), send the pay link from the job later"}. It's marked paid by itself when they pay online, or when the e-transfer shows on the bank statement.` : "";
+    if (j && pay === "plan") { setResult(`Job done. Receipt #${j.receiptNo}. ${j.planBilled ? `${money(j.planBilled)} goes on their next maintenance plan bill, nothing to pay today. When that bill is paid, this job is marked paid.` : "Nothing was owed, so nothing went on the plan bill."}`); return; }
     if (j) setResult(`Job done${j.cars > 1 ? ` (${j.cars} cars)` : ""}. Receipt #${j.receiptNo}, ${money(j.total)}${pay === "bill" ? ", not paid yet." + billLine : paidLine + "." + receiptMsg(j.receipt)}${
       j.reviewText ? (j.reviewText.sent ? " Review text sent." : j.reviewText.status === "not_set_up" ? " Review text not sent (texting isn't set up yet)." : " Review text failed, check the number.") : ""}${stockLine}`);
   }
@@ -319,7 +321,8 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
                 )}
                 <h3 className="font-extrabold text-lg mt-1">{prepaid > 0 ? (balance > 0 ? "How did they pay the rest?" : "Did they tip? Pick how") : "How did they pay?"}</h3>
                 <div className="grid grid-cols-2 gap-2">{payChoices.map(([k, n]) => <button key={k} onClick={() => setPay(pay === k ? "" : k)} className="h-11 rounded-lg border font-bold text-sm" style={chip(pay === k)}>{n}</button>)}</div>
-                {pay && pay !== "bill" && <TipBox tip={tip} setTip={setTip} total={prepaid > 0 || others > 0 ? balance : total} />}
+                {pay === "plan" && <p className="text-sm rounded-lg bg-[#f4f6fa] p-2">Nothing to pay today. The parts go on their next monthly plan bill, with HST.</p>}
+                {pay && pay !== "bill" && pay !== "plan" && <TipBox tip={tip} setTip={setTip} total={prepaid > 0 || others > 0 ? balance : total} />}
                 {pay === "bill" && <p className="text-sm rounded-lg bg-[#f4f6fa] p-2">{email.trim()
                   ? <>They get the receipt by email with a Pay button, and the bill by text: the total, when it&apos;s due and the pay link.</>
                   : <>No email on file, so the bill goes <strong>by text</strong> to their number: the total, when it&apos;s due and the pay link (it opens the full receipt and the e-transfer details). Add an email above to also send it by email.</>} Once they pay, the paid receipt goes out the same way.</p>}

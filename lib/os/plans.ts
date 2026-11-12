@@ -93,8 +93,12 @@ export async function activatePlan(p: Plan, how: "text" | string) {
 }
 
 export async function createBill(p: Plan, period: string): Promise<Bill | null> {
-  const subtotal = r2(Number(p.monthly)), hst = r2(subtotal * Number(p.hst_rate));
+  // plus the parts from plan visits since the last bill (a cabin filter, wipers)
+  const extras = await sbGet<{ id: string; subtotal: number; hst: number }>(`plan_extras?select=id,subtotal,hst&plan_id=eq.${p.id}&bill_id=is.null`).catch(() => []);
+  const exSub = r2(extras.reduce((t, e) => t + Number(e.subtotal), 0)), exHst = r2(extras.reduce((t, e) => t + Number(e.hst), 0));
+  const subtotal = r2(Number(p.monthly) + exSub), hst = r2(Number(p.monthly) * Number(p.hst_rate) + exHst);
   const r = await sbInsert<Bill>("plan_bills", { plan_id: p.id, period, subtotal, hst, total: r2(subtotal + hst), token: crypto.randomBytes(15).toString("base64url") });
+  if (r.ok && r.data && extras.length) await sbPatch("plan_extras", `id=in.(${extras.map((e) => e.id).join(",")})`, { bill_id: r.data.id }).catch(() => null);
   if (r.ok) return r.data ?? null;
   const [b] = await sbGet<Bill>(`plan_bills?select=*&plan_id=eq.${p.id}&period=eq.${period}`);   // already made for that month
   return b ?? null;
@@ -133,11 +137,19 @@ export async function markBillPaid(billId: string, method: string, by: string) {
   if (b.status === "paid") return { ok: true as const };
   const claimed = await sbPatchRows("plan_bills", `id=eq.${b.id}&status=eq.open`, { status: "paid", paid_at: new Date().toISOString(), method });
   if (!claimed.length) return { ok: true as const };
+  // the parts on this bill were already counted as sales on their visit: here they just get marked paid
+  const extras = await sbGet<{ id: string; booking_id: string | null; label: string; subtotal: number; hst: number; total: number }>(`plan_extras?select=*&bill_id=eq.${b.id}`).catch(() => []);
+  for (const e of extras) if (e.booking_id) {
+    await sbInsert("payments", { booking_id: e.booking_id, amount: Number(e.total), method: method === "card_online" ? "card_online" : method, processor_ref: `on the ${monthName(b.period)} plan bill` }).catch(() => null);
+    await sbPatch("bookings", `id=eq.${e.booking_id}`, { paid_at: new Date().toISOString() }).catch(() => null);
+  }
+  const exSub = r2(extras.reduce((t, e) => t + Number(e.subtotal), 0)), exHst = r2(extras.reduce((t, e) => t + Number(e.hst), 0));
+  const mSub = r2(Number(b.subtotal) - exSub), mHst = r2(Number(b.hst) - exHst);
   const receiptNo = await sbRpc<number>("next_receipt_no");
   const token = crypto.randomBytes(18).toString("base64url");
   const job = await sbInsert<{ id: string }>("jobs", { customer_id: b.plans.customer_id, done_at: new Date().toISOString(), service: "plan_payment",
-    revenue: Number(b.subtotal), cost_oil: 0, cost_parts: 0, cost_other: 0, lines: [{ label: `Maintenance plan, ${monthName(b.period)}`, amount: Number(b.subtotal) }],
-    subtotal: b.subtotal, hst: b.hst, total: b.total, receipt_no: receiptNo, receipt_token: token, vehicle_text: b.plans.car, payment_method: method, done_by: "both", notes: `Plan payment recorded by ${by}` });
+    revenue: mSub, cost_oil: 0, cost_parts: 0, cost_other: 0, lines: [{ label: `Maintenance plan, ${monthName(b.period)}`, amount: mSub }],
+    subtotal: mSub, hst: mHst, total: r2(mSub + mHst), receipt_no: receiptNo, receipt_token: token, vehicle_text: b.plans.car, payment_method: method, done_by: "both", notes: `Plan payment recorded by ${by}` });
   if (job.ok && job.data) await sbPatch("plan_bills", `id=eq.${b.id}`, { job_id: job.data.id });
   await sbInsert("payments", { amount: b.total, method: method === "card_online" ? "card_online" : method, processor_ref: `Plan payment ${monthName(b.period)} (${b.plans.name || b.plans.phone})` }).catch(() => null);
   return { ok: true as const };

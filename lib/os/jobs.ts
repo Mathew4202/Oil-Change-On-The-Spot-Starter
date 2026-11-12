@@ -29,6 +29,7 @@ export type JobContext = {
   job: Record<string, unknown> | null;
   paid: number;   // all payments on this booking so far (a booking paid online when booked, tips included)
   group?: { cars: { bookingId: string; car: string; done: boolean }[]; index: number; open: number; othersOwed: number; othersTotal: number; allTotal: number; allOwed: number } | null;   // several cars, one visit
+  planId?: string | null;   // an active maintenance plan: parts can go on the next monthly bill
 };
 
 /** Several cars booked together (one visit): every booking in it, its job once finished, and what's been paid on it. Empty for a single car or a fleet visit. */
@@ -66,7 +67,9 @@ export async function jobContext(bookingId: string): Promise<JobContext | null> 
     open: others.filter((c) => !c.job).length, othersOwed: r2(others.reduce((t, c) => t + owedOn(c), 0)), othersTotal: r2(others.reduce((t, c) => t + Number(c.job?.total ?? 0), 0)),
     allTotal: r2(g.reduce((t, c) => t + Number(c.job?.total ?? 0), 0)), allOwed: r2(g.reduce((t, c) => t + owedOn(c), 0)),
   } : null;
-  return { booking: b, customer: customer ?? null, vehicle: vehicle ?? null, job: job ?? null, paid: r2(pays.reduce((t, p) => t + Number(p.amount), 0)), group };
+  // on a maintenance plan: parts can go on their next monthly bill instead of being paid now
+  const [plan] = b.customer_id ? await sbGet<{ id: string }>(`plans?select=id&customer_id=eq.${b.customer_id}&status=eq.active&limit=1`).catch(() => []) : [];
+  return { booking: b, customer: customer ?? null, vehicle: vehicle ?? null, job: job ?? null, paid: r2(pays.reduce((t, p) => t + Number(p.amount), 0)), group, planId: plan?.id ?? null };
 }
 
 export async function startJob(bookingId: string) {
@@ -90,6 +93,7 @@ export type FinishInput = {
   email?: string | null;
   sendReceipt?: boolean;
   bill?: boolean;   // they'll pay later: receipt with a Pay button by email, pay link by text
+  planBill?: boolean;   // maintenance plan: what's owed goes on their next monthly bill
 };
 
 export async function finishJob(input: FinishInput, owner: string) {
@@ -267,7 +271,18 @@ export async function finishJob(input: FinishInput, owner: string) {
   if (paidNow && input.sendReceipt !== false) receipt = await sendReceipt(job.data!.id, input.email ?? null);
   if (paidNow) reviewText = await reviewIfDue(ctx.booking.id);   // receipt first, then the thank-you
   let billText: { sent: boolean; status?: string } | null = null;
-  if (!paidNow && !fleet && input.bill) {
+  let planBilled = 0;
+  if (!paidNow && !fleet && input.planBill && ctx.planId) {
+    // on their next monthly plan bill: nothing to pay today, the bill picks it up (and marks this paid when it's paid)
+    const due = r2(total - prepaid + othersOwed);
+    if (due > 0) {
+      const sub = r2(due / (1 + Number(rules.hst_rate ?? 0.14)));
+      const what = lines.filter((l) => Number(l.amount) > 0 && !/covered by your plan/i.test(l.label)).map((l) => l.label).join(", ") || "Parts";
+      const r = await sbInsert("plan_extras", { plan_id: ctx.planId, booking_id: ctx.booking.id, job_id: job.data!.id, label: `${new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax", month: "short", day: "numeric" })}: ${what}`.slice(0, 300), subtotal: sub, hst: r2(due - sub), total: due });
+      if (r.ok) { planBilled = due; await sbPatch("jobs", `id=eq.${job.data!.id}`, { payment_method: "plan_bill" }).catch(() => null); }
+    }
+  }
+  if (!paidNow && !fleet && input.bill && !planBilled) {
     // due in 48 hours (setting bill_due_hours); after that the late fee, then monthly interest (bill-late.ts). They're told up front.
     const lr = lateRules(rules);
     const dueAt = new Date(Date.now() + lr.dueHours * 3600000).toISOString();
@@ -279,7 +294,7 @@ export async function finishJob(input: FinishInput, owner: string) {
     billText = ctx.customer ? await textCustomer("bill_sent", ctx.customer, { total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }, ctx.booking.id)
       .then((x) => (x.status === "template_off" && body ? sendSms(ctx.customer!.phone || "", fill(body, { first_name: ctx.customer!.first_name?.trim() || "there", total: `$${due.toFixed(2)}`, pay_link: payLink(token), due_by: dueText(dueAt), late_terms: lateTerms(lr) }), { kind: "bill_sent", customerId: ctx.customer!.id, bookingId: ctx.booking.id }) : x)).catch(() => null) : null;
   }
-  return { ok: true as const, jobId: job.data!.id, receiptNo, total: r2(total + others.reduce((t, c) => t + Number(c.job?.total ?? 0), 0)), cars: visit.length || 1, stock, prepaid, refund, receipt, reviewText, billText, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
+  return { ok: true as const, jobId: job.data!.id, receiptNo, total: r2(total + others.reduce((t, c) => t + Number(c.job?.total ?? 0), 0)), cars: visit.length || 1, stock, prepaid, refund, receipt, reviewText, billText, planBilled, profit: r2(subtotal - costOil - costParts - (withOil ? rules.consumables ?? 1 : 0)) };
 }
 
 /** amount = the receipt total (with HST). A tip is added on top: it's income, but it never gets HST. */
