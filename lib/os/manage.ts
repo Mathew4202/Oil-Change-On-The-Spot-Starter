@@ -191,11 +191,12 @@ export async function setPrice(id: string, subtotalIn: number, by: string, tell 
 }
 
 const FAMILY_TEXT = "Hi {first_name}, we've put your appointment {when} on our family price. Your new total is {total}{was}. See you then!\n- {signer}, Oil Change On The Spot";
+const ADDED_TEXT = "Hi {first_name}, quick update on your appointment {when}: we added {change} like you asked. Your new total is {total} with HST{was}. If you have any questions, just reply here.\n- {signer}, Oil Change On The Spot";
 const REMOVED_TEXT = "Hi {first_name}, quick update on your appointment {when}: we took off {change} like you asked. Your new total is {total} with HST{was}. If you have any questions, just reply here.\n- {signer}, Oil Change On The Spot";
 const PRICE_TEXT = "Hi {first_name}, quick update on your appointment {when}: the new total is {total} with HST{was}. If you have any questions, just reply here.\n- {signer}, Oil Change On The Spot";
 
 /** Text the customer their new price (owners tick "Text them the new price"). Fleets get it on their invoice, not by text. */
-export async function tellNewPrice(id: string, total: number, oldTotal: number | null, change?: string, family?: "on" | "off") {
+export async function tellNewPrice(id: string, total: number, oldTotal: number | null, change?: string, family?: "on" | "off", added?: string) {
   const [b] = await sbGet<{ starts_at: string; fleet_account_id: string | null; customers: { id: string; first_name: string | null; phone: string | null; sms_opt_out: boolean | null } | null }>(
     `bookings?select=starts_at,fleet_account_id,customers(id,first_name,phone,sms_opt_out)&id=eq.${enc(id)}`);
   const c = b?.customers;
@@ -207,8 +208,8 @@ export async function tellNewPrice(id: string, total: number, oldTotal: number |
   const { signed } = await import("@/lib/os/signer");
   const m = (n: number) => `$${n.toFixed(2)}`;
   // something was taken off: say what, then the new total
-  const body = family === "on" ? FAMILY_TEXT : change ? REMOVED_TEXT : t?.body || PRICE_TEXT;
-  const text = await signed(fill(body, { change: change ?? "", first_name: c.first_name?.trim() || "there", when: when(b.starts_at), total: m(total), old_total: oldTotal != null ? m(oldTotal) : "", was: oldTotal != null ? ` (it was ${m(oldTotal)})` : "" }));
+  const body = family === "on" ? FAMILY_TEXT : added ? ADDED_TEXT : change ? REMOVED_TEXT : t?.body || PRICE_TEXT;
+  const text = await signed(fill(body, { change: change ?? added ?? "", first_name: c.first_name?.trim() || "there", when: when(b.starts_at), total: m(total), old_total: oldTotal != null ? m(oldTotal) : "", was: oldTotal != null ? ` (it was ${m(oldTotal)})` : "" }));
   const { isFamily, noHstWords } = await import("@/lib/os/customer-texts");
   const r = await sendSms(c.phone, (await isFamily(id)) ? noHstWords(text) : text, { kind: "price_changed", customerId: c.id, bookingId: id });
   return { sent: r.status === "sent" || r.status === "queued" || r.status === "delivered", status: r.status };
@@ -217,7 +218,7 @@ export async function tellNewPrice(id: string, total: number, oldTotal: number |
 export type BookingEdit = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; notes?: string;
   car?: { year?: unknown; make?: unknown; model?: unknown; engine?: unknown }; oil?: { grade?: string; litres?: string | number; filter?: string };
   parts?: { cabin?: string; air?: string; wiperDriver?: string; wiperPassenger?: string };
-  removeLines?: number[]; tell?: boolean };   // price lines they don't want any more (a cabin filter they changed their mind on)
+  removeLines?: number[]; addAddons?: string[]; tell?: boolean };   // price lines they don't want any more (a cabin filter they changed their mind on)
 
 /** Everything the edit screen shows for one booking. */
 export async function bookingForEdit(id: string) {
@@ -234,7 +235,7 @@ export async function bookingForEdit(id: string) {
   // the add-ons they picked that take a part we can note (battery and top-ups don't)
   const addons = (b.services?.addons ?? []).filter((a) => a === "cabin_filter" || a === "engine_filter" || a === "wipers");
   const parts = { cabin: sp?.cabin_filter_part ?? "", air: sp?.air_filter_part ?? "", wiperDriver: sp?.wiper_driver ?? "", wiperPassenger: sp?.wiper_passenger ?? "" };
-  return { withOil: !job || job === "oil_change" || job === "seasonal", cars: b.cars || 1, addons, parts, lines: b.quote_breakdown?.lines ?? [],
+  return { withOil: !job || job === "oil_change" || job === "seasonal", cars: b.cars || 1, addons, parts, lines: b.quote_breakdown?.lines ?? [], allAddons: b.services?.addons ?? [],
     oil: { grade: sp?.oil_grade ?? "", litres: sp?.capacity_l != null ? String(Number(sp.capacity_l)) : "", filter: sp?.oil_filter_part ?? "" },
     stock: await stockFor(sp?.oil_filter_part ?? null, sp?.oil_grade ?? null), firstName: c?.first_name ?? "", lastName: c?.last_name ?? "", phone: (c?.phone ?? "").replace(/^\+1/, ""), email: c?.email ?? "",
     address: b.address ?? "", notes: b.notes ?? "", hasCustomer: !!c, fleet: !!b.fleet_account_id,
@@ -246,6 +247,47 @@ export async function bookingForEdit(id: string) {
  * Name/phone/email are the customer's own (so they're right everywhere). A car with finished jobs on it that's
  * changed to a different make/model becomes a new car on their file, so the old car's history stays true.
  */
+/** Add services to a booking (a cabin filter they asked for on the phone): priced for their car like the website would,
+ *  added to the bill and to the job so the Bring list and Stock know. */
+async function addAddons(id: string, kinds: string[], by: string) {
+  type L = { label: string; amount: number };
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const OK = ["tires", "wipers", "cabin_filter", "engine_filter", "battery", "coolant", "washer_fluid"];
+  const [b] = await sbGet<{ status: string; starts_at: string; cars: number | null; services: { job?: string; addons?: string[]; own?: string | null } & Record<string, unknown> | null;
+    quote_breakdown: Record<string, unknown> & { lines?: L[]; subtotal?: number; hst?: number; total?: number } | null;
+    vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null } | null }>(
+    `bookings?select=status,starts_at,cars,services,quote_breakdown,vehicles(year,make,model,engine)&id=eq.${enc(id)}`);
+  if (!b) return { ok: false as const, error: "Booking not found" };
+  if (b.status === "done") return { ok: false as const, error: "This job is already finished. Add it on the job sheet instead" };
+  const have = b.services?.addons ?? [];
+  const add = Array.from(new Set(kinds.filter((k) => OK.includes(k) && !have.includes(k))));
+  if (!add.length) return { ok: false as const, error: "They already have that" };
+  const v = b.vehicles;
+  if (!v?.year || !v.make || !v.model) return { ok: false as const, error: "Add the car first (year, make, model), so the price is right" };
+  const { buildQuote } = await import("@/lib/os/quote-service");
+  const day = new Date(b.starts_at).toLocaleDateString("en-CA", { timeZone: "America/Halifax" });
+  const base = { year: v.year, make: v.make, model: v.model, engine: v.engine, job: (b.services?.job ?? "oil_change") as never, own: (b.services?.own ?? null) as never, cars: b.cars || 1, date: day };
+  // the price of just the new services: the quote with them, less the quote without
+  const [without, withNew] = await Promise.all([buildQuote({ ...base, addons: have as never }).then((x) => x.quote), buildQuote({ ...base, addons: [...have, ...add] as never }).then((x) => x.quote)]);
+  const seen = new Set(without.lines.map((l: L) => l.label));
+  let newLines: L[] = withNew.lines.filter((l: L) => !seen.has(l.label));
+  if (!newLines.length) {   // labels collided: fall back to the difference in price
+    const diff = r2(withNew.subtotal - without.subtotal);
+    if (diff <= 0) return { ok: false as const, error: "Couldn't price that for this car" };
+    newLines = [{ label: add.join(", "), amount: diff }];
+  }
+  const q = b.quote_breakdown ?? {};
+  const lines = [...(q.lines ?? []), ...newLines.map((l) => ({ label: l.label, amount: r2(Number(l.amount)) }))];
+  const rate = Number(q.hst ?? 0) > 0 && Number(q.subtotal ?? 0) > 0 ? r2(Number(q.hst) / Number(q.subtotal)) : 0.14;
+  const subtotal = r2(lines.reduce((t, l) => t + Number(l.amount), 0));
+  const bd = { ...q, lines, subtotal, hst: r2(subtotal * rate), total: r2(subtotal * (1 + rate)),
+    added: [...((q.added as unknown[]) ?? []), ...newLines.map((l) => ({ ...l, by, at: new Date().toISOString() }))] };
+  const services = { ...(b.services ?? {}), addons: [...have, ...add] };
+  const ok = await sbPatch("bookings", `id=eq.${enc(id)}`, { quote_breakdown: bd, quoted_total: bd.total, services });
+  return ok ? { ok: true as const, total: bd.total as number, oldTotal: q.total != null ? Number(q.total) : null, added: andList(newLines.map((l) => `the ${l.label.replace(/^(.)/, (c) => c.toLowerCase())}`)) }
+    : { ok: false as const, error: "Couldn't save the price" };
+}
+
 const andList = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
 /** Take lines off a booking's price (an add-on they don't want any more) and drop that add-on from the job. */
@@ -286,6 +328,11 @@ export async function editBooking(id: string, e: BookingEdit, by: string) {
     if (!r.ok) return r;
   }
   const patch: Record<string, unknown> = {};
+  if (Array.isArray(e.addAddons) && e.addAddons.length) {
+    const r = await addAddons(id, e.addAddons, by);
+    if (!r.ok) return r;
+    if (e.tell && r.total !== r.oldTotal && !(Array.isArray(e.removeLines) && e.removeLines.length)) await tellNewPrice(id, r.total, r.oldTotal, undefined, undefined, r.added).catch(() => null);
+  }
   if (Array.isArray(e.removeLines) && e.removeLines.length) {
     const r = await removeLines(id, e.removeLines, by);
     if (!r.ok) return r;
