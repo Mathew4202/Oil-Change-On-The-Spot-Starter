@@ -92,6 +92,26 @@ export const cleanGrade = (g: string) => g.trim().toUpperCase().replace(/\s+/g, 
  */
 export async function setCarOil(vehicleId: string, o: { grade?: string | null; litres?: number | string | null; filter?: string | null;
   cabin?: string | null; air?: string | null; wiperDriver?: string | null; wiperPassenger?: string | null }) {
+  const r = await setCarOilOnly(vehicleId, o);
+  // the cabin and air filter fit every engine of that car: put them on all its specs, so the website price for
+  // that year, make and model uses the filter's retail price whichever engine the customer picks
+  if (r.ok && ((o.cabin !== undefined && o.cabin) || (o.air !== undefined && o.air))) {
+    const [v] = await sbGet<{ year: number | null; make: string | null; model: string | null }>(`vehicles?select=year,make,model&id=eq.${enc(vehicleId)}`).catch(() => []);
+    if (v?.year && v.make && v.model) {
+      const specs = await sbGet<{ id: string; year_from: number | null; year_to: number | null }>(
+        `vehicle_specs?select=id,year_from,year_to&make=ilike.${enc(v.make)}&model=ilike.${enc(v.model)}&limit=200`).catch(() => []);
+      const patch: Record<string, string> = {};
+      if (o.cabin) { const c = cleanFilter(o.cabin); if (c) patch.cabin_filter_part = c; }
+      if (o.air) { const a = cleanFilter(o.air); if (a) patch.air_filter_part = a; }
+      for (const sp of specs.filter((x) => (x.year_from ?? 0) <= v.year! && (x.year_to ?? x.year_from ?? 9999) >= v.year!))
+        if (Object.keys(patch).length) await sbPatch("vehicle_specs", `id=eq.${sp.id}`, patch).catch(() => null);
+    }
+  }
+  return r;
+}
+
+async function setCarOilOnly(vehicleId: string, o: { grade?: string | null; litres?: number | string | null; filter?: string | null;
+  cabin?: string | null; air?: string | null; wiperDriver?: string | null; wiperPassenger?: string | null }) {
   const [v] = await sbGet<{ id: string; year: number | null; make: string | null; model: string | null; engine: string | null;
     spec: { id: string; source: string | null; oil_grade: string | null; capacity_l: number | null; oil_filter_part: string | null; oil_spec: string | null; fuel: string | null;
       cabin_filter_part: string | null; air_filter_part: string | null; wiper_driver: string | null; wiper_passenger: string | null } | null }>(

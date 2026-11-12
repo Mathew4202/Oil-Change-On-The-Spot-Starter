@@ -6,7 +6,8 @@ import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
 import { addonNeeds, sumNeeds, onShelf } from "@/lib/os/addon-needs";
 
 export const dynamic = "force-dynamic";
-type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null };
+type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null;
+  paid?: number | null; retail?: number | null };
 
 export async function GET() {
   if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
@@ -40,6 +41,13 @@ export async function GET() {
     // can't tell what's on the shelf (no part # yet, a battery): counted as 0 so it shows up to sort out
     ...addons.map((x) => ({ kind: x.kind, label: x.part ? x.label.replace(x.part, eitherOf(x.part, links)) : x.label, need: x.qty, have: onShelf(x, parts, (pn) => sameParts(pn, links)) ?? 0, unit: x.unit ?? "" })),
   ].map((x) => ({ ...x, buy: Math.max(0, Math.round((x.need - x.have) * 10) / 10) })).sort((a, b) => b.buy - a.buy);
+  // what we last paid and the store's retail price (add-on parts are charged at retail with tax + labour)
+  const quotes = await sbGet<{ part_id: string; our_cost: number | null; retail: number | null }>("part_quotes?select=part_id,our_cost,retail&order=checked_at.desc&limit=3000").catch(() => []);
+  for (const p of parts) {
+    const qs = quotes.filter((q) => q.part_id === p.id);
+    p.paid = qs.find((q) => q.our_cost != null)?.our_cost ?? null;
+    p.retail = qs.find((q) => q.retail != null)?.retail ?? null;
+  }
   return NextResponse.json({ parts, toBuy, bookingsCounted: upcoming.length });
 }
 
@@ -85,6 +93,13 @@ export async function POST(req: NextRequest) {
   const owner = currentOwner();
   if (!owner) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
+  if (body.action === "retail") {   // type the store's retail price for a part (before tax)
+    const v = Math.round(Number(body.retail) * 100) / 100;
+    if (!(v > 0 && v < 5000)) return NextResponse.json({ ok: false, error: "Type the retail price before tax, like 21.24" }, { status: 400 });
+    const [last] = await sbGet<{ our_cost: number | null; supplier: string | null }>(`part_quotes?select=our_cost,supplier&part_id=eq.${enc(String(body.partId))}&order=checked_at.desc&limit=1`).catch(() => []);
+    const r = await sbInsert("part_quotes", { part_id: String(body.partId), supplier: last?.supplier ?? "other", our_cost: last?.our_cost ?? null, retail: v });
+    return NextResponse.json(r.ok ? { ok: true, retail: v } : { ok: false, error: "Couldn't save it" }, { status: r.ok ? 200 : 400 });
+  }
   if (body.action === "fits") {   // a filter from a receipt: which car it fits
     const { fitsCar } = await import("@/lib/os/part-alias");
     const r = await fitsCar(String(body.part || ""), String(body.category || ""), String(body.years || ""), String(body.make || ""), String(body.model || ""));

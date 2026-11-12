@@ -153,9 +153,19 @@ export async function filterInStock(part: string | null | undefined): Promise<bo
 }
 
 /** Cabin / engine air filter: if the car's part number is on file and we've paid for it before, use that cost. */
-async function withRealCosts(addons: Addon[], spec: Spec | null, r: Record<string, number>) {
+async function withRealCosts(addons: Addon[], spec: Spec | null, r: Record<string, number>, car?: { year: number; make: string; model: string }) {
+  // a cabin or air filter fits every engine of a car and usually a few years either side: if this exact spec doesn't
+  // have it yet, use the closest year (within 2) of the same make and model that does
+  const near = async (col: "cabin_filter_part" | "air_filter_part") => {
+    if (!car) return null;
+    const rows = await sbGet<{ year_from: number | null; cabin_filter_part: string | null; air_filter_part: string | null }>(
+      `vehicle_specs?select=year_from,cabin_filter_part,air_filter_part&make=ilike.${enc(car.make)}&model=ilike.${enc(car.model)}&${col}=not.is.null&year_from=gte.${car.year - 2}&year_from=lte.${car.year + 2}&limit=50`).catch(() => []);
+    rows.sort((a, b) => Math.abs((a.year_from ?? 0) - car.year) - Math.abs((b.year_from ?? 0) - car.year));
+    return rows[0]?.[col] ?? null;
+  };
   return Promise.all(addons.map(async (a) => {
-    const part = a.kind === "cabin_filter" ? spec?.cabin_filter_part : a.kind === "engine_filter" ? spec?.air_filter_part : null;
+    const part = a.kind === "cabin_filter" ? spec?.cabin_filter_part || await near("cabin_filter_part")
+      : a.kind === "engine_filter" ? spec?.air_filter_part || await near("air_filter_part") : null;
     const q = part ? await filterCostFor(part).catch(() => null) : null;
     return q ? addonItem(a.kind, r, q.cost, q.retail) : a;
   }));
@@ -237,7 +247,7 @@ export async function buildQuote(req: QuoteRequest) {
           Truck: r.profit_floor_truck ?? 65, "Sports Car": r.profit_floor_sports ?? r.profit_floor ?? 45 }, hstRate: Number(r.hst_rate ?? 0.14), freeTravelKm: r.free_travel_km ?? 30,
         // the floor is after gas (gas_in_floor = 0 in pricing_rules turns this off)
         gasPerJob: r.gas_in_floor === 0 ? 0 : await gasPerJob().then((g) => g.perJob).catch(() => 0) },
-      ownParts: req.own ?? null, addons: await withRealCosts(addons, spec, r), distanceKm: req.km ?? null,
+      ownParts: req.own ?? null, addons: await withRealCosts(addons, spec, r, req.year && req.make && req.model ? { year: Number(req.year), make: req.make, model: req.model } : undefined), distanceKm: req.km ?? null,
     });
   };
 
