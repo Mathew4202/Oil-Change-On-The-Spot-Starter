@@ -420,6 +420,37 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
   };
 }
 
+/** A VIN on the job sheet: decode it (free NHTSA lookup) and, if the booking had the car wrong, fix the year, make,
+ *  model and engine and save the VIN, which also looks up that car's oil and filter. The price isn't changed here. */
+export async function fixCarFromVin(bookingId: string, raw: string) {
+  const vin = raw.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "");
+  if (vin.length !== 17) return { ok: false as const, error: "A VIN is 17 characters" };
+  const ctx = await jobContext(bookingId);
+  if (!ctx?.vehicle || !ctx.customer) return { ok: false as const, error: "No car on this booking to fix" };
+  const { decodeVin } = await import("@/lib/os/vin-photo");
+  const d = await decodeVin(vin).catch(() => null);
+  if (!d?.year || !d.make || !d.model) return { ok: true as const, changed: false, read: false, note: "Couldn't read that VIN online (or it isn't a North American VIN). Saved it as typed." };
+  const v = ctx.vehicle;
+  const same = (a: unknown, b: unknown) => String(a ?? "").toLowerCase().replace(/[^a-z0-9.]/g, "") === String(b ?? "").toLowerCase().replace(/[^a-z0-9.]/g, "");
+  const engine = d.engineL ? `${d.engineL}L` : v.engine;
+  const engineDiff = !!d.engineL && !(v.engine ?? "").startsWith(d.engineL);
+  const changed = !same(v.year, d.year) || !same(v.make, d.make) || !same(v.model, d.model) || engineDiff;
+  const was = [v.year, v.make, v.model, v.engine].filter(Boolean).join(" ");
+  const now = [d.year, d.make, d.model, engine].filter(Boolean).join(" ");
+  const { updateCar } = await import("@/lib/os/customers");
+  const r = await updateCar(ctx.customer.id, v.id, changed ? { year: d.year, make: d.make, model: d.model, engine: engineDiff ? engine : v.engine, vin } : { vin });
+  if (!r.ok) return r;
+  // a different size of vehicle may mean a different price
+  let priceNote = "";
+  if (changed) {
+    const { detectClassFromModel } = await import("@/data/vehicleClass");
+    const before = detectClassFromModel(v.model ?? "", v.make ?? ""), after = detectClassFromModel(d.model, d.make);
+    const word = (c: string | null) => ({ Sedan: "a car", "SUV/Crossover": "an SUV", "Large SUV": "a large SUV", Truck: "a truck", "Sports Car": "a sports car" } as Record<string, string>)[c ?? ""] ?? "a different size";
+    if (before !== after) priceNote = ` It's ${word(after)}, not ${word(before)}: check the price with Edit price.`;
+  }
+  return { ok: true as const, changed, read: true, was, now, note: changed ? `The VIN says ${now}, the booking had ${was}. Fixed the car and its oil and filter.${priceNote}` : `VIN matches the ${now}. Saved.` };
+}
+
 /** Work a finished job's costs out again from today's prices (after fixing a price a receipt got wrong). */
 export async function recostJob(bookingId: string) {
   const [j] = await sbGet<{ id: string; oil_grade: string | null; oil_litres: number | null; filter_part: string | null; lines: { label: string; amount: number }[] | null; cost_oil: number | null; cost_parts: number | null }>(

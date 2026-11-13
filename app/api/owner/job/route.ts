@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { currentOwner } from "@/lib/os/auth";
 import { sbPatch } from "@/lib/os/db";
-import { jobContext, startJob, finishJob, recordPayment, sendReceipt, setCustomerNote, payVisit, reviewIfDue, editPayment, recostJob } from "@/lib/os/jobs";
+import { jobContext, startJob, finishJob, recordPayment, sendReceipt, setCustomerNote, payVisit, reviewIfDue, editPayment, recostJob, fixCarFromVin } from "@/lib/os/jobs";
 const PayMethod = z.enum(["card_terminal", "cash", "etransfer", "card_online"]);
 import { payReady, claimByTxn } from "@/lib/os/payments";
 import { payLink, textCustomer } from "@/lib/os/customer-texts";
@@ -62,6 +62,10 @@ export async function POST(req: NextRequest) {
       const receipt = body.sendReceipt === false ? null : await sendReceipt(String(ctx.job.id), body.email || null);
       await reviewIfDue(id).catch(() => null);   // receipt first, then the thank-you
       return NextResponse.json({ ok: true, receipt });
+    }
+    if (body.action === "vin") {   // a VIN typed or snapped on the job: read it, and fix the car if it was booked wrong
+      const r = await fixCarFromVin(id, String(body.vin || ""));
+      return NextResponse.json(r, { status: r.ok ? 200 : 400 });
     }
     if (body.action === "recost") {   // work the costs out again from today's prices
       const r = await recostJob(id);

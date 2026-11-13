@@ -1,6 +1,6 @@
 "use client";
 // Finish a job: odometer, quick check, what was used, extras, who did it, payment, receipt.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import SnapRead from "@/components/SnapRead";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
@@ -39,6 +39,8 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   // form
   const [km, setKm] = useState("");
   const [vin, setVin] = useState("");
+  const [vinNote, setVinNote] = useState<{ text: string; changed: boolean } | null>(null);
+  const vinChecked = useRef("");
   const [grade, setGrade] = useState(""); const [litres, setLitres] = useState(""); const [filter, setFilter] = useState("");
   const [checks, setChecks] = useState<Record<string, "ok" | "soon" | "now">>(Object.fromEntries(CHECKS.map(([k]) => [k, "ok"])));
   const [extras, setExtras] = useState<{ label: string; amount: string }[]>([]);
@@ -49,6 +51,23 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   const [pay, setPay] = useState<string>(""); const [tip, setTip] = useState(""); const [fixing, setFixing] = useState(false); const [txnId, setTxnId] = useState("");
   const [email, setEmail] = useState("");
   const [loaded, setLoaded] = useState(false); const [restored, setRestored] = useState(false);
+
+  // a full VIN (typed or snapped): read it and fix the car if it was booked wrong, then show the right oil and filter
+  useEffect(() => {
+    if (!ctx || ctx.job || !ctx.vehicle || vin.length !== 17 || vin === vinChecked.current || vin === (ctx.vehicle.vin || "")) return;
+    vinChecked.current = vin;
+    fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "vin", bookingId, vin }) })
+      .then((r) => r.json()).then(async (j) => {
+        if (!j?.note) return;
+        setVinNote({ text: j.note, changed: !!j.changed });
+        if (j.changed) {   // the car changed: load its oil and filter
+          const c: Ctx = await fetch(`/api/owner/job?booking=${bookingId}`).then((r) => r.json());
+          setCtx(c);
+          const s = c.vehicle?.vehicle_specs;
+          if (s) { setGrade(s.oil_grade); setLitres(String(Number(s.capacity_l) * (c.booking.cars || 1))); setFilter(s.oil_filter_part || ""); }
+        }
+      }).catch(() => null);
+  }, [vin, ctx, bookingId]);
 
   useEffect(() => {
     fetch(`/api/owner/job?booking=${bookingId}`).then((r) => r.json()).then((c: Ctx) => {
@@ -252,6 +271,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
                       placeholder="17 characters, windshield" className={`${field} flex-1 min-w-0 font-mono tracking-wide`} style={{ borderColor: LINE }} />
                     <SnapRead kind="vin" onRead={(r) => r.vin && setVin(r.vin)} />
                   </div>
+                  {vinNote && <p className="rounded-lg p-2 text-sm font-semibold" style={vinNote.changed ? { background: "#fff6dd", color: "#7a4b00" } : { background: "#dff3e6", color: "#1d6b3a" }}>{vinNote.text}</p>}
                 </div>
                 {withOil && ctx.vehicle?.vehicle_specs && (() => { const sp = ctx.vehicle!.vehicle_specs!; return (
                   <p className="rounded-lg bg-[#f4f6fa] px-3 py-2 text-[14px] leading-snug">
