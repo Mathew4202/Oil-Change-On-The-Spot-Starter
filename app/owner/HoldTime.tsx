@@ -26,7 +26,8 @@ type Slot = { time: string; label: string; start: string };
 export default function HoldTime({ date: startDate, onClose, preset }: { date: string; onClose: (saved: boolean) => void; preset?: HoldPreset }) {
   const [date, setDate] = useState(startDate);
   const [time, setTime] = useState(""); const [name, setName] = useState(preset?.name ?? ""); const [phone, setPhone] = useState((preset?.phone ?? "").replace(/^\+1/, ""));
-  const [job, setJob] = useState(preset?.job || "oil_change"); const [cars, setCars] = useState(preset?.cars || 1); const [hours, setHours] = useState(preset?.existing ? 24 : 2);   // a link sent from their page: give them a day to tap it const [note, setNote] = useState(preset?.note ?? "");
+  const [job, setJob] = useState(preset?.job || "oil_change"); const [cars, setCars] = useState(preset?.cars || 1); const [note, setNote] = useState(preset?.note ?? "");
+  const [hours, setHours] = useState(preset?.existing ? 24 : 2);   // a link sent from their page: give them a day to tap it
   const [slots, setSlots] = useState<Slot[] | null>(null); const [custom, setCustom] = useState(false);
   const [addons, setAddons] = useState<string[]>([]);
   // open times for that day, the same ones customers see
