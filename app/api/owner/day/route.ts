@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 type Row = {
   id: string; starts_at: string; ends_at: string; status: string; pay_mode: string; address: string | null; paid_at: string | null;
-  jobs: { receipt_no: number | null; total: number | null; subtotal?: number | null; revenue?: number | null; tip?: number | null; cost_oil?: number | null; cost_parts?: number | null; cost_other?: number | null; oil_grade?: string | null; oil_litres?: number | null; filter_part?: string | null }[] | null;
+  jobs: { receipt_no: number | null; total: number | null; subtotal?: number | null; revenue?: number | null; tip?: number | null; cost_oil?: number | null; cost_parts?: number | null; cost_other?: number | null; oil_grade?: string | null; oil_litres?: number | null; filter_part?: string | null; lines?: { label: string; amount: number }[] | null }[] | null;
   quoted_total: number | null; quote_breakdown: { lines?: { label: string; amount: number }[]; profit?: number | null } | null; needs_review: string[] | null; notes: string | null; cars: number; vehicle_id?: string | null; group_id?: string | null;
   services: { job?: string; own?: "both" | "oil" | "filter" | null; addons?: string[] } | null; source: string | null;
   customers: { first_name: string | null; last_name: string | null; phone: string | null; address: string | null } | null;
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "bad date" }, { status: 400 });
   const from = halifaxToDate(date, 0).toISOString(), to = halifaxToDate(date, 24 * 60).toISOString();
 
-  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total,subtotal,revenue,tip,cost_oil,cost_parts,cost_other,oil_grade,oil_litres,filter_part),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,vehicle_id,group_id,` +
+  const q = (extra: string) => sbGet<Row>(`bookings?select=id,starts_at,ends_at,status,pay_mode,address,paid_at,jobs(receipt_no,total,subtotal,revenue,tip,cost_oil,cost_parts,cost_other,oil_grade,oil_litres,filter_part,lines),quoted_total,quote_breakdown,needs_review,notes,cars,services,source,vehicle_id,group_id,` +
       `customers(first_name,last_name,phone,address),vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,oil_spec,engine,fuel,wix_filter,verified,source,confidence${extra}))` +
       `&starts_at=gte.${from}&starts_at=lt.${to}&status=neq.cancelled&order=starts_at`);
   // everything that only needs the date goes out at once (each trip to the database is a wait, so never one after another)
@@ -174,7 +174,9 @@ export async function GET(req: NextRequest) {
       // part numbers we have used on this car before
       partNos: s ? [s.cabin_filter_part ? `Cabin filter ${s.cabin_filter_part}` : null, s.air_filter_part ? `Engine air filter ${s.air_filter_part}` : null,
         s.wiper_driver || s.wiper_passenger ? `Wipers ${[s.wiper_driver && `driver ${s.wiper_driver}`, s.wiper_passenger && `passenger ${s.wiper_passenger}`].filter(Boolean).join(", ")}` : null].filter(Boolean) as string[] : [],
-      lines: r.quote_breakdown?.lines ?? [], total: r.quoted_total != null ? Number(r.quoted_total) : null,
+      // finished: what was actually charged (with anything added on site), not what was booked
+      lines: (r.jobs?.[0]?.lines?.length ? r.jobs[0].lines : r.quote_breakdown?.lines) ?? [],
+      total: r.jobs?.[0]?.total != null ? Number(r.jobs[0].total) : r.quoted_total != null ? Number(r.quoted_total) : null,
       // plain oil changes: worked out live from today's oil and filter prices; with add-ons, the profit the quote worked out
       ...(() => {
         // finished: what it actually made (the oil, filter and parts recorded on the job), not an estimate
