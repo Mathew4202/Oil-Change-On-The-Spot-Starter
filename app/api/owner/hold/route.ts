@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   try {
     if (b.action === "create") {
       const r = await createHold({ start: String(b.start || ""), firstName: String(b.firstName || ""), phone: String(b.phone || ""), job: String(b.job || ""),
-        cars: Number(b.cars) || 1, hours: Number(b.hours) || 2, note: String(b.note || "") }, owner);
+        cars: Number(b.cars) || 1, hours: Number(b.hours) || 2, note: String(b.note || ""), addons: Array.isArray(b.addons) ? b.addons.map(String) : [], existing: b.existing === true }, owner);
       return NextResponse.json(r, { status: r.ok ? 200 : 400 });
     }
     const id = String(b.id || "");

@@ -17,14 +17,18 @@ function halifaxIso(date: string, hhmm: string) {
   return new Date(guess.getTime() - off(new Date(guess.getTime() - off(guess) * 60000)) * 60000).toISOString();
 }
 
-export type HoldPreset = { callId?: string; name?: string | null; phone?: string | null; job?: string | null; cars?: number; note?: string | null };
+export type HoldPreset = { callId?: string; name?: string | null; phone?: string | null; job?: string | null; cars?: number; note?: string | null;
+  existing?: boolean;   // sent from a customer's page: their details and car are filled in on the link, and the text doesn't say "thanks for calling"
+};
+const ADDS: [string, string][] = [["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["wipers", "Wipers"], ["battery", "Battery"], ["coolant", "Coolant"], ["washer_fluid", "Washer fluid"]];
 type Slot = { time: string; label: string; start: string };
 
 export default function HoldTime({ date: startDate, onClose, preset }: { date: string; onClose: (saved: boolean) => void; preset?: HoldPreset }) {
   const [date, setDate] = useState(startDate);
   const [time, setTime] = useState(""); const [name, setName] = useState(preset?.name ?? ""); const [phone, setPhone] = useState((preset?.phone ?? "").replace(/^\+1/, ""));
-  const [job, setJob] = useState(preset?.job || "oil_change"); const [cars, setCars] = useState(preset?.cars || 1); const [hours, setHours] = useState(2); const [note, setNote] = useState(preset?.note ?? "");
+  const [job, setJob] = useState(preset?.job || "oil_change"); const [cars, setCars] = useState(preset?.cars || 1); const [hours, setHours] = useState(preset?.existing ? 24 : 2);   // a link sent from their page: give them a day to tap it const [note, setNote] = useState(preset?.note ?? "");
   const [slots, setSlots] = useState<Slot[] | null>(null); const [custom, setCustom] = useState(false);
+  const [addons, setAddons] = useState<string[]>([]);
   // open times for that day, the same ones customers see
   useEffect(() => {
     setSlots(null); setTime("");
@@ -40,7 +44,7 @@ export default function HoldTime({ date: startDate, onClose, preset }: { date: s
     const r = preset?.callId
       ? await fetch("/api/owner/calls", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: preset.callId, action: "hold", start: halifaxIso(date, time) }) })
       : await fetch("/api/owner/hold", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "create", start: halifaxIso(date, time), firstName: name, phone, job, cars, hours, note }) });
+        body: JSON.stringify({ action: "create", start: halifaxIso(date, time), firstName: name, phone, job, cars, hours, note, addons, existing: !!preset?.existing }) });
     const j = await r.json().catch(() => ({})); setBusy(false);
     if (!r.ok || !j.ok) return setErr(j.error || "Couldn't hold it");
     setDone({ sent: !!j.sms?.sent, status: j.sms?.status ?? "", link: j.link });
@@ -77,6 +81,9 @@ export default function HoldTime({ date: startDate, onClose, preset }: { date: s
             </div>
             <div className="flex flex-col gap-1 text-sm font-semibold">What for
               <div className="grid grid-cols-3 gap-2">{JOBS.map(([k, n]) => <button key={k} type="button" onClick={() => setJob(k)} className="h-11 rounded-lg border text-[13px] font-bold" style={chip(job === k)}>{n}</button>)}</div>
+            </div>
+            <div className="flex flex-col gap-1 text-sm font-semibold">Add-ons (optional)
+              <div className="flex flex-wrap gap-2">{ADDS.map(([k, n]) => <button key={k} type="button" onClick={() => setAddons((a) => (a.includes(k) ? a.filter((x) => x !== k) : [...a, k]))} className="h-10 px-3 rounded-lg border text-[13px] font-bold" style={chip(addons.includes(k))}>{n}</button>)}</div>
             </div>
             <div className="flex flex-col gap-1 text-sm font-semibold">Cars
               <div className="grid grid-cols-4 gap-2">{[1, 2, 3, 4].map((n) => <button key={n} type="button" onClick={() => setCars(n)} className="h-11 rounded-lg border font-bold" style={chip(cars === n)}>{n}</button>)}</div>

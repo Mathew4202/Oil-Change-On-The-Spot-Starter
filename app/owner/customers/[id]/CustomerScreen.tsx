@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import OwnerNav from "../../OwnerNav";
+import HoldTime from "../../HoldTime";
 import { useRole } from "../../RoleContext";
 import { DUE_BADGE } from "../CustomersScreen";
 
@@ -36,6 +37,8 @@ const field = "h-11 rounded-xl border px-3 text-base w-full bg-white";
 export default function CustomerScreen({ id }: { id: string }) {
   const { can } = useRole();
   const [editCar, setEditCar] = useState<string | null>(null);
+  const [sendLink, setSendLink] = useState(false);   // "Text booking link": hold a time and text them a link with everything filled in
+  const [linkSent, setLinkSent] = useState(false);
   const [d, setD] = useState<Detail | null>(null); const [err, setErr] = useState("");
   const load = useCallback(() => fetch(`/api/owner/customers?id=${id}`, { cache: "no-store" }).then((r) => r.json())
     .then((x) => (x.error ? setErr(x.error) : setD(x))).catch(() => setErr("Couldn't load. Check your connection.")), [id]);
@@ -56,6 +59,12 @@ export default function CustomerScreen({ id }: { id: string }) {
           : <span className={`${btn} opacity-40`} style={{ borderColor: LINE }}>Map</span>}
         <Link href={`/owner?book=${c.id}` as Route} className="h-12 rounded-xl font-extrabold flex items-center justify-center" style={{ background: GOLD, color: NAVY }}>Book</Link>
       </div>
+      {can.book && c.phone && (
+        <button onClick={() => { setLinkSent(false); setSendLink(true); }} className="h-11 rounded-xl border font-bold bg-white" style={{ borderColor: LINE }}>Text booking link (pick the time and service)</button>
+      )}
+      {linkSent && <p className="rounded-lg p-2 text-sm font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }}>Link sent. The time is held for them, and their details and car are filled in when they open it.</p>}
+      {sendLink && <HoldTime date={new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax" })} preset={{ name: c.name.split(" ")[0], phone: c.phone, existing: true }}
+        onClose={(saved) => { setSendLink(false); if (saved) setLinkSent(true); }} />}
 
       <section className="bg-white rounded-2xl p-4 flex flex-col gap-2">
         <h2 className="font-extrabold text-lg">Next oil change</h2>

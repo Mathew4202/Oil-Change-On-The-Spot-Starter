@@ -30,14 +30,20 @@ export async function holdByToken(token: string): Promise<Hold | null> {
 }
 export const holdIsLive = (h: Hold | null) => !!h && h.status === "held" && new Date(h.expires_at).getTime() > Date.now();
 
-export async function createHold(input: { start: string; firstName?: string; phone: string; job?: string; cars?: number; hours?: number; note?: string }, owner: string) {
+/** Add-ons picked when the link was sent ride along in the note, as "[addons:cabin_filter,wipers]". */
+export const ADDON_TAG = /\[addons:([a-z_,]+)\]/;
+export const holdAddons = (note: string | null | undefined) => (ADDON_TAG.exec(note ?? "")?.[1] ?? "").split(",").filter(Boolean);
+
+export async function createHold(input: { start: string; firstName?: string; phone: string; job?: string; cars?: number; hours?: number; note?: string; addons?: string[]; existing?: boolean }, owner: string) {
   const start = new Date(input.start);
   if (isNaN(start.getTime()) || start.getTime() < Date.now() - 5 * 60000) return { ok: false as const, error: "Pick a time in the future." };
   if (input.phone.replace(/\D/g, "").length < 10) return { ok: false as const, error: "Add their 10-digit mobile number so the link can be texted." };
   const job = (JOBS as readonly string[]).includes(input.job || "") ? input.job! : "oil_change";
   const cars = Math.min(4, Math.max(1, Math.round(input.cars || 1)));
   const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((x) => [x.key, Number(x.value)]));
-  const end = new Date(start.getTime() + jobMinutes(job, rules, []) * cars * 60000);
+  const OK = ["wipers", "cabin_filter", "engine_filter", "battery", "coolant", "washer_fluid", "tires"];
+  const addons = (input.addons ?? []).filter((a) => OK.includes(a));
+  const end = new Date(start.getTime() + jobMinutes(job, rules, addons as never) * cars * 60000);
   // nothing else may be booked or held in that time
   const [clash] = await sbGet<{ id: string }>(`bookings?select=id&status=in.(requested,confirmed,in_progress)&starts_at=lt.${end.toISOString()}&ends_at=gt.${start.toISOString()}&limit=1`);
   if (clash) return { ok: false as const, error: "That time overlaps a booking. Pick another time." };
@@ -48,17 +54,24 @@ export async function createHold(input: { start: string; firstName?: string; pho
   if (expires.getTime() <= Date.now()) return { ok: false as const, error: "That's too soon to hold. Book them directly instead." };
   const token = crypto.randomBytes(15).toString("base64url");
   const r = await sbInsert<Hold>("slot_holds", { token, starts_at: start.toISOString(), ends_at: end.toISOString(), expires_at: expires.toISOString(),
-    first_name: (input.firstName || "").trim().slice(0, 40) || null, phone: e164(input.phone), job, cars, note: (input.note || "").trim().slice(0, 300) || null, created_by: owner });
+    first_name: (input.firstName || "").trim().slice(0, 40) || null, phone: e164(input.phone), job, cars, note: [(input.note || "").trim().slice(0, 260), addons.length ? `[addons:${addons.join(",")}]` : ""].filter(Boolean).join(" ") || null, created_by: owner });
   if (!r.ok || !r.data) return { ok: false as const, error: "Couldn't save the hold." };
-  const sms = await textHold(r.data);
+  const sms = await textHold(r.data, input.existing);
   return { ok: true as const, hold: r.data, sms, link: holdLink(token) };
 }
 
-export async function textHold(h: Hold) {
-  const body = await template("hold_link");
+export async function textHold(h: Hold, existing = false) {
+  // a customer we already have (sent from their page): no "thanks for calling", their details are already in the link
+  const body = existing ? "Hi {first_name}, I'm holding {when} for your {service}. Tap here to confirm, your details are already filled in: {link}\nI'll keep the time until {until}.\n- {signer}, Oil Change On The Spot"
+    : await template("hold_link");
   if (!body || !h.phone) return { sent: false, status: "template_off" };
   const [c] = await sbGet<{ id: string }>(`customers?select=id&phone=eq.${enc(h.phone)}`);
-  return sendSms(h.phone, fill(body, { first_name: h.first_name || "there", when: whenText(h.starts_at), link: holdLink(h.token), until: timeOnly(h.expires_at) }),
+  const { serviceName } = await import("@/lib/os/hold-nudge-plan");
+  const { signed } = await import("@/lib/os/signer");
+  const text = fill(body, { first_name: h.first_name || "there", when: whenText(h.starts_at), link: holdLink(h.token), service: serviceName(h.job),
+    // "11:15 am" when it runs out today, "tomorrow at 9:00 am" or the date when it's later
+    until: new Date(h.expires_at).toLocaleDateString("en-CA", { timeZone: "America/Halifax" }) === new Date().toLocaleDateString("en-CA", { timeZone: "America/Halifax" }) ? timeOnly(h.expires_at) : whenText(h.expires_at) });
+  return sendSms(h.phone, existing ? await signed(text) : text,
     { kind: "hold_link", customerId: c?.id ?? null });
 }
 
