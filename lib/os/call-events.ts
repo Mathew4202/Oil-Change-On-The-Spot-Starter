@@ -85,7 +85,7 @@ export function basicExtract(text: string, makes: string[], todayIso: string) {
   const NOT_NAME = /^(The|This|He|She|They|Caller|Customer|Oil|Change|On|Spot|We|Our|Mathew|Harsh|Next|Step|Payment|Service|Vehicle)$/;
   let name: string | null = null, lastName: string | null = null;
   const said = t.match(/\b(?:[Mm]y name is|[Tt]his is|[Ii]t'?s|[Ii]'?m)\s+([A-Z][a-z]{1,15})(?:\s+([A-Z][a-z'-]{1,20}))?\b/);
-  const quo = t.match(/(?:^|[.\n]\s*|[Cc]aller,?\s+(?:named\s+)?|[Cc]ustomer,?\s+(?:named\s+)?)([A-Z][a-z]{1,15})\s+([A-Z][a-z'-]{1,20})\b,?\s+(?:booked|called|wants|wanted|requested|scheduled|is|was|inquired|asked|needs|reached|contacted|would|has|provided|confirmed)\b/);
+  const quo = t.match(/(?:^\s*|[.\n]\s*|[Cc]aller,?\s+(?:named\s+)?|[Cc]ustomer,?\s+(?:named\s+)?)([A-Z][a-z]{1,15})\s+([A-Z][a-z'-]{1,20})\b,?\s+(?:booked|called|wants|wanted|requested|scheduled|is|was|inquired|asked|needs|reached|contacted|would|has|provided|confirmed)\b/);
   for (const m of [quo, said]) if (m && !NOT_NAME.test(m[1])) { name = m[1]; lastName = m[2] && !NOT_NAME.test(m[2]) && !/^(and|from|here|calling)$/i.test(m[2]) ? m[2] : null; break; }
   // the address: "at 9 B Foster Street, Dartmouth"
   const STREET = "Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Court|Ct|Crt|Lane|Ln|Crescent|Cres|Boulevard|Blvd|Way|Place|Pl|Terrace|Ter|Close|Row|Highway|Hwy|Circle|Cir|Grove|Heights|Hts|Trail|Run|Park|Square|Sq";
