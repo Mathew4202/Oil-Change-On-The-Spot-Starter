@@ -97,9 +97,15 @@ export type FinishInput = {
 };
 
 export async function finishJob(input: FinishInput, owner: string) {
-  const ctx = await jobContext(input.bookingId);
+  let ctx = await jobContext(input.bookingId);
   if (!ctx) return { ok: false as const, error: "Booking not found" };
   if (ctx.job) return { ok: false as const, error: "This job is already finished" };
+  // a new VIN typed at the end: fix the car from it first, so the receipt, job card and history have the right car
+  const newVin = (input.vin || "").toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, "");
+  if (ctx.vehicle && newVin.length === 17 && newVin !== (ctx.vehicle.vin || "")) {
+    const f = await fixCarFromVin(input.bookingId, newVin).catch(() => null);
+    if (f && f.ok && f.changed) ctx = (await jobContext(input.bookingId)) ?? ctx;
+  }
   const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((x) => [x.key, Number(x.value)]));
   const hstRate = Number(rules.hst_rate ?? 0.14);
 

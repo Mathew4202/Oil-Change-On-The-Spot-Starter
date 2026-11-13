@@ -143,5 +143,11 @@ export async function updateCar(customerId: string, carId: string, f: { year?: u
     patch.spec_id = pick?.id ?? null;
   }
   await sbPatch("vehicles", `id=eq.${enc(carId)}`, patch);
+  // jobs keep the car's name for receipts and history: put the corrected name on them too (same car, it was just wrong)
+  if (patch.year !== undefined || patch.make !== undefined || patch.model !== undefined) {
+    const [nv] = await sbGet<{ year: number | null; make: string | null; model: string | null }>(`vehicles?select=year,make,model&id=eq.${enc(carId)}`).catch(() => []);
+    const text = nv ? [nv.year, nv.make, nv.model].filter(Boolean).join(" ") : "";
+    if (text) await sbPatch("jobs", `vehicle_id=eq.${enc(carId)}`, { vehicle_text: text }).catch(() => null);
+  }
   return { ok: true as const };
 }
