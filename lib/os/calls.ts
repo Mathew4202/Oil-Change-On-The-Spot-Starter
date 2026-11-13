@@ -108,14 +108,23 @@ export async function readCall(text: string): Promise<Extract | null> {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Halifax", weekday: "long", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   // phone numbers never leave the app (free AI tiers may keep what they're sent)
   const clean = text.replace(/\+?1?[\s.(-]*\d{3}[\s.)-]*\d{3}[\s.-]*\d{4}/g, "[number]");
+  // plain rules first (name, address, car, service, day): they always work, even with no AI
+  const b0 = basicExtract(clean, MAKES, halifaxDate(new Date()));
+  const basic = b0 ? cleanExtract(b0) : null;
   const a = await askAI({ prompt: PROMPT(today, clean), maxTokens: 400 }).catch(() => null);
   if (a) {
     const out = a.text;
-    try { return onlySaid(cleanExtract(JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1))), text); } catch { /* fall through to the rules */ }
+    try {
+      const x = onlySaid(cleanExtract(JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1))), text);
+      if (!basic) return x;
+      // anything the AI left blank that the rules found
+      const keep = <K extends keyof Extract>(k: K) => (x[k] ?? basic[k]) as Extract[K];
+      const car = x.make || x.model ? {} : { year: basic.year, make: basic.make, model: basic.model };
+      return { ...x, name: keep("name"), lastName: keep("lastName"), address: keep("address"), engine: keep("engine"), job: keep("job"), date: keep("date"), time: keep("time"), ...car };
+    } catch { /* fall through to the rules */ }
   }
-  // no AI (not set up, or today's free limit used): plain rules still get the car, service and day
-  const b = basicExtract(text, MAKES, halifaxDate(new Date()));
-  return b ? cleanExtract(b) : null;
+  // no AI (not set up, or today's free limit used): the rules alone
+  return basic;
 }
 
 /** Their next booking with us (today or later), if they have one: a booked customer texting is about that visit, not a new booking. */
@@ -270,3 +279,17 @@ export async function linkFromCall(id: string) {
 }
 
 export const doneCall = (id: string) => sbPatch("calls", `id=eq.${enc(id)}`, { state: "done" });
+
+/** Read a call again now (the "Book this person" form opened with blanks): fills what the last read missed. */
+export async function rereadCall(id: string): Promise<Extract | null> {
+  const [row] = await sbGet<CallRow>(`calls?select=${COLS}&id=eq.${enc(id)}`).catch(() => []);
+  if (!row) return null;
+  const text = [...(row.summary ?? []), ...(row.next_steps ?? []).map((s) => `Next step: ${s}`), row.transcript ?? ""].join("\n").trim();
+  if (!text) return row.extract;
+  const x = await readCall(text).catch(() => null);
+  if (!x) return row.extract;
+  const old = row.extract;
+  const merged: Extract = old ? { ...x, ...Object.fromEntries(Object.entries(old).filter(([, v]) => v != null && v !== "" && !(Array.isArray(v) && !v.length))) } as Extract : x;
+  await sbPatch("calls", `id=eq.${enc(row.id)}`, { extract: merged }).catch(() => null);
+  return merged;
+}

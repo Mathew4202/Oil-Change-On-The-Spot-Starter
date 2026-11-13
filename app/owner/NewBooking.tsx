@@ -86,8 +86,19 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
 
   // opened from a call ("Book this person"): fill in everything we heard, then they check it and fill the rest
   useEffect(() => {
-    const x = fromCall; if (!x) return;
+    if (!fromCall) return;
     (async () => {
+      let x = fromCall;
+      // something the call said didn't come through (name, address, car): read the call again now and fill only the blanks
+      if (x.callId && (!x.name || !x.address || !x.make)) {
+        const r = await fetch("/api/owner/calls", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: x.callId, action: "read" }) })
+          .then((r) => r.json()).catch(() => null);
+        const e = r?.extract as Partial<CallPreset> | null;
+        if (e) {
+          const fill = Object.fromEntries(Object.entries(e).filter(([k, v]) => v != null && v !== "" && (x as Record<string, unknown>)[k] == null)) as Partial<CallPreset>;
+          x = { ...x, ...fill, addons: x.addons?.length ? x.addons : e.addons ?? [] };
+        }
+      }
       const digits = (x.phone || "").replace(/\D/g, "").slice(-10);
       let found: Customer | null = null;
       if (x.customerId) found = (await fetch(`/api/owner/customers?id=${x.customerId}&brief=1`).then((r) => r.json()).catch(() => null))?.customer ?? null;

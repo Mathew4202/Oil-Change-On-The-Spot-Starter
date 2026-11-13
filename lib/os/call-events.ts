@@ -81,9 +81,20 @@ export function basicExtract(text: string, makes: string[], todayIso: string) {
   const part = /\bmorning\b|\bam\b/.test(low) ? "morning" : /\bafternoon\b/.test(low) ? "afternoon" : /\bevening\b|\btonight\b|after work/.test(low) ? "evening" : null;
   const tm = low.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
   const time = tm ? `${String((Number(tm[1]) % 12) + (tm[3] === "pm" ? 12 : 0)).padStart(2, "0")}:${tm[2] ?? "00"}` : null;
-  const name = t.match(/\b(?:[Mm]y name is|[Tt]his is|[Ii]t'?s|[Ii]'?m)\s+([A-Z][a-z]{1,15})\b/)?.[1] ?? null;
+  // the name: "my name is Rob", or how Quo's summary starts ("Robert Billers booked...", "The caller, Robert Billers, ...")
+  const NOT_NAME = /^(The|This|He|She|They|Caller|Customer|Oil|Change|On|Spot|We|Our|Mathew|Harsh|Next|Step|Payment|Service|Vehicle)$/;
+  let name: string | null = null, lastName: string | null = null;
+  const said = t.match(/\b(?:[Mm]y name is|[Tt]his is|[Ii]t'?s|[Ii]'?m)\s+([A-Z][a-z]{1,15})(?:\s+([A-Z][a-z'-]{1,20}))?\b/);
+  const quo = t.match(/(?:^|[.\n]\s*|[Cc]aller,?\s+(?:named\s+)?|[Cc]ustomer,?\s+(?:named\s+)?)([A-Z][a-z]{1,15})\s+([A-Z][a-z'-]{1,20})\b,?\s+(?:booked|called|wants|wanted|requested|scheduled|is|was|inquired|asked|needs|reached|contacted|would|has|provided|confirmed)\b/);
+  for (const m of [quo, said]) if (m && !NOT_NAME.test(m[1])) { name = m[1]; lastName = m[2] && !NOT_NAME.test(m[2]) && !/^(and|from|here|calling)$/i.test(m[2]) ? m[2] : null; break; }
+  // the address: "at 9 B Foster Street, Dartmouth"
+  const STREET = "Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Court|Ct|Crt|Lane|Ln|Crescent|Cres|Boulevard|Blvd|Way|Place|Pl|Terrace|Ter|Close|Row|Highway|Hwy|Circle|Cir|Grove|Heights|Hts|Trail|Run|Park|Square|Sq";
+  const am = t.match(new RegExp(`\\b(\\d{1,5}[A-Za-z]?(?:\\s?[A-Za-z]\\b)?(?:\\s+[A-Z][A-Za-z'.-]*){1,4}\\s+(?:${STREET})\\b\\.?)(?:,?\\s+(?:in\\s+)?([A-Z][a-z]+(?:\\s[A-Z][a-z]+)?))?`));
+  const town = am?.[2] && !/^(The|On|At|For|With|And|Robert|He|She|They)$/.test(am[2]) ? am[2] : null;
+  const address = am ? `${am[1].replace(/\.$/, "")}${town ? `, ${town}` : ""}` : null;
+  const eng = low.match(/\b(\d\.\d)\s*(?:l\b|litre|liter)/)?.[1] ?? low.match(/engine[^.]{0,30}?\b(\d\.\d)\b/)?.[1] ?? null;
   const cars = Number(low.match(/\b(two|2|three|3)\s+(cars|vehicles)\b/)?.[1]?.replace("two", "2").replace("three", "3")) || 1;
-  const found = !!(year || make || job || date);
-  return found ? { name, year, make, model, engine: low.match(/\b(\d\.\d)\s*l\b/)?.[1] ? `${low.match(/\b(\d\.\d)\s*l\b/)![1]}L` : null,
+  const found = !!(year || make || job || date || name || address);
+  return found ? { name, lastName, address, year, make, model, engine: eng ? `${eng}L` : null,
     job, cars, date, time, part, wantsBooking: !!(job || date || year), notes: null } : null;
 }

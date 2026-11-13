@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCallEvent, pickSlot } from "../call-events.ts";
+import { parseCallEvent, pickSlot, basicExtract } from "../call-events.ts";
 
 const ctx = { participants: { workspace: ["+19025550000"], external: ["+19025550122"] } };
 
@@ -57,4 +57,11 @@ test("no-AI backup reads car, service and day", async () => {
   const c = basicExtract("oil change and tire swap for 2 cars sunday", makes, "2026-10-25")!;
   assert.equal(c.job, "seasonal"); assert.equal(c.cars, 2); assert.equal(c.date, "2026-11-01");
   assert.equal(basicExtract("thanks!", makes, "2026-10-25"), null);
+});
+
+test("basicExtract reads the name, address and engine from a Quo summary", () => {
+  const t = "Robert Billers booked an oil change service with Oil Change On The Spot. The service is scheduled for 12:30 PM at 9 B Foster Street, Dartmouth. The vehicle is a 2002 Hyundai Venue with an estimated engine size of 2.2.";
+  const x = basicExtract(t, ["Hyundai"], "2026-11-13")!;
+  assert.equal(x.name, "Robert"); assert.equal(x.lastName, "Billers");
+  assert.equal(x.address, "9 B Foster Street, Dartmouth"); assert.equal(x.engine, "2.2L"); assert.equal(x.time, "12:30");
 });

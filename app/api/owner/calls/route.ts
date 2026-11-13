@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
   try {
     if (b.action === "hold") { const r = await holdFromCall(id, b.start ? String(b.start) : null, owner); return NextResponse.json(r, { status: r.ok ? 200 : 400 }); }
     if (b.action === "link") return NextResponse.json(await linkFromCall(id));
+    if (b.action === "read") { const { rereadCall } = await import("@/lib/os/calls"); return NextResponse.json({ ok: true, extract: await rereadCall(id) }); }
     if (b.action === "done") { await doneCall(id); return NextResponse.json({ ok: true }); }
     if (b.action === "reply") { const r = await replyToText(id, String(b.body || ""), owner); return NextResponse.json(r, { status: r.ok ? 200 : 400 }); }
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
