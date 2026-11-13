@@ -1,6 +1,6 @@
 // The job screen: start, finish (record the work), take payment, update stock, email the receipt.
 import { checksFrom } from "@/lib/os/fleet-math";
-import { chargedAddons, normPart, ADDON_COST_DEFAULT, TOPUP_L } from "@/lib/os/addon-needs";
+import { chargedAddons, normPart, ownParts, ADDON_COST_DEFAULT, TOPUP_L } from "@/lib/os/addon-needs";
 import crypto from "crypto";
 import { Resend } from "resend";
 import { sbGet, sbInsert, sbPatch, sbRpc, enc } from "@/lib/os/db";
@@ -120,7 +120,7 @@ export async function finishJob(input: FinishInput, owner: string) {
 
   // What it cost us
   const spec = ctx.vehicle?.vehicle_specs;
-  const own = ctx.booking.services?.own;
+  const own = ownParts(ctx.booking.services, lines);
   const withOil = !ctx.booking.services?.job || ["oil_change", "seasonal"].includes(ctx.booking.services.job);
   const grade = input.oilGrade || spec?.oil_grade || null;
   const litres = input.oilLitres ?? (spec ? Number(spec.capacity_l) * (ctx.booking.cars || 1) : null);
@@ -465,16 +465,32 @@ export async function recostJob(bookingId: string) {
   const [b] = await sbGet<{ cars: number | null; services: { addons?: string[] } | null; vehicles: { vehicle_specs: { cabin_filter_part?: string | null; air_filter_part?: string | null } | null } | null }>(
     `bookings?select=cars,services,vehicles(vehicle_specs(cabin_filter_part,air_filter_part))&id=eq.${enc(bookingId)}`).catch(() => []);
   const cars = b?.cars || 1;
+  // they brought the oil and/or the filter: none of it is our cost, and anything finishing took off the shelf goes back
+  const own = ownParts(b?.services as { own?: string | null } | null, j.lines);
+  const theirOil = own === "both" || own === "oil", theirFilter = own === "both" || own === "filter";
+  if (theirOil || theirFilter) {
+    const moves = await sbGet<{ id: string; part_id: string; qty: number; parts: { part_number: string; on_hand: number } | null }>(
+      `stock_moves?select=id,part_id,qty,parts(part_number,on_hand)&job_id=eq.${enc(j.id)}&reason=eq.job&qty=lt.0`).catch(() => []);
+    for (const m of moves) {
+      const pn = m.parts?.part_number ?? "";
+      const isOil = /^OIL-/i.test(pn), isOilFilter = !!j.filter_part && (normPart(pn) === normPart(j.filter_part));
+      if ((isOil && theirOil) || (isOilFilter && theirFilter)) {
+        await sbPatch("parts", `id=eq.${m.part_id}`, { on_hand: r2(Number(m.parts?.on_hand ?? 0) - Number(m.qty)) });
+        await sbInsert("stock_moves", { part_id: m.part_id, qty: -Number(m.qty), reason: "adjust", job_id: j.id });
+        await sbPatch("stock_moves", `id=eq.${m.id}`, { reason: "adjust" });   // so a second Recheck doesn't put it back twice
+      }
+    }
+  }
   const rulesRows = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value").catch(() => []);
   const rules = Object.fromEntries(rulesRows.map((x) => [x.key, Number(x.value)]));
   const quotes = await sbGet<{ our_cost: number | null; parts: { part_number: string } | null }>("part_quotes?select=our_cost,parts!inner(part_number)&our_cost=not.is.null&order=checked_at.desc&limit=3000").catch(() => []);
   const costOf = (pn: string | null | undefined) => { const q = pn ? quotes.find((x) => x.parts && normPart(x.parts.part_number) === normPart(pn)) : undefined; return q ? Number(q.our_cost) : null; };
-  let costOil = Number(j.cost_oil ?? 0);
-  if (j.oil_grade && j.oil_litres) {
+  let costOil = theirOil ? 0 : Number(j.cost_oil ?? 0);
+  if (!theirOil && j.oil_grade && j.oil_litres) {
     const [op] = await sbGet<{ cost_per_l: number }>(`oil_prices?select=cost_per_l&grade=eq.${enc(j.oil_grade)}`).catch(() => []);
     if (op) costOil = r2(Number(j.oil_litres) * Number(op.cost_per_l));
   }
-  let costParts = j.filter_part ? r2((costOf(j.filter_part) ?? rules.filter_estimate ?? 6.5) * cars) : 0;
+  let costParts = j.filter_part && !theirFilter ? r2((costOf(j.filter_part) ?? rules.filter_estimate ?? 6.5) * cars) : 0;
   const spec = b?.vehicles?.vehicle_specs;
   for (const { kind, times } of chargedAddons(j.lines ?? [], b?.services?.addons, cars)) {
     if (kind === "washer_fluid" || kind === "coolant") {

@@ -48,3 +48,12 @@ test("lines typed on site aren't mistaken for parts", () => {
   assert.deepEqual(chargedAddons([l("Battery", 220), l("Wiper blades", 85), l("Cabin air filter", 40), l("Engine air filter", 40), l("Washer fluid top-up", 5), l("Coolant top-up", 25)], [], 1).map((x) => x.kind),
     ["wipers", "cabin_filter", "engine_filter", "battery", "washer_fluid", "coolant"]);
 });
+
+test("ownParts: from the booking, or from the price line when the booking lost it", async () => {
+  const { ownParts } = await import("../addon-needs.ts");
+  assert.equal(ownParts({ own: "oil" }, []), "oil");
+  assert.equal(ownParts(null, [{ label: "Oil change labour (you supply oil and filter)" }]), "both");
+  assert.equal(ownParts({}, [{ label: "Oil change labour (you supply filter)" }]), "filter");
+  assert.equal(ownParts({}, [{ label: "Oil change labour (you supply oil)" }]), "oil");
+  assert.equal(ownParts({}, [{ label: "Synthetic oil change" }]), null);
+});

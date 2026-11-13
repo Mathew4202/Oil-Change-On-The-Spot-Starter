@@ -1,6 +1,6 @@
 // Everything the calendar needs for one day: jobs, totals, what to bring, time off.
 import { activeHolds, holdLink } from "@/lib/os/holds";
-import { addonNeeds, sumNeeds, onShelf, normPart, chargedAddons, ADDON_COST_DEFAULT } from "@/lib/os/addon-needs";
+import { addonNeeds, sumNeeds, onShelf, normPart, chargedAddons, ownParts, ADDON_COST_DEFAULT } from "@/lib/os/addon-needs";
 import { dayRoute } from "@/lib/os/route";
 import { bookingPhotoLink } from "@/lib/os/vin-photo";
 import { lastVisit } from "@/lib/os/last-visit";
@@ -59,10 +59,11 @@ export async function GET(req: NextRequest) {
   for (const r of rows) {
     const s = r.vehicles?.vehicle_specs;
     if (["done", "no_show", "cancelled"].includes(r.status)) continue;   // finished: its oil and filter are already used (and off the shelf)
-    if (!s || r.services?.own === "both" || (r.services?.job && !["oil_change", "seasonal"].includes(r.services.job))) continue;
+    const own = ownParts(r.services, r.quote_breakdown?.lines);
+    if (!s || own === "both" || (r.services?.job && !["oil_change", "seasonal"].includes(r.services.job))) continue;
     const g = s.oil_grade.toUpperCase().replace(/^(\d+|O)W/, (m) => m.replace("O", "0")).replace(/^EURO /, "Euro ");   // "Ow-20" and "0W-20" are the same oil
-    if (r.services?.own !== "oil") oil[g] = Math.round(((oil[g] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
-    if (s.oil_filter_part && r.services?.own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
+    if (own !== "oil") oil[g] = Math.round(((oil[g] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
+    if (s.oil_filter_part && own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
   }
   // the add-ons they picked: cabin and air filters, wipers, battery, top-ups (any kind of job)
   const addonList = sumNeeds(rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).map((r) => addonNeeds(r.services?.addons, r.vehicles?.vehicle_specs, r.cars || 1, { washer_fluid: topupRules.washer, coolant: topupRules.coolant })));
@@ -127,7 +128,7 @@ export async function GET(req: NextRequest) {
     const job = r.services?.job ?? "oil_change";
     if (!["oil_change", "seasonal"].includes(job)) return null;
     // they bring the oil, the filter or both: we don't pay for what they bring, just the rest
-    const own = r.services?.own ?? null;
+    const own = ownParts(r.services, r.quote_breakdown?.lines);
     const weOil = own !== "both" && own !== "oil", weFilter = own !== "both" && own !== "filter";
     const lines = r.quote_breakdown?.lines ?? [];
     const subtotal = lines.reduce((t, l) => t + Number(l.amount), 0) || (r.quoted_total != null ? Number(r.quoted_total) / 1.14 : 0);

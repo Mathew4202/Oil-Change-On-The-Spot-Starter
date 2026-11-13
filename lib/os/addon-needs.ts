@@ -86,3 +86,15 @@ export function allocateFrom(order: { part: string; onHand: number }[], earlier:
   return { part: order[0]?.part ?? "", inStock: false, left: 0 };
 }
 
+
+/** What the customer brought themselves: the booking says so, or the price line does ("Oil change labour (you supply oil and filter)").
+ *  The line counts too, so a booking that lost the flag still never charges us for oil or a filter they handed us. */
+export function ownParts(services: { own?: string | null } | null | undefined, lines: { label: string }[] | null | undefined): "both" | "oil" | "filter" | null {
+  const o = services?.own;
+  if (o === "both" || o === "oil" || o === "filter") return o;
+  for (const l of lines ?? []) {
+    const m = /you supply (?:the )?(oil and filter|filter and oil|oil|filter)\b/i.exec(l.label || "");
+    if (m) return /and/i.test(m[1]) ? "both" : (m[1].toLowerCase() as "oil" | "filter");
+  }
+  return null;
+}
