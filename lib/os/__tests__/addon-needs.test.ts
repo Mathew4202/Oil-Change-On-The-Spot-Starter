@@ -40,3 +40,11 @@ test("linked filters: earlier bookings take theirs first, the cars' own number f
   assert.deepEqual(allocateFrom(order, 1), { part: "0175580", inStock: true, left: 20 });  // tomorrow's job has the NAPA one
   assert.equal(allocateFrom(order, 21).inStock, false);
 });
+
+test("lines typed on site aren't mistaken for parts", () => {
+  const l = (label: string, amount = 10) => ({ label, amount });
+  assert.deepEqual(chargedAddons([l("Full synthetic oil change", 110), l("Remote battery replacement")], [], 1), []);
+  assert.deepEqual(chargedAddons([l("Key fob battery"), l("Wiper fluid top-up")], [], 1).map((x) => x.kind), ["washer_fluid"].filter(() => false));
+  assert.deepEqual(chargedAddons([l("Battery", 220), l("Wiper blades", 85), l("Cabin air filter", 40), l("Engine air filter", 40), l("Washer fluid top-up", 5), l("Coolant top-up", 25)], [], 1).map((x) => x.kind),
+    ["wipers", "cabin_filter", "engine_filter", "battery", "washer_fluid", "coolant"]);
+});

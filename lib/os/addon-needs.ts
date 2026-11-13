@@ -57,11 +57,16 @@ export function onShelf(x: Need, parts: { part_number: string; description: stri
 }
 
 /** Which charged add-ons a price list has, and how many of each part (a booked add-on on a 2-car visit = 2). */
-export const ADDON_NAMES: Record<string, RegExp> = { wipers: /wiper/i, cabin_filter: /cabin/i, engine_filter: /engine air/i, battery: /battery/i, washer_fluid: /washer/i, coolant: /coolant|antifreeze/i };
+// Matched against the price lines. Kept tight so a line typed on site doesn't get mistaken for a part:
+// "Remote battery replacement" is a key fob battery, not a $200 car battery.
+export const ADDON_NAMES: Record<string, RegExp> = {
+  wipers: /^wiper blades?\b|\bwiper blades?\b(?!.*(fluid|motor|arm))/i, cabin_filter: /\bcabin (air )?filter/i, engine_filter: /\bengine air filter/i,
+  battery: /^(car |vehicle )?battery\b(?!.*(remote|fob|key))/i, washer_fluid: /\bwasher fluid/i, coolant: /\b(coolant|antifreeze)\b(?!.*(sensor|hose|cap))/i };
+const NOT_A_PART = /\b(remote|fob|key|labour|labor only|inspection|check)\b/i;
 export function chargedAddons(lines: { label: string; amount: number }[], booked: string[] | null | undefined, cars = 1) {
   const out: { kind: string; times: number }[] = [];
   for (const k of Object.keys(ADDON_NAMES)) {
-    const n = lines.filter((l) => ADDON_NAMES[k].test(l.label) && Number(l.amount) > 0).length;
+    const n = lines.filter((l) => ADDON_NAMES[k].test(l.label) && !NOT_A_PART.test(l.label) && Number(l.amount) > 0).length;
     if (n) out.push({ kind: k, times: (booked ?? []).includes(k) && n === 1 ? Math.max(1, cars || 1) : n });
   }
   return out;
