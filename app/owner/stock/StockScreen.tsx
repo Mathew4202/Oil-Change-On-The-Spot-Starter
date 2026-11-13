@@ -47,6 +47,13 @@ export default function StockScreen() {
     await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ partId: p.id, setTo: Number(v) }) });
     load();
   }
+  async function setPaid(p: Part) {
+    const oilRow = p.part_number.startsWith("OIL-");
+    const v = window.prompt(oilRow ? `What we pay for one litre of ${p.oil_grade ?? "this oil"}, with tax:` : `What we paid for one ${p.part_number}, with tax:`, p.paid != null ? String(p.paid) : "");
+    if (v == null || v.trim() === "" || !(Number(v) > 0)) return;
+    await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "paid", partId: p.id, paid: Number(v) }) });
+    load();
+  }
   async function setRetail(p: Part) {
     const v = window.prompt(`Store's retail price for one ${p.part_number}, before tax (what customers pay for the part, with tax added + labour):`, p.retail != null ? String(p.retail) : "");
     if (v == null || v.trim() === "" || !(Number(v) > 0)) return;
@@ -127,7 +134,10 @@ export default function StockScreen() {
                 <div key={p.id} className="flex items-center justify-between gap-2 py-2 px-1 border-t first:border-t-0" style={{ borderColor: "#eef1f6" }}>
                   <div className="min-w-0">
                     <p className="font-bold truncate">{p.unit === "L" ? (p.oil_grade ? `${p.oil_grade} oil` : p.category === "coolant" ? "Coolant" : "Washer fluid") : p.part_number}</p>
-                    <p className="text-xs text-[#4a5878] truncate">{p.brand}{low ? " · low" : ""}{p.paid != null ? ` · paid $${Number(p.paid).toFixed(2)}` : ""}</p>
+                    <p className="text-xs text-[#4a5878] truncate">{p.brand}{low ? " · low" : ""}</p>
+                    <button onClick={() => setPaid(p)} className="text-xs font-semibold underline decoration-dotted text-left text-[#4a5878]">
+                      {p.paid != null ? `paid $${Number(p.paid).toFixed(2)}${p.unit === "L" ? "/L" : " each"} with tax` : "paid: tap to add"}
+                    </button>
                     {["cabin_filter", "engine_filter", "wiper", "battery"].includes(p.category ?? "") && (
                       <button onClick={() => setRetail(p)} className="text-xs font-semibold underline decoration-dotted text-left" style={{ color: p.retail != null ? NAVY : "#9b1c1c" }}>
                         {p.retail != null ? `retail $${Number(p.retail).toFixed(2)} before tax` : "no retail price: tap to add"}

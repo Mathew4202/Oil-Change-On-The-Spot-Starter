@@ -93,6 +93,15 @@ export async function POST(req: NextRequest) {
   const owner = currentOwner();
   if (!owner) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
+  if (body.action === "paid") {   // fix what we paid for one (a litre for oil), with HST, when a receipt read it wrong
+    const v = Math.round(Number(body.paid) * 100) / 100;
+    if (!(v > 0 && v < 5000)) return NextResponse.json({ ok: false, error: "Type what you paid for one, with tax" }, { status: 400 });
+    const [p] = await sbGet<{ id: string; part_number: string; oil_grade: string | null }>(`parts?select=id,part_number,oil_grade&id=eq.${enc(String(body.partId))}`).catch(() => []);
+    if (!p) return NextResponse.json({ ok: false, error: "Part not found" }, { status: 404 });
+    await sbInsert("part_quotes", { part_id: p.id, supplier: "fixed in Stock", our_cost: v });
+    if (p.part_number.startsWith("OIL-")) await sbInsert("oil_prices", { grade: p.oil_grade || p.part_number.slice(4), cost_per_l: v, supplier: "fixed in Stock", updated_at: new Date().toISOString() }, { upsertOn: "grade" });
+    return NextResponse.json({ ok: true, paid: v });
+  }
   if (body.action === "retail") {   // type the store's retail price for a part (before tax)
     const v = Math.round(Number(body.retail) * 100) / 100;
     if (!(v > 0 && v < 5000)) return NextResponse.json({ ok: false, error: "Type the retail price before tax, like 21.24" }, { status: 400 });

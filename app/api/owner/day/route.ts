@@ -183,7 +183,10 @@ export async function GET(req: NextRequest) {
           const spent = Number(done.cost_oil ?? 0) + Number(done.cost_parts ?? 0) + Number(done.cost_other ?? 0);
           // the oil and parts recorded on the job are what we paid with tax: before tax here (the HST comes back)
           const made = Math.round((Number(done.revenue ?? done.subtotal) - exTax(spent)) * 100) / 100;
-          return { profit: money ? afterGas(made, r) : null, costs: null, actual: true };
+          // what it took off, so a wrong price on a receipt is easy to spot
+          const took = money ? { oil: Math.round(exTax(Number(done.cost_oil ?? 0)) * 100) / 100, litres: done.oil_litres ?? null, grade: done.oil_grade ?? null,
+            parts: Math.round(exTax(Number(done.cost_parts ?? 0)) * 100) / 100, filter: done.filter_part ?? null, supplies: Math.round(exTax(Number(done.cost_other ?? 0)) * 100) / 100 } : null;
+          return { profit: money ? afterGas(made, r) : null, costs: null, actual: true, took };
         }
         // not done yet: worked out live from what we last paid for the oil, filter and any add-on parts
         const c = costsOf(r, s); const ad = addonCostsOf(r, s);

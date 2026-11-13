@@ -420,6 +420,38 @@ export async function receiptFor(where: string): Promise<{ data: ReceiptData; jo
   };
 }
 
+/** Work a finished job's costs out again from today's prices (after fixing a price a receipt got wrong). */
+export async function recostJob(bookingId: string) {
+  const [j] = await sbGet<{ id: string; oil_grade: string | null; oil_litres: number | null; filter_part: string | null; lines: { label: string; amount: number }[] | null; cost_oil: number | null; cost_parts: number | null }>(
+    `jobs?select=id,oil_grade,oil_litres,filter_part,lines,cost_oil,cost_parts&booking_id=eq.${enc(bookingId)}&limit=1`);
+  if (!j) return { ok: false as const, error: "This job isn't finished" };
+  const [b] = await sbGet<{ cars: number | null; services: { addons?: string[] } | null; vehicles: { vehicle_specs: { cabin_filter_part?: string | null; air_filter_part?: string | null } | null } | null }>(
+    `bookings?select=cars,services,vehicles(vehicle_specs(cabin_filter_part,air_filter_part))&id=eq.${enc(bookingId)}`).catch(() => []);
+  const cars = b?.cars || 1;
+  const rulesRows = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value").catch(() => []);
+  const rules = Object.fromEntries(rulesRows.map((x) => [x.key, Number(x.value)]));
+  const quotes = await sbGet<{ our_cost: number | null; parts: { part_number: string } | null }>("part_quotes?select=our_cost,parts!inner(part_number)&our_cost=not.is.null&order=checked_at.desc&limit=3000").catch(() => []);
+  const costOf = (pn: string | null | undefined) => { const q = pn ? quotes.find((x) => x.parts && normPart(x.parts.part_number) === normPart(pn)) : undefined; return q ? Number(q.our_cost) : null; };
+  let costOil = Number(j.cost_oil ?? 0);
+  if (j.oil_grade && j.oil_litres) {
+    const [op] = await sbGet<{ cost_per_l: number }>(`oil_prices?select=cost_per_l&grade=eq.${enc(j.oil_grade)}`).catch(() => []);
+    if (op) costOil = r2(Number(j.oil_litres) * Number(op.cost_per_l));
+  }
+  let costParts = j.filter_part ? r2((costOf(j.filter_part) ?? rules.filter_estimate ?? 6.5) * cars) : 0;
+  const spec = b?.vehicles?.vehicle_specs;
+  for (const { kind, times } of chargedAddons(j.lines ?? [], b?.services?.addons, cars)) {
+    if (kind === "washer_fluid" || kind === "coolant") {
+      const perL = costOf(kind === "coolant" ? "COOLANT" : "WASHER-FLUID");
+      costParts = r2(costParts + (perL != null ? perL * topupLitres(kind, rules) * times : (rules[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times));
+      continue;
+    }
+    const pn = kind === "cabin_filter" ? spec?.cabin_filter_part : kind === "engine_filter" ? spec?.air_filter_part : null;
+    costParts = r2(costParts + (costOf(pn) ?? rules[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times);
+  }
+  await sbPatch("jobs", `id=eq.${j.id}`, { cost_oil: costOil, cost_parts: costParts });
+  return { ok: true as const, before: r2(Number(j.cost_oil ?? 0) + Number(j.cost_parts ?? 0)), after: r2(costOil + costParts) };
+}
+
 /** Litres a top-up takes: HQ settings topup_washer_l / topup_coolant_l, or 2 L of washer fluid and 1 L of coolant. */
 const topupLitres = (kind: "washer_fluid" | "coolant", rules: Record<string, number>) =>
   Number(rules[kind === "coolant" ? "topup_coolant_l" : "topup_washer_l"] ?? TOPUP_L[kind]);
