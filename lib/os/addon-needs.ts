@@ -118,3 +118,11 @@ export function missingParts(b: { job?: string | null; own?: string | null; spec
   }
   return out;
 }
+
+/** An oil grade the way Stock and our prices spell it: " 5w30 " -> "5W-30", "euro 0w-30" -> "Euro 0W-30". */
+export function cleanGrade(g: string | null | undefined): string | null {
+  const t = (g ?? "").trim().replace(/\s+/g, " ");
+  if (!t) return null;
+  const m = t.match(/^(euro\s+)?(\d{1,2})\s*w\s*-?\s*(\d{1,2})$/i);
+  return m ? `${m[1] ? "Euro " : ""}${m[2]}W-${m[3]}` : t.toUpperCase();
+}

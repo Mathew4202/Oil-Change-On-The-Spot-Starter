@@ -66,3 +66,9 @@ test("missingParts: names the car and the part # we still need", async () => {
   assert.deepEqual(missingParts({ job: "oil_change", own: "filter", spec: { oil_grade: "0W-20", oil_filter_part: null }, car: "X" }), []);
   assert.deepEqual(missingParts({ job: "oil_change", spec: { oil_grade: "0W-20", oil_filter_part: "27356", wiper_driver: "26" }, addons: ["wipers"], car: "X" }), ["X: wiper size not on file"]);
 });
+
+test("cleanGrade: a grade typed with spaces or no dash matches Stock and prices", async () => {
+  const { cleanGrade } = await import("../addon-needs.ts");
+  assert.equal(cleanGrade("5W-30 "), "5W-30"); assert.equal(cleanGrade(" 5w30"), "5W-30"); assert.equal(cleanGrade("euro 0w-30"), "Euro 0W-30");
+  assert.equal(cleanGrade(""), null); assert.equal(cleanGrade(null), null);
+});

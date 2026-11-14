@@ -1,6 +1,6 @@
 // The job screen: start, finish (record the work), take payment, update stock, email the receipt.
 import { checksFrom } from "@/lib/os/fleet-math";
-import { chargedAddons, normPart, ownParts, ADDON_COST_DEFAULT, TOPUP_L } from "@/lib/os/addon-needs";
+import { chargedAddons, normPart, ownParts, cleanGrade, ADDON_COST_DEFAULT, TOPUP_L } from "@/lib/os/addon-needs";
 import crypto from "crypto";
 import { Resend } from "resend";
 import { sbGet, sbInsert, sbPatch, sbRpc, enc } from "@/lib/os/db";
@@ -122,7 +122,7 @@ export async function finishJob(input: FinishInput, owner: string) {
   const spec = ctx.vehicle?.vehicle_specs;
   const own = ownParts(ctx.booking.services, lines);
   const withOil = !ctx.booking.services?.job || ["oil_change", "seasonal"].includes(ctx.booking.services.job);
-  const grade = input.oilGrade || spec?.oil_grade || null;
+  const grade = cleanGrade(input.oilGrade) || cleanGrade(spec?.oil_grade) || null;   // "5W-30 " typed with a space matched no price and no Stock
   const litres = input.oilLitres ?? (spec ? Number(spec.capacity_l) * (ctx.booking.cars || 1) : null);
   // typed the way receipts save it: "ppf 2100290 " → "2100290"
   const cleanPart = (x: string | null | undefined) => (x ? x.toUpperCase().trim().replace(/^(PPF|NAPA|PFG)\s*/, "").replace(/\s+/g, "") || null : null);
@@ -462,9 +462,17 @@ export async function recostJob(bookingId: string) {
   const [j] = await sbGet<{ id: string; oil_grade: string | null; oil_litres: number | null; filter_part: string | null; lines: { label: string; amount: number }[] | null; cost_oil: number | null; cost_parts: number | null }>(
     `jobs?select=id,oil_grade,oil_litres,filter_part,lines,cost_oil,cost_parts&booking_id=eq.${enc(bookingId)}&limit=1`);
   if (!j) return { ok: false as const, error: "This job isn't finished" };
-  const [b] = await sbGet<{ cars: number | null; services: { addons?: string[] } | null; vehicles: { vehicle_specs: { cabin_filter_part?: string | null; air_filter_part?: string | null } | null } | null }>(
-    `bookings?select=cars,services,vehicles(vehicle_specs(cabin_filter_part,air_filter_part))&id=eq.${enc(bookingId)}`).catch(() => []);
+  const [b] = await sbGet<{ cars: number | null; services: { job?: string; addons?: string[] } | null; vehicles: { vehicle_specs: { cabin_filter_part?: string | null; air_filter_part?: string | null; oil_filter_part?: string | null } | null } | null }>(
+    `bookings?select=cars,services,vehicles(vehicle_specs(cabin_filter_part,air_filter_part,oil_filter_part))&id=eq.${enc(bookingId)}`).catch(() => []);
   const cars = b?.cars || 1;
+  // a grade saved with a stray space, or no filter saved (finished on a device that lost it): fix them from the car
+  const withOil = !b?.services?.job || ["oil_change", "seasonal"].includes(b.services.job);
+  const fixGrade = cleanGrade(j.oil_grade);
+  const fixFilter = withOil && !j.filter_part ? b?.vehicles?.vehicle_specs?.oil_filter_part ?? null : null;
+  if ((fixGrade && fixGrade !== j.oil_grade) || fixFilter) {
+    await sbPatch("jobs", `id=eq.${j.id}`, { ...(fixGrade !== j.oil_grade ? { oil_grade: fixGrade } : {}), ...(fixFilter ? { filter_part: fixFilter } : {}) });
+    j.oil_grade = fixGrade; if (fixFilter) j.filter_part = fixFilter;
+  }
   // they brought the oil and/or the filter: none of it is our cost, and anything finishing took off the shelf goes back
   const own = ownParts(b?.services as { own?: string | null } | null, j.lines);
   const theirOil = own === "both" || own === "oil", theirFilter = own === "both" || own === "filter";
@@ -479,6 +487,27 @@ export async function recostJob(bookingId: string) {
         await sbInsert("stock_moves", { part_id: m.part_id, qty: -Number(m.qty), reason: "adjust", job_id: j.id });
         await sbPatch("stock_moves", `id=eq.${m.id}`, { reason: "adjust" });   // so a second Recheck doesn't put it back twice
       }
+    }
+  }
+  // finishing missed taking our oil or filter off the shelf (grade typed with a space, filter lost): take it now, once
+  const took: string[] = [];
+  if (withOil) {
+    const done = await sbGet<{ parts: { part_number: string } | null }>(`stock_moves?select=parts(part_number)&job_id=eq.${enc(j.id)}&qty=lt.0`).catch(() => []);
+    const tookPn = done.map((m) => m.parts?.part_number ?? "");
+    const takeOne = async (pns: string[], qty: number, what: string) => {
+      const ps = await sbGet<{ id: string; part_number: string; on_hand: number }>(`parts?select=id,part_number,on_hand&part_number=in.(${pns.map((x) => `"${x.replace(/"/g, "")}"`).join(",")})&on_hand=gt.0&order=on_hand.desc`).catch(() => []);
+      const p = ps[0]; if (!p) { took.push(`${what} isn't in Stock, so nothing came off`); return; }
+      const used = r2(Math.min(Number(p.on_hand), qty));
+      await sbPatch("parts", `id=eq.${p.id}`, { on_hand: r2(Number(p.on_hand) - used) });
+      await sbInsert("stock_moves", { part_id: p.id, qty: -used, reason: "job", job_id: j.id });
+      took.push(`${what}: ${r2(Number(p.on_hand) - used)} left`);
+    };
+    if (!theirOil && j.oil_grade && j.oil_litres && !tookPn.some((x) => /^OIL-/i.test(x)))
+      await takeOne([`OIL-${j.oil_grade.replace(/^Euro /i, "").toUpperCase()}`], Number(j.oil_litres), `${j.oil_grade} oil`);
+    if (!theirFilter && j.filter_part) {
+      const { loadLinks, sameParts } = await import("@/lib/os/part-alias");
+      const group = sameParts(j.filter_part, await loadLinks());
+      if (!tookPn.some((x) => group.some((g) => normPart(g) === normPart(x)))) await takeOne(group, cars, `Filter ${j.filter_part}`);
     }
   }
   const rulesRows = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value").catch(() => []);
@@ -502,7 +531,7 @@ export async function recostJob(bookingId: string) {
     costParts = r2(costParts + (costOf(pn) ?? rules[`addon_part_${kind}`] ?? ADDON_COST_DEFAULT[kind]) * times);
   }
   await sbPatch("jobs", `id=eq.${j.id}`, { cost_oil: costOil, cost_parts: costParts });
-  return { ok: true as const, before: r2(Number(j.cost_oil ?? 0) + Number(j.cost_parts ?? 0)), after: r2(costOil + costParts) };
+  return { ok: true as const, before: r2(Number(j.cost_oil ?? 0) + Number(j.cost_parts ?? 0)), after: r2(costOil + costParts), took };
 }
 
 /** Litres a top-up takes: HQ settings topup_washer_l / topup_coolant_l, or 2 L of washer fluid and 1 L of coolant. */
