@@ -19,7 +19,7 @@ type Job = {
   took?: { oil: number; litres: number | null; grade: string | null; parts: number; filter: string | null; supplies: number } | null;
   name: string; phone: string | null; address: string | null; car: string; engine: string | null;
   oil: { grade: string; litres: number; filter: string | null; spec: string | null; engine?: string | null; diesel?: boolean; wix?: string | null;
-    checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterAlt?: string[]; filterUse?: string | null; filterCost?: number | null; filterNote?: string | null } | null;
+    checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterAlt?: string[]; filterUse?: string | null; filterGuess?: { part: string; from: string } | null; filterCost?: number | null; filterNote?: string | null } | null;
   partNos?: string[];
   lastTime?: { now: string[]; soon: string[]; note: string | null } | null;
   groupId?: string | null;   // several cars on one visit
@@ -288,7 +288,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                     <span className="text-[#4a5878]">Engine</span><span className="font-semibold">{j.engine || j.oil.engine || "not on file"}{j.oil.diesel ? " (diesel)" : ""}</span>
                     <span className="text-[#4a5878]">Oil</span><span className="font-semibold">{j.oil.grade.replace(/^Euro /, "")}{j.oil.diesel ? " diesel oil" : " full synthetic"}, {j.oil.litres} L</span>
                     <span className="text-[#4a5878]">Must meet</span><span className="font-semibold">{j.oil.spec || "not on file"}</span>
-                    <span className="text-[#4a5878]">Oil filter</span><span className="font-semibold">{j.oil.filter ? (j.oil.filterUse ? `${tag(j.oil.filterUse, day?.stores)} (same as ${tag(j.oil.filter, day?.stores, "NAPA")})` : `${tag(j.oil.filter, day?.stores, "NAPA")}${j.oil.filterAlt?.length ? ` or ${j.oil.filterAlt.map((p) => tag(p, day?.stores)).join(" or ")}` : ""}`) : "find on site"}{j.oil.wix ? ` · WIX ${j.oil.wix}` : ""}{j.oil.filter ? (j.oil.filterInStock ? " · in stock" : " · buy") : ""}{j.oil.filterCost != null ? ` · $${j.oil.filterCost.toFixed(2)}` : ""}</span>
+                    <span className="text-[#4a5878]">Oil filter</span><span className="font-semibold">{j.oil.filter ? (j.oil.filterUse ? `${tag(j.oil.filterUse, day?.stores)} (same as ${tag(j.oil.filter, day?.stores, "NAPA")})` : `${tag(j.oil.filter, day?.stores, "NAPA")}${j.oil.filterAlt?.length ? ` or ${j.oil.filterAlt.map((p) => tag(p, day?.stores)).join(" or ")}` : ""}`) : j.oil.filterGuess ? `likely ${tag(j.oil.filterGuess.part, day?.stores)} (we used it on a ${j.oil.filterGuess.from}), check it` : "find on site"}{j.oil.wix ? ` · WIX ${j.oil.wix}` : ""}{j.oil.filter ? (j.oil.filterInStock ? " · in stock" : " · buy") : ""}{j.oil.filterCost != null ? ` · $${j.oil.filterCost.toFixed(2)}` : ""}</span>
                     {j.oil.filterNote && <span className="col-span-2 text-[12px] text-[#8a5a00]">{j.oil.filterNote}</span>}
                     {(j.partNos ?? []).length > 0 && <><span className="text-[#4a5878]">Used before</span><span className="font-semibold">{j.partNos!.join(" · ")}</span></>}
                     {j.oil.lowConfidence && <span className="col-span-2 text-[12px] text-[#8a5a00]">Found online but not sure: check the oil cap or the manual.</span>}

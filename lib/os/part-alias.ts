@@ -146,3 +146,10 @@ export async function fitFromReceipt(part: string, category: string, car: { year
   if (linkedTo.length) return `${pn} linked as the same ${word} as ${[...new Set(linkedTo)].join(", ")} for ${label}`;
   return `${pn} was already on file for ${label}`;
 }
+
+/** Every car we have a filter number for (our jobs, receipts that printed the car): for guesses and "fits these cars". */
+export async function loadFitRows() {
+  const { } = {};
+  return sbGet<import("@/lib/os/filter-guess").FitRow>(
+    "vehicle_specs?select=year_from,year_to,make,model,engine,oil_filter_part,cabin_filter_part,air_filter_part&or=(oil_filter_part.not.is.null,cabin_filter_part.not.is.null,air_filter_part.not.is.null)&limit=10000").catch(() => []);
+}

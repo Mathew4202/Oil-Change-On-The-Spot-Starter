@@ -7,7 +7,7 @@ import { addonNeeds, sumNeeds, onShelf } from "@/lib/os/addon-needs";
 
 export const dynamic = "force-dynamic";
 type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null;
-  paid?: number | null; retail?: number | null; store?: string | null };
+  paid?: number | null; retail?: number | null; store?: string | null; fits?: string[] };
 
 export async function GET() {
   if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
@@ -15,9 +15,9 @@ export async function GET() {
   const from = new Date().toISOString(), to = new Date(halifaxToDate(today, 0).getTime() + 8 * 86400000).toISOString();
   const [parts, upcoming] = await Promise.all([
     sbGet<Part>("parts?select=id,part_number,brand,description,category,on_hand,unit,oil_grade,reorder_at&order=category,part_number"),
-    sbGet<{ cars: number; starts_at: string; quote_breakdown: { lines?: { label: string }[] } | null; services: { job?: string; own?: string | null; addons?: string[] } | null; vehicles: { year?: number | null; make?: string | null; model?: string | null; vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null;
+    sbGet<{ cars: number; starts_at: string; quote_breakdown: { lines?: { label: string }[] } | null; services: { job?: string; own?: string | null; addons?: string[] } | null; vehicles: { year?: number | null; make?: string | null; model?: string | null; engine?: string | null; vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null;
       cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null } | null } | null }>(
-      `bookings?select=cars,starts_at,quote_breakdown,services,vehicles(year,make,model,vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&status=in.(confirmed,requested,in_progress)&starts_at=gte.${from}&starts_at=lt.${to}&order=starts_at`),
+      `bookings?select=cars,starts_at,quote_breakdown,services,vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&status=in.(confirmed,requested,in_progress)&starts_at=gte.${from}&starts_at=lt.${to}&order=starts_at`),
   ]);
   // What the next 7 days need
   const needFilters: Record<string, number> = {}, needOil: Record<string, number> = {};
@@ -31,8 +31,16 @@ export async function GET() {
   // part numbers we still need to look up: listed by car and day, never counted as covered
   const { missingParts, ownParts } = await import("@/lib/os/addon-needs");
   const dayName = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric" });
-  const missing = upcoming.flatMap((b) => missingParts({ job: b.services?.job, own: ownParts(b.services, b.quote_breakdown?.lines), spec: b.vehicles?.vehicle_specs as never,
-    addons: b.services?.addons, car: [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model].filter(Boolean).join(" ") || "A car" }).map((m) => `${dayName(b.starts_at)}, ${m}`));
+  const { loadFitRows } = await import("@/lib/os/part-alias");
+  const { guessFilter, carsFor } = await import("@/lib/os/filter-guess");
+  const fitRows = await loadFitRows();
+  const missing = upcoming.flatMap((b) => {
+    const car = { year: b.vehicles?.year ?? null, make: b.vehicles?.make ?? null, model: b.vehicles?.model ?? null, engine: b.vehicles?.engine ?? null };
+    return missingParts({ job: b.services?.job, own: ownParts(b.services, b.quote_breakdown?.lines), spec: b.vehicles?.vehicle_specs as never,
+      addons: b.services?.addons, car: [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model].filter(Boolean).join(" ") || "A car",
+      guess: { oil: b.vehicles?.vehicle_specs?.oil_filter_part ? null : guessFilter(fitRows, car, "oil_filter_part"), cabin: guessFilter(fitRows, car, "cabin_filter_part"), air: guessFilter(fitRows, car, "air_filter_part") } })
+      .map((m) => `${dayName(b.starts_at)}, ${m}`);
+  });
   // the add-ons they picked (cabin and air filters, wipers, battery, top-ups), for every kind of job
   const addons = sumNeeds(upcoming.map((b) => addonNeeds(b.services?.addons, b.vehicles?.vehicle_specs, b.cars)));
   // a filter linked as the same part (Parts Source vs NAPA) counts too
@@ -56,6 +64,9 @@ export async function GET() {
     p.paid = qs.find((q) => q.our_cost != null)?.our_cost ?? null;
     p.retail = qs.find((q) => q.retail != null)?.retail ?? null;
     p.store = storeName(qs[0]?.supplier, p.brand) ?? stores[storeKey(p.part_number)] ?? null;
+    // every car we know takes this filter (or one linked as the same part)
+    const col = p.category === "oil_filter" ? "oil_filter_part" : p.category === "cabin_filter" ? "cabin_filter_part" : p.category === "engine_filter" ? "air_filter_part" : null;
+    if (col) p.fits = carsFor(fitRows, sameParts(p.part_number, links), col);
   }
   return NextResponse.json({ parts, toBuy, missing, bookingsCounted: upcoming.length });
 }

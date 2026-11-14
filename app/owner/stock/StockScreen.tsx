@@ -5,7 +5,7 @@ import OwnerNav from "../OwnerNav";
 import { useRole } from "../RoleContext";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
-type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null; paid?: number | null; retail?: number | null; store?: string | null };
+type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null; paid?: number | null; retail?: number | null; store?: string | null; fits?: string[] };
 type Buy = { kind: string; label: string; need: number; have: number; buy: number; unit: string };
 const CAT: Record<string, string> = { oil: "Oil", oil_filter: "Oil filters", cabin_filter: "Cabin filters", engine_filter: "Engine air filters", wiper: "Wipers", battery: "Batteries", gloves: "Gloves (boxes)", shop_towels: "Shop towels", washer_fluid: "Washer fluid (litres)", coolant: "Coolant (litres)" };
 
@@ -66,7 +66,11 @@ export default function StockScreen() {
   }
 
   const groups = useMemo(() => {
-    const f = parts.filter((p) => (showEmpty || Number(p.on_hand) > 0) && (!q || `${p.part_number} ${p.brand} ${p.description} ${p.oil_grade}`.toLowerCase().includes(q.toLowerCase())));
+    // a car works too ("2020 escape"): every word has to match the part or a car it fits; a car search shows empty ones too
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const hay = (p: Part) => `${p.part_number} ${p.brand} ${p.description} ${p.oil_grade} ${(p.fits ?? []).join(" | ")}`.toLowerCase();
+    const carHit = (p: Part) => words.length > 0 && (p.fits ?? []).some((c) => words.every((w) => c.toLowerCase().includes(w) || (/^\d{4}$/.test(w) && yearIn(c, Number(w)))));
+    const f = parts.filter((p) => (showEmpty || Number(p.on_hand) > 0 || carHit(p)) && (!q || words.every((w) => hay(p).includes(w)) || carHit(p)));
     const g: Record<string, Part[]> = {};
     for (const p of f) (g[p.category || "other"] ||= []).push(p);
     return Object.entries(g).sort(([a], [b]) => (a === "oil" ? -1 : b === "oil" ? 1 : a.localeCompare(b)));
@@ -126,7 +130,7 @@ export default function StockScreen() {
         <AddStock onAdded={load} />
 
         <div className="flex gap-2">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search part # or oil" className="h-11 flex-1 rounded-xl border px-3 bg-white" style={{ borderColor: LINE }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search part #, oil or a car" className="h-11 flex-1 rounded-xl border px-3 bg-white" style={{ borderColor: LINE }} />
           <button onClick={() => setShowEmpty((s) => !s)} className="h-11 px-3 rounded-xl border bg-white text-sm font-bold" style={{ borderColor: LINE }}>{showEmpty ? "Hide empty" : "Show empty"}</button>
         </div>
 
@@ -142,6 +146,7 @@ export default function StockScreen() {
                   <div className="min-w-0">
                     <p className="font-bold truncate">{p.unit === "L" ? (p.oil_grade ? `${p.oil_grade} oil` : p.category === "coolant" ? "Coolant" : "Washer fluid") : p.part_number}</p>
                     <p className="text-xs text-[#4a5878] truncate">{[p.store && !(p.brand || "").toLowerCase().includes(p.store.toLowerCase()) ? `from ${p.store}` : null, p.brand].filter(Boolean).join(" · ")}{low ? " · low" : ""}</p>
+                    {(p.fits?.length ?? 0) > 0 && <p className="text-xs text-[#1e6b3a]">Fits {p.fits!.slice(0, 6).join(", ")}{p.fits!.length > 6 ? ` and ${p.fits!.length - 6} more` : ""}</p>}
                     <button onClick={() => setPaid(p)} className="text-xs font-semibold underline decoration-dotted text-left text-[#4a5878]">
                       {p.paid != null ? `paid $${Number(p.paid).toFixed(2)}${p.unit === "L" ? "/L" : " each"} with tax` : "paid: tap to add"}
                     </button>
@@ -215,4 +220,10 @@ function AddStock({ onAdded }: { onAdded: () => void }) {
       <p className="text-xs text-[#4a5878]">Add one thing at a time; the form stays open for the next one. A cost you enter updates the prices HQ uses for quotes and profit.</p>
     </section>
   );
+}
+
+/** "2017-2021 Honda Civic 1.5L" covers 2019. */
+function yearIn(car: string, y: number) {
+  const m = car.match(/^(\d{4})(?:-(\d{4}))?/);
+  return !!m && y >= Number(m[1]) && y <= Number(m[2] ?? m[1]);
 }

@@ -65,17 +65,23 @@ export async function GET(req: NextRequest) {
     if (own !== "oil") oil[g] = Math.round(((oil[g] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
     if (s.oil_filter_part && own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
   }
-  // part numbers we still need to look up (no filter # on file, no wiper size...): said plainly, never counted as in stock
-  const missing = rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).flatMap((r) => missingParts({
-    job: r.services?.job, own: ownParts(r.services, r.quote_breakdown?.lines), spec: r.vehicles?.vehicle_specs as never, addons: r.services?.addons,
-    car: [r.vehicles?.year, r.vehicles?.make, r.vehicles?.model].filter(Boolean).join(" ") || r.customers?.first_name || "A car" }));
   // the add-ons they picked: cabin and air filters, wipers, battery, top-ups (any kind of job)
   const addonList = sumNeeds(rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).map((r) => addonNeeds(r.services?.addons, r.vehicles?.vehicle_specs, r.cars || 1, { washer_fluid: topupRules.washer, coolant: topupRules.coolant })));
   // then everything that needs the day's jobs, also all at once
   // filters linked as the same part (Parts Source vs NAPA): count both, and say both on the Bring list
   const { loadLinks, sameParts, onHandAll, eitherOf, loadStores } = await import("@/lib/os/part-alias");
   const { tagAll } = await import("@/lib/os/store-tag");
-  const [links, stores] = await Promise.all([loadLinks(), loadStores()]);
+  const { loadFitRows } = await import("@/lib/os/part-alias");
+  const { guessFilter } = await import("@/lib/os/filter-guess");
+  const [links, stores, fitRows] = await Promise.all([loadLinks(), loadStores(), loadFitRows()]);
+  // a car with no filter number on file: the one we used on the same car and engine in a nearby year
+  const carOf = (r: Row) => ({ year: r.vehicles?.year ?? null, make: r.vehicles?.make ?? null, model: r.vehicles?.model ?? null, engine: r.vehicles?.engine ?? r.vehicles?.vehicle_specs?.engine ?? null });
+  const guessesFor = (r: Row) => ({ oil: r.vehicles?.vehicle_specs?.oil_filter_part ? null : guessFilter(fitRows, carOf(r), "oil_filter_part"),
+    cabin: guessFilter(fitRows, carOf(r), "cabin_filter_part"), air: guessFilter(fitRows, carOf(r), "air_filter_part") });
+  // part numbers we still need to look up (no filter # on file, no wiper size...): said plainly, never counted as in stock
+  const missing = rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).flatMap((r) => missingParts({
+    job: r.services?.job, own: ownParts(r.services, r.quote_breakdown?.lines), spec: r.vehicles?.vehicle_specs as never, addons: r.services?.addons,
+    car: [r.vehicles?.year, r.vehicles?.make, r.vehicles?.model].filter(Boolean).join(" ") || r.customers?.first_name || "A car", guess: guessesFor(r) }));
   const fl = Array.from(new Set(Object.keys(filters).flatMap((pn) => sameParts(pn, links))));
   const photoLinks: Record<string, string[]> = {};
   const filterCosts: Record<string, number> = {};
@@ -172,6 +178,7 @@ export async function GET(req: NextRequest) {
         engine: s.engine, diesel: s.fuel === "diesel", wix: s.wix_filter, checked: !!s.verified, lowConfidence: s.source === "ai_lookup" && s.confidence === "low",
         filterInStock: s.oil_filter_part ? (alloc[r.id] ? alloc[r.id].inStock : onHandAll(s.oil_filter_part, links, parts) >= 1) : null,
         filterAlt: s.oil_filter_part ? sameParts(s.oil_filter_part, links).slice(1) : [], filterUse: alloc[r.id]?.inStock && alloc[r.id].part !== s.oil_filter_part ? alloc[r.id].part : null,
+        filterGuess: s.oil_filter_part ? null : guessFilter(fitRows, carOf(r), "oil_filter_part"),
         filterCost: money && s.oil_filter_part ? filterCostFor(r, s.oil_filter_part) : null,
         filterNote: s.filter_note ?? null }
         // finished: what the job actually got (even if the car has no oil on file)
