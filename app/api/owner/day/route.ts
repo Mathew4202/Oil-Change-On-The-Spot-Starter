@@ -1,6 +1,6 @@
 // Everything the calendar needs for one day: jobs, totals, what to bring, time off.
 import { activeHolds, holdLink } from "@/lib/os/holds";
-import { addonNeeds, sumNeeds, onShelf, normPart, chargedAddons, ownParts, ADDON_COST_DEFAULT } from "@/lib/os/addon-needs";
+import { addonNeeds, sumNeeds, onShelf, normPart, chargedAddons, ownParts, missingParts, ADDON_COST_DEFAULT } from "@/lib/os/addon-needs";
 import { dayRoute } from "@/lib/os/route";
 import { bookingPhotoLink } from "@/lib/os/vin-photo";
 import { lastVisit } from "@/lib/os/last-visit";
@@ -65,6 +65,10 @@ export async function GET(req: NextRequest) {
     if (own !== "oil") oil[g] = Math.round(((oil[g] || 0) + Number(s.capacity_l) * (r.cars || 1)) * 10) / 10;
     if (s.oil_filter_part && own !== "filter") filters[s.oil_filter_part] = (filters[s.oil_filter_part] || 0) + (r.cars || 1);
   }
+  // part numbers we still need to look up (no filter # on file, no wiper size...): said plainly, never counted as in stock
+  const missing = rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).flatMap((r) => missingParts({
+    job: r.services?.job, own: ownParts(r.services, r.quote_breakdown?.lines), spec: r.vehicles?.vehicle_specs as never, addons: r.services?.addons,
+    car: [r.vehicles?.year, r.vehicles?.make, r.vehicles?.model].filter(Boolean).join(" ") || r.customers?.first_name || "A car" }));
   // the add-ons they picked: cabin and air filters, wipers, battery, top-ups (any kind of job)
   const addonList = sumNeeds(rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).map((r) => addonNeeds(r.services?.addons, r.vehicles?.vehicle_specs, r.cars || 1, { washer_fluid: topupRules.washer, coolant: topupRules.coolant })));
   // then everything that needs the day's jobs, also all at once
@@ -215,7 +219,8 @@ export async function GET(req: NextRequest) {
     bring: {
       oil: Object.entries(oil).map(([grade, litres]) => ({ grade, litres })),
       filters: Object.entries(filters).map(([part, qty]) => ({ part: tagAll(eitherOf(part, links), { ...stores, ...Object.fromEntries(sameParts(part, links).filter((p) => !stores[p.replace(/[^a-z0-9]/gi, "").toUpperCase()]).slice(0, 1).map((p) => [p.replace(/[^a-z0-9]/gi, "").toUpperCase(), "NAPA"])) }), qty, inStock: onHandAll(part, links, parts) })),
-      addons: addonList.map((x) => ({ unit: x.unit ?? null, label: x.part ? tagAll(x.label.replace(x.part, eitherOf(x.part, links)), stores) : x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never, (pn) => sameParts(pn, links)) })),
+      missing,
+      addons: addonList.filter((x) => !x.key.endsWith(":?")).map((x) => ({ unit: x.unit ?? null, label: x.part ? tagAll(x.label.replace(x.part, eitherOf(x.part, links)), stores) : x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never, (pn) => sameParts(pn, links)) })),
     },
   });
 }

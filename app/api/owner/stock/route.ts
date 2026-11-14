@@ -15,9 +15,9 @@ export async function GET() {
   const from = new Date().toISOString(), to = new Date(halifaxToDate(today, 0).getTime() + 8 * 86400000).toISOString();
   const [parts, upcoming] = await Promise.all([
     sbGet<Part>("parts?select=id,part_number,brand,description,category,on_hand,unit,oil_grade,reorder_at&order=category,part_number"),
-    sbGet<{ cars: number; services: { job?: string; own?: string | null; addons?: string[] } | null; vehicles: { vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null;
+    sbGet<{ cars: number; starts_at: string; quote_breakdown: { lines?: { label: string }[] } | null; services: { job?: string; own?: string | null; addons?: string[] } | null; vehicles: { year?: number | null; make?: string | null; model?: string | null; vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null;
       cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null } | null } | null }>(
-      `bookings?select=cars,services,vehicles(vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&status=in.(confirmed,requested,in_progress)&starts_at=gte.${from}&starts_at=lt.${to}`),
+      `bookings?select=cars,starts_at,quote_breakdown,services,vehicles(year,make,model,vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&status=in.(confirmed,requested,in_progress)&starts_at=gte.${from}&starts_at=lt.${to}&order=starts_at`),
   ]);
   // What the next 7 days need
   const needFilters: Record<string, number> = {}, needOil: Record<string, number> = {};
@@ -28,6 +28,11 @@ export async function GET() {
     if (s.oil_filter_part && own !== "filter") needFilters[s.oil_filter_part] = (needFilters[s.oil_filter_part] || 0) + n;
     if (own !== "oil") { const g = s.oil_grade.replace(/^Euro /, "Euro "); needOil[g] = Math.round(((needOil[g] || 0) + Number(s.capacity_l) * n) * 10) / 10; }
   }
+  // part numbers we still need to look up: listed by car and day, never counted as covered
+  const { missingParts, ownParts } = await import("@/lib/os/addon-needs");
+  const dayName = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric" });
+  const missing = upcoming.flatMap((b) => missingParts({ job: b.services?.job, own: ownParts(b.services, b.quote_breakdown?.lines), spec: b.vehicles?.vehicle_specs as never,
+    addons: b.services?.addons, car: [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model].filter(Boolean).join(" ") || "A car" }).map((m) => `${dayName(b.starts_at)}, ${m}`));
   // the add-ons they picked (cabin and air filters, wipers, battery, top-ups), for every kind of job
   const addons = sumNeeds(upcoming.map((b) => addonNeeds(b.services?.addons, b.vehicles?.vehicle_specs, b.cars)));
   // a filter linked as the same part (Parts Source vs NAPA) counts too
@@ -42,7 +47,7 @@ export async function GET() {
     ...Object.entries(needFilters).map(([pn, need]) => ({ kind: "filter", label: `Oil filter ${either(pn)}`, need, have: have(pn), unit: "" })),
     ...Object.entries(needOil).map(([g, need]) => ({ kind: "oil", label: `${g} oil`, need, have: Math.round(haveOil(g) * 10) / 10, unit: "L" })),
     // can't tell what's on the shelf (no part # yet, a battery): counted as 0 so it shows up to sort out
-    ...addons.map((x) => ({ kind: x.kind, label: x.part ? tagAll(x.label.replace(x.part, eitherOf(x.part, links)), stores) : x.label, need: x.qty, have: onShelf(x, parts, (pn) => sameParts(pn, links)) ?? 0, unit: x.unit ?? "" })),
+    ...addons.filter((x) => !x.key.endsWith(":?")).map((x) => ({ kind: x.kind, label: x.part ? tagAll(x.label.replace(x.part, eitherOf(x.part, links)), stores) : x.label, need: x.qty, have: onShelf(x, parts, (pn) => sameParts(pn, links)) ?? 0, unit: x.unit ?? "" })),
   ].map((x) => ({ ...x, buy: Math.max(0, Math.round((x.need - x.have) * 10) / 10) })).sort((a, b) => b.buy - a.buy);
   // what we last paid and the store's retail price (add-on parts are charged at retail with tax + labour)
   const quotes = await sbGet<{ part_id: string; our_cost: number | null; retail: number | null; supplier: string | null }>("part_quotes?select=part_id,our_cost,retail,supplier&order=checked_at.desc&limit=3000").catch(() => []);
@@ -52,7 +57,7 @@ export async function GET() {
     p.retail = qs.find((q) => q.retail != null)?.retail ?? null;
     p.store = storeName(qs[0]?.supplier, p.brand) ?? stores[storeKey(p.part_number)] ?? null;
   }
-  return NextResponse.json({ parts, toBuy, bookingsCounted: upcoming.length });
+  return NextResponse.json({ parts, toBuy, missing, bookingsCounted: upcoming.length });
 }
 
 const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "washer_fluid", "coolant", "gloves", "shop_towels", "other"];

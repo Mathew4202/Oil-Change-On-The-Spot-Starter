@@ -11,9 +11,9 @@ const CAT: Record<string, string> = { oil: "Oil", oil_filter: "Oil filters", cab
 
 export default function StockScreen() {
   const { can } = useRole();
-  const [parts, setParts] = useState<Part[]>([]); const [toBuy, setToBuy] = useState<Buy[]>([]); const [count, setCount] = useState(0);
+  const [parts, setParts] = useState<Part[]>([]); const [toBuy, setToBuy] = useState<Buy[]>([]); const [count, setCount] = useState(0); const [missing, setMissing] = useState<string[]>([]);
   const [q, setQ] = useState(""); const [showEmpty, setShowEmpty] = useState(false); const [loading, setLoading] = useState(true);
-  const load = () => fetch("/api/owner/stock", { cache: "no-store" }).then((r) => r.json()).then((d) => { setParts(d.parts || []); setToBuy(d.toBuy || []); setCount(d.bookingsCounted || 0); setLoading(false); });
+  const load = () => fetch("/api/owner/stock", { cache: "no-store" }).then((r) => r.json()).then((d) => { setParts(d.parts || []); setToBuy(d.toBuy || []); setCount(d.bookingsCounted || 0); setMissing(d.missing || []); setLoading(false); });
   useEffect(() => { load(); }, []);
 
   // Oil approvals (dexos, VW 508 00...) for cars we've done: the sheet never recorded them, so they're looked up once
@@ -103,9 +103,16 @@ export default function StockScreen() {
           </section>
         )}
 
+        {!loading && missing.length > 0 && (
+          <section className="rounded-2xl p-4 flex flex-col gap-2 border" style={{ background: "#fdecea", borderColor: "#e8a29b" }}>
+            <h2 className="font-extrabold text-lg text-[#9b1c1c]">Part # missing for {missing.length} part{missing.length === 1 ? "" : "s"}</h2>
+            <p className="text-sm text-[#4a5878]">Look these up and buy them. HQ can&apos;t check Stock for a part it has no number for. Add the number in Edit details or Edit car and it moves to the list below.</p>
+            {missing.map((m) => <p key={m} className="text-[15px] font-semibold">{m}</p>)}
+          </section>
+        )}
         {!loading && (
           <section className="rounded-2xl p-4 flex flex-col gap-2 border" style={{ background: buying.length ? "#fff6dd" : "#dff3e6", borderColor: buying.length ? GOLD : "#9fd3b2" }}>
-            <h2 className="font-extrabold text-lg">{buying.length ? "Buy for the next 7 days" : "You're covered for the next 7 days"}</h2>
+            <h2 className="font-extrabold text-lg">{buying.length ? "Buy for the next 7 days" : missing.length ? "Everything else is covered for the next 7 days" : "You're covered for the next 7 days"}</h2>
             <p className="text-sm text-[#4a5878]">Based on {count} upcoming booking{count === 1 ? "" : "s"}.</p>
             {buying.map((b) => (
               <div key={b.label} className="flex justify-between gap-3 text-[15px]">

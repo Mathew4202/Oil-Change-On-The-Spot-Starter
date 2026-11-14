@@ -98,3 +98,22 @@ export function ownParts(services: { own?: string | null } | null | undefined, l
   }
   return null;
 }
+
+/** Part numbers a booking still needs that we don't have on file, worded for whoever buys parts:
+ *  "2020 Ford Escape: oil filter part # not on file". Nothing here ever counts as "covered". */
+export function missingParts(b: { job?: string | null; own?: string | null; spec: (AddonSpec & { oil_filter_part?: string | null; oil_grade?: string | null }) | null | undefined;
+  addons?: string[] | null; car: string }): string[] {
+  const out: string[] = [];
+  const oilJob = !b.job || ["oil_change", "seasonal"].includes(b.job);
+  const car = b.car || "A car";
+  if (oilJob && b.own !== "both") {
+    if (!b.spec || !b.spec.oil_grade) out.push(`${car}: oil and filter not on file`);
+    else if (!b.spec.oil_filter_part && b.own !== "filter") out.push(`${car}: oil filter part # not on file`);
+  }
+  for (const a of b.addons ?? []) {
+    if (a === "cabin_filter" && !b.spec?.cabin_filter_part) out.push(`${car}: cabin filter part # not on file`);
+    if (a === "engine_filter" && !b.spec?.air_filter_part) out.push(`${car}: engine air filter part # not on file`);
+    if (a === "wipers" && !(b.spec?.wiper_driver && b.spec?.wiper_passenger)) out.push(`${car}: wiper size${b.spec?.wiper_driver || b.spec?.wiper_passenger ? "" : "s"} not on file`);
+  }
+  return out;
+}

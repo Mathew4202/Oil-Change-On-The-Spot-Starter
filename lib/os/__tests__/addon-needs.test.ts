@@ -57,3 +57,12 @@ test("ownParts: from the booking, or from the price line when the booking lost i
   assert.equal(ownParts({}, [{ label: "Oil change labour (you supply oil)" }]), "oil");
   assert.equal(ownParts({}, [{ label: "Synthetic oil change" }]), null);
 });
+
+test("missingParts: names the car and the part # we still need", async () => {
+  const { missingParts } = await import("../addon-needs.ts");
+  assert.deepEqual(missingParts({ job: "oil_change", spec: { oil_grade: "5W-30", oil_filter_part: null }, addons: ["cabin_filter"], car: "2020 Ford Escape" }),
+    ["2020 Ford Escape: oil filter part # not on file", "2020 Ford Escape: cabin filter part # not on file"]);
+  assert.deepEqual(missingParts({ job: "oil_change", spec: null, car: "2002 Hyundai" }), ["2002 Hyundai: oil and filter not on file"]);
+  assert.deepEqual(missingParts({ job: "oil_change", own: "filter", spec: { oil_grade: "0W-20", oil_filter_part: null }, car: "X" }), []);
+  assert.deepEqual(missingParts({ job: "oil_change", spec: { oil_grade: "0W-20", oil_filter_part: "27356", wiper_driver: "26" }, addons: ["wipers"], car: "X" }), ["X: wiper size not on file"]);
+});
