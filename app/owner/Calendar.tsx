@@ -16,7 +16,7 @@ import { useRole } from "./RoleContext";
 type Job = {
   id: string; start: string; end: string; status: string; payMode: string; cars: number;
   paid?: boolean; receiptNo?: number | null; finalTotal?: number | null; sales?: number | null; family?: boolean;
-  took?: { oil: number; litres: number | null; grade: string | null; parts: number; filter: string | null; supplies: number } | null;
+  took?: { oil: number; litres: number | null; grade: string | null; parts: number; filter: string | null; supplies: number; tip?: number | null } | null;
   name: string; phone: string | null; address: string | null; car: string; engine: string | null;
   oil: { grade: string; litres: number; filter: string | null; spec: string | null; engine?: string | null; diesel?: boolean; wix?: string | null;
     checked?: boolean; lowConfidence?: boolean; filterInStock?: boolean | null; filterAlt?: string[]; filterUse?: string | null; filterGuess?: { part: string; from: string } | null; filterCost?: number | null; filterNote?: string | null } | null;
@@ -332,6 +332,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   {j.profit != null && j.actual && j.family && <p className="text-xs text-[#4a5878]">Family price: the parts at what we paid before tax (the HST comes back on our return), no labour and no gas.</p>}
                   {j.profit != null && j.actual && !j.family && <p className="text-xs text-[#4a5878]">{j.took
                     ? <>Took off (before HST): oil {money(j.took.oil)}{j.took.litres ? ` (${j.took.litres} L ${j.took.grade ?? ""}${j.took.litres ? `, ${money(j.took.oil / j.took.litres)}/L` : ""})` : ""}, filter and parts {money(j.took.parts)}{j.took.filter ? ` (filter ${tag(j.took.filter, day?.stores, "NAPA")})` : ""}, supplies {money(j.took.supplies)}{day?.gasPerJob ? `, gas about ${money(day.gasPerJob * (j.cars || 1))}` : ""}.
+                      {j.took.tip ? <span className="block font-semibold text-[#1e6b3a]">Includes a {money(j.took.tip)} tip.</span> : null}
                       {(j.took.litres && j.took.oil / j.took.litres > 15) || j.took.parts > 60 ? <strong className="block text-[#9b1c1c]">That looks too high. A receipt probably saved the wrong price: check it in Stock, then tap Recheck costs.</strong> : null}
                       <button onClick={async () => { const r = await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "recost", bookingId: j.id }) }); if (r.ok) load(date); }}
                         className="mt-1 h-8 px-2 rounded-lg border border-[#c8d0e0] text-xs font-bold text-[#0d1b3e]">Recheck costs</button></>

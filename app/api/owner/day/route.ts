@@ -200,7 +200,8 @@ export async function GET(req: NextRequest) {
           const made = Math.round((Number(done.revenue ?? done.subtotal) - exTax(spent)) * 100) / 100;
           // what it took off, so a wrong price on a receipt is easy to spot
           const took = money ? { oil: Math.round(exTax(Number(done.cost_oil ?? 0)) * 100) / 100, litres: done.oil_litres ?? null, grade: done.oil_grade ?? null,
-            parts: Math.round(exTax(Number(done.cost_parts ?? 0)) * 100) / 100, filter: done.filter_part ?? null, supplies: Math.round(exTax(Number(done.cost_other ?? 0)) * 100) / 100 } : null;
+            parts: Math.round(exTax(Number(done.cost_parts ?? 0)) * 100) / 100, filter: done.filter_part ?? null, supplies: Math.round(exTax(Number(done.cost_other ?? 0)) * 100) / 100,
+            tip: Number(done.tip ?? 0) > 0 ? Number(done.tip) : null } : null;
           return { profit: money ? afterGas(made, r) : null, costs: null, actual: true, took };
         }
         // not done yet: worked out live from what we last paid for the oil, filter and any add-on parts
