@@ -111,3 +111,38 @@ export async function loadStores(): Promise<Record<string, string>> {
   }
   return out;
 }
+
+/** A receipt said which car a filter is for ("PARTS FOR A: 2020 FORD ESCAPE 2.0L"): save it to that car.
+ *  The car has no number for that filter yet: this one becomes it. It already has a different one (often NAPA's):
+ *  this one is linked as the same part, so both show and neither is lost. No car on file yet: one is added. */
+export async function fitFromReceipt(part: string, category: string, car: { year: number; make: string; model: string; engine: string | null }, by: string) {
+  const col = category === "cabin_filter" ? "cabin_filter_part" : category === "engine_filter" ? "air_filter_part" : category === "oil_filter" ? "oil_filter_part" : null;
+  if (!col) return null;
+  const pn = part.trim().toUpperCase();
+  const label = `${car.year} ${car.make} ${car.model}${car.engine ? ` ${car.engine}` : ""}`;
+  const word = col === "oil_filter_part" ? "oil filter" : col === "cabin_filter_part" ? "cabin filter" : "engine air filter";
+  const litres = (e: string | null | undefined) => (e ?? "").match(/(\d\.\d)/)?.[1] ?? null;
+  const specs = await sbGet<{ id: string; year_from: number | null; year_to: number | null; engine: string | null } & Record<string, string | number | null>>(
+    `vehicle_specs?select=id,year_from,year_to,engine,${col}&make=ilike.${enc(car.make)}&model=ilike.${enc(car.model)}&limit=200`).catch(() => []);
+  // same year, and the same engine when both say one (a 1.5L and a 2.0L CR-V take different filters)
+  const hit = specs.filter((s) => (s.year_from ?? 0) <= car.year && (s.year_to ?? s.year_from ?? 9999) >= car.year
+    && (!litres(car.engine) || !litres(s.engine) || litres(car.engine) === litres(s.engine)));
+  if (!hit.length) {
+    const r = await sbInsert("vehicle_specs", { year_from: car.year, year_to: car.year, make: car.make, model: car.model, ...(car.engine ? { engine: car.engine } : {}),
+      [col]: pn, source: "job_history", verified: true, times_done: 0 });
+    return r.ok ? `${pn} saved as the ${word} for ${label}` : null;
+  }
+  const links = await loadLinks();
+  const linkedTo: string[] = [];
+  let set = 0;
+  for (const s of hit) {
+    const have = s[col] ? String(s[col]) : null;
+    if (!have) { await sbPatch("vehicle_specs", `id=eq.${s.id}`, { [col]: pn }); set++; continue; }
+    if (sameParts(have, links).some((x) => normPart(x) === normPart(pn))) continue;   // already the same part
+    const l = await linkPart(pn, have, by);
+    if (l.ok) { linkedTo.push(l.to); links.push({ alias: pn, part_number: l.to } as Link); }
+  }
+  if (set) return `${pn} saved as the ${word} for ${label}`;
+  if (linkedTo.length) return `${pn} linked as the same ${word} as ${[...new Set(linkedTo)].join(", ")} for ${label}`;
+  return `${pn} was already on file for ${label}`;
+}

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanScan, supplierOf } from "../receipt-scan.ts";
+import { cleanScan, supplierOf, cleanCar } from "../receipt-scan.ts";
 
 test("NAPA receipt: part numbers cleaned, supplier, category, sums check out", () => {
   const s = cleanScan({ vendor: "NAPA Auto Parts Dartmouth", date: "2026-10-20", subtotal: 30.68, hst: 4.30, total: 34.98, paid_with: "on_account",
@@ -67,4 +67,13 @@ test("keeps NAPA's list (retail) price next to what we paid", () => {
   assert.equal(s.items[0].listPrice, 34.99);
   assert.equal(s.items[0].unitPrice, 18.5);
   assert.equal(s.items[1].listPrice, undefined);
+});
+
+test("the car a PartSource line is for, in plain words", () => {
+  assert.deepEqual(cleanCar({ year: 2018, make: "DODGE-RAM TRUCK", model: "GRAND CARAVAN", engine: "V6-3604 3.6L DOHC" }), { year: 2018, make: "Dodge", model: "Grand Caravan", engine: "3.6L" });
+  assert.deepEqual(cleanCar({ year: "2020", make: "FORD TRUCK", model: "ESCAPE", engine: "4-121 2.0L DOHC" }), { year: 2020, make: "Ford", model: "Escape", engine: "2.0L" });
+  assert.equal(cleanCar({ year: 2020, make: "", model: "Escape" }), null);
+  const s = cleanScan({ vendor: "PartSource", total: 3.24, items: [{ description: "Oil Filter", part_number: "0175581", qty: 1, unit_price: 3.24, line_total: 3.24, category: "oil_filter",
+    car: { year: 2020, make: "FORD TRUCK", model: "ESCAPE", engine: "2.0L" } }] })!;
+  assert.equal(s.items[0].car?.model, "Escape");
 });
