@@ -81,7 +81,9 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
       if (c.booking.pay_mode === "online" && !c.paid) setPay("card_online");   // you marked it "Already paid" when booking
       // what was typed before the form was closed by mistake (kept on this phone until the job is finished)
       if (!c.job) {
-        const d = readDraft(bookingId);
+        // the newest of what this device kept and what any other device saved (the iPad died, carry on on the Samsung)
+        const here = readDraft(bookingId), there = (c as Ctx & { draft?: Draft | null }).draft ?? null;
+        const d = here && there ? ((here.at ?? 0) >= (there.at ?? 0) ? here : there) : here ?? there;
         if (d) {
           if (d.km != null) setKm(d.km); if (d.vin != null) setVin(d.vin); if (d.grade != null) setGrade(d.grade); if (d.litres != null) setLitres(d.litres);
           if (d.filter != null) setFilter(d.filter); if (d.checks) setChecks(d.checks); if (d.extras) setExtras(d.extras); if (d.doneBy) setDoneBy(d.doneBy);
@@ -95,7 +97,13 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   // save as you type (only once the job has loaded, so the empty form never overwrites a saved one)
   useEffect(() => {
     if (!loaded || ctx?.job) return;
-    writeDraft(bookingId, { km, vin, grade, litres, filter, checks, extras, doneBy, notes, custNote, pay, tip, email });
+    const d = { km, vin, grade, litres, filter, checks, extras, doneBy, notes, custNote, pay, tip, email };
+    writeDraft(bookingId, d);
+    // and on our side, a moment after typing stops, so another phone or tablet opens the job with it filled in
+    const t = setTimeout(() => {
+      fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId, action: "draft", draft: d }) }).catch(() => null);
+    }, 800);
+    return () => clearTimeout(t);
   }, [loaded, ctx?.job, bookingId, km, vin, grade, litres, filter, checks, extras, doneBy, notes, custNote, pay, tip, email]);
 
   const withOil = !ctx?.booking.services?.job || ["oil_change", "seasonal"].includes(ctx.booking.services.job || "");
@@ -452,7 +460,7 @@ function AddCarBox({ bookingId, onAdded }: { bookingId: string; onAdded: () => v
   );
 }
 
-// The job form is kept on this phone while it's being filled in, so closing it by mistake loses nothing.
+// The job form is kept while it's being filled in (on this device, and on our side for any other device), so closing it or switching devices loses nothing.
 type Draft = { km?: string; vin?: string; grade?: string; litres?: string; filter?: string; checks?: Record<string, "ok" | "soon" | "now">; extras?: { label: string; amount: string }[];
   doneBy?: string; notes?: string; custNote?: string; pay?: string; tip?: string; email?: string; at?: number };
 const draftKey = (id: string) => `ocots-job-draft:${id}`;

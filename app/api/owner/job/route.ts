@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { currentOwner } from "@/lib/os/auth";
-import { sbPatch } from "@/lib/os/db";
+import { sbPatch, sbGet, sbInsert, sbDelete, enc } from "@/lib/os/db";
 import { jobContext, startJob, finishJob, recordPayment, sendReceipt, setCustomerNote, payVisit, reviewIfDue, editPayment, recostJob, fixCarFromVin } from "@/lib/os/jobs";
 const PayMethod = z.enum(["card_terminal", "cash", "etransfer", "card_online"]);
 import { payReady, claimByTxn } from "@/lib/os/payments";
@@ -34,7 +34,9 @@ export async function GET(req: NextRequest) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
   const ctx = await jobContext(id);
   const stores = ctx ? await (await import("@/lib/os/part-alias")).loadStores().catch(() => ({})) : {};
-  return ctx ? NextResponse.json({ ...ctx, payOnline: payReady(), stores }) : NextResponse.json({ error: "Not found" }, { status: 404 });
+  // what was typed on the job before it's finished, on any phone or tablet (kept on our side, not just the device)
+  const [d] = ctx && !ctx.job ? await sbGet<{ value: Record<string, unknown> }>(`app_secrets?select=value&key=eq.${enc(`jobdraft:${id}`)}`).catch(() => []) : [];
+  return ctx ? NextResponse.json({ ...ctx, payOnline: payReady(), stores, draft: d?.value ?? null }) : NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 
 export async function POST(req: NextRequest) {
@@ -45,10 +47,17 @@ export async function POST(req: NextRequest) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
   try {
     if (body.action === "start") return NextResponse.json({ ok: await startJob(id) });
+    if (body.action === "draft") {   // the job form as it's being filled in: saved so any device picks it up
+      const draft = body.draft && typeof body.draft === "object" ? body.draft : null;
+      if (!draft || JSON.stringify(draft).length > 20000) return NextResponse.json({ error: "bad draft" }, { status: 400 });
+      const r = await sbInsert("app_secrets", { key: `jobdraft:${id}`, value: { ...draft, at: Date.now(), by: owner } }, { upsertOn: "key" });
+      return NextResponse.json({ ok: r.ok });
+    }
     if (body.action === "finish") {
       const p = Finish.safeParse(body);
       if (!p.success) return NextResponse.json({ error: "Please check the job details", details: p.error.flatten() }, { status: 400 });
       const r = await finishJob({ ...p.data, email: p.data.email || null }, owner);
+      if (r.ok) await sbDelete("app_secrets", `key=eq.${enc(`jobdraft:${id}`)}`).catch(() => null);
       return NextResponse.json(r, { status: r.ok ? 200 : 400 });
     }
     if (body.action === "pay") {
