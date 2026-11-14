@@ -266,7 +266,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   <p className="text-2xl font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>{time(j.start)}</p>
                   <span className="text-[13px] font-bold px-2.5 py-1 rounded-full"
                     style={j.status === "done" && !j.paid ? { background: "#fde2e1", color: "#9b1c1c" } : j.status === "in_progress" ? { background: "#fff6dd", color: "#8a5a00" } : paid || j.paid ? { background: "#dff3e6", color: "#1d6b3a" } : { background: "#eef1f6", color: INK }}>
-                    {j.status === "done" ? (j.paid ? "Done · paid" : "Done · not paid") : j.status === "in_progress" ? "In progress" : paid ? "Paid online" : "Pay after"}
+                    {j.status === "done" ? (j.paid ? `Done · paid${j.took?.tip ? ` · ${money(j.took.tip)} tip` : ""}` : "Done · not paid") : j.status === "in_progress" ? "In progress" : paid ? "Paid online" : "Pay after"}
                   </span>
                 </div>
                 <p className="font-bold text-[17px]">{j.name}{j.car ? ` · ${j.car}` : ""}{j.cars > 1 ? ` (${j.cars} cars)` : ""}</p>

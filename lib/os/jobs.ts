@@ -308,9 +308,11 @@ export async function recordPayment(bookingId: string, amount: number, method: s
   const t = r2(Math.max(0, tip || 0));
   await sbInsert("payments", { booking_id: bookingId, amount: r2(amount + t), method, processor_ref: `recorded by ${owner}${t ? `, includes $${t.toFixed(2)} tip` : ""}` });
   await sbPatch("bookings", `id=eq.${enc(bookingId)}`, { paid_at: new Date().toISOString() });
-  const [j] = await sbGet<{ subtotal: number | null; late_fee?: number | null; late_interest?: number | null }>(`jobs?select=*&booking_id=eq.${enc(bookingId)}&limit=1`);
+  const [j] = await sbGet<{ subtotal: number | null; tip?: number | null; late_fee?: number | null; late_interest?: number | null }>(`jobs?select=*&booking_id=eq.${enc(bookingId)}&limit=1`);
   const late = Number(j?.late_fee ?? 0) + Number(j?.late_interest ?? 0);   // late charges are income too (no HST on them)
-  await sbPatch("jobs", `booking_id=eq.${enc(bookingId)}`, { payment_method: method, tip: t, ...(j?.subtotal != null ? { revenue: r2(Number(j.subtotal) + t + late) } : {}) });
+  // a second payment on the same car (the rest of a bill, another card) adds its tip: it never wipes the first one's
+  const allTips = r2(Number(j?.tip ?? 0) + t);
+  await sbPatch("jobs", `booking_id=eq.${enc(bookingId)}`, { payment_method: method, tip: allTips, ...(j?.subtotal != null ? { revenue: r2(Number(j.subtotal) + allTips + late) } : {}) });
   // a pay-later bill just got paid: now the thank-you / review text goes out (once, and not for a visit with cars still unpaid)
   if (!opts.noReview && (j as { bill_sent_at?: string | null } | undefined)?.bill_sent_at) await reviewIfDue(bookingId).catch(() => null);
 }
