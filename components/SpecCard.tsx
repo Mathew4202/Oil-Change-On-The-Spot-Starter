@@ -1,9 +1,10 @@
+import { tag, tagAll } from "@/lib/os/store-tag";
 import { Fragment } from "react";
 // HQ: everything we know about a car's oil and parts, in one block (new booking, extra cars).
 export type HqSpec = {
   engine?: string | null; grade: string; oilSpec?: string | null; capacityL: number; filter?: string | null; fuel?: string | null; wix?: string | null;
   cabin?: string | null; air?: string | null; wiperDriver?: string | null; wiperPassenger?: string | null; filterNote?: string | null;
-  source?: string | null; confidence?: string | null; filterInStock?: boolean | null; filterUse?: string | null;
+  source?: string | null; confidence?: string | null; filterInStock?: boolean | null; filterUse?: string | null; stores?: Record<string, string>;
 };
 
 export default function SpecCard({ spec, engine }: { spec: HqSpec; engine?: string | null }) {
@@ -12,10 +13,10 @@ export default function SpecCard({ spec, engine }: { spec: HqSpec; engine?: stri
     ["Engine", `${engine || spec.engine || "not on file"}${diesel ? " (diesel)" : spec.fuel === "hybrid" ? " (hybrid)" : ""}`],
     ["Oil", `${spec.grade.replace(/^Euro /, "")} ${diesel ? "diesel oil" : "full synthetic"}, ${spec.capacityL} L`],
     ["Must meet", spec.oilSpec || "not on file yet"],
-    ["Oil filter", spec.filter ? `${spec.filterUse ? `${spec.filterUse} (same as NAPA ${spec.filter}, the NAPA ones are for earlier jobs)` : `NAPA ${spec.filter}`}${spec.wix ? ` · WIX ${spec.wix}` : ""}${spec.filterInStock == null ? "" : spec.filterInStock ? " · in stock" : " · buy"}` : "find on site"],
+    ["Oil filter", spec.filter ? `${spec.filterUse ? `${tag(spec.filterUse, spec.stores)} (same as ${tag(spec.filter, spec.stores, "NAPA")}, those are for earlier jobs)` : tag(spec.filter, spec.stores, "NAPA")}${spec.wix ? ` · WIX ${spec.wix}` : ""}${spec.filterInStock == null ? "" : spec.filterInStock ? " · in stock" : " · buy"}` : "find on site"],
   ];
-  if (spec.cabin) rows.push(["Cabin filter", spec.cabin]);
-  if (spec.air) rows.push(["Air filter", spec.air]);
+  if (spec.cabin) rows.push(["Cabin filter", tagAll(spec.cabin, spec.stores)]);
+  if (spec.air) rows.push(["Air filter", tagAll(spec.air, spec.stores)]);
   if (spec.wiperDriver || spec.wiperPassenger) rows.push(["Wipers", [spec.wiperDriver && `driver ${spec.wiperDriver}`, spec.wiperPassenger && `passenger ${spec.wiperPassenger}`].filter(Boolean).join(", ")]);
   const from = spec.source === "sheet" || spec.source === "job_history" ? "From a car we've done" : spec.source === "ai_lookup" ? "Found online" : null;
   return (

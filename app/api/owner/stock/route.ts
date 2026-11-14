@@ -7,7 +7,7 @@ import { addonNeeds, sumNeeds, onShelf } from "@/lib/os/addon-needs";
 
 export const dynamic = "force-dynamic";
 type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null;
-  paid?: number | null; retail?: number | null };
+  paid?: number | null; retail?: number | null; store?: string | null };
 
 export async function GET() {
   if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
@@ -31,22 +31,26 @@ export async function GET() {
   // the add-ons they picked (cabin and air filters, wipers, battery, top-ups), for every kind of job
   const addons = sumNeeds(upcoming.map((b) => addonNeeds(b.services?.addons, b.vehicles?.vehicle_specs, b.cars)));
   // a filter linked as the same part (Parts Source vs NAPA) counts too
-  const { loadLinks, onHandAll, eitherOf, sameParts } = await import("@/lib/os/part-alias");
-  const links = await loadLinks();
+  const { loadLinks, onHandAll, eitherOf, sameParts, loadStores } = await import("@/lib/os/part-alias");
+  const { tagAll, tag, storeKey, storeName } = await import("@/lib/os/store-tag");
+  const [links, stores] = await Promise.all([loadLinks(), loadStores()]);
+  // a filter number off a spec we've never bought: those come from NAPA's lookup
+  const either = (pn: string) => sameParts(pn, links).map((p, i) => tag(p, stores, i === 0 ? "NAPA" : null)).join(" or ");
   const have = (pn: string) => onHandAll(pn, links, parts);
   const haveOil = (g: string) => parts.filter((p) => p.unit === "L" && (p.oil_grade === g || p.oil_grade === g.replace(/^Euro /, ""))).reduce((t, p) => t + Number(p.on_hand), 0);
   const toBuy = [
-    ...Object.entries(needFilters).map(([pn, need]) => ({ kind: "filter", label: `Oil filter ${eitherOf(pn, links)}`, need, have: have(pn), unit: "" })),
+    ...Object.entries(needFilters).map(([pn, need]) => ({ kind: "filter", label: `Oil filter ${either(pn)}`, need, have: have(pn), unit: "" })),
     ...Object.entries(needOil).map(([g, need]) => ({ kind: "oil", label: `${g} oil`, need, have: Math.round(haveOil(g) * 10) / 10, unit: "L" })),
     // can't tell what's on the shelf (no part # yet, a battery): counted as 0 so it shows up to sort out
-    ...addons.map((x) => ({ kind: x.kind, label: x.part ? x.label.replace(x.part, eitherOf(x.part, links)) : x.label, need: x.qty, have: onShelf(x, parts, (pn) => sameParts(pn, links)) ?? 0, unit: x.unit ?? "" })),
+    ...addons.map((x) => ({ kind: x.kind, label: x.part ? tagAll(x.label.replace(x.part, eitherOf(x.part, links)), stores) : x.label, need: x.qty, have: onShelf(x, parts, (pn) => sameParts(pn, links)) ?? 0, unit: x.unit ?? "" })),
   ].map((x) => ({ ...x, buy: Math.max(0, Math.round((x.need - x.have) * 10) / 10) })).sort((a, b) => b.buy - a.buy);
   // what we last paid and the store's retail price (add-on parts are charged at retail with tax + labour)
-  const quotes = await sbGet<{ part_id: string; our_cost: number | null; retail: number | null }>("part_quotes?select=part_id,our_cost,retail&order=checked_at.desc&limit=3000").catch(() => []);
+  const quotes = await sbGet<{ part_id: string; our_cost: number | null; retail: number | null; supplier: string | null }>("part_quotes?select=part_id,our_cost,retail,supplier&order=checked_at.desc&limit=3000").catch(() => []);
   for (const p of parts) {
     const qs = quotes.filter((q) => q.part_id === p.id);
     p.paid = qs.find((q) => q.our_cost != null)?.our_cost ?? null;
     p.retail = qs.find((q) => q.retail != null)?.retail ?? null;
+    p.store = storeName(qs[0]?.supplier, p.brand) ?? stores[storeKey(p.part_number)] ?? null;
   }
   return NextResponse.json({ parts, toBuy, bookingsCounted: upcoming.length });
 }

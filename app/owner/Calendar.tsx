@@ -1,4 +1,5 @@
 "use client";
+import { tag } from "@/lib/os/store-tag";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { quoText, quoCall } from "@/lib/os/quo-link";
 import NewBooking, { type Customer as BookCustomer, type CallPreset } from "./NewBooking";
@@ -29,7 +30,7 @@ type Job = {
 type Day = {
   date: string; jobs: Job[]; timeOff: { id: string; starts_at: string; ends_at: string; reason: string | null }[];
   holds?: { id: string; start: string; end: string; expires: string; name: string | null; phone: string | null; job: string; cars: number; note: string | null; by: string | null; link: string }[];
-  totals: { jobs: number; booked: number | null; profit: number | null }; gasPerJob?: number | null;
+  totals: { jobs: number; booked: number | null; profit: number | null }; gasPerJob?: number | null; stores?: Record<string, string>;
   bring: { oil: { grade: string; litres: number }[]; filters: { part: string; qty: number; inStock: number }[]; addons?: { label: string; qty: number; inStock: number | null; unit?: string | null }[] };
   route?: { link: string | null; stops: number; offers: { booking_id: string; to_start: string; status: string }[] } | null;
 };
@@ -266,7 +267,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 <p className="font-bold text-[17px]">{j.name}{j.car ? ` · ${j.car}` : ""}{j.cars > 1 ? ` (${j.cars} cars)` : ""}</p>
                 {many && (
                   <div className="text-[14px] rounded-lg bg-[#f4f6fa] px-3 py-2 flex flex-col gap-0.5">
-                    {members.map((m) => <p key={m.id}><span className="font-semibold">{m.car || "Car"}</span>: {m.oil ? `${m.oil.grade.replace(/^Euro /, "")}, ${m.oil.litres} L · filter ${m.oil.filter ? `NAPA ${m.oil.filter}` : "find on site"}` : "oil not on file"}{m.status === "done" ? " · done" : ""}</p>)}
+                    {members.map((m) => <p key={m.id}><span className="font-semibold">{m.car || "Car"}</span>: {m.oil ? `${m.oil.grade.replace(/^Euro /, "")}, ${m.oil.litres} L · filter ${m.oil.filter ? tag(m.oil.filter, day?.stores, "NAPA") : "find on site"}` : "oil not on file"}{m.status === "done" ? " · done" : ""}</p>)}
                   </div>
                 )}
                 {j.job && j.job !== "oil_change" && (
@@ -282,7 +283,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                     <span className="text-[#4a5878]">Engine</span><span className="font-semibold">{j.engine || j.oil.engine || "not on file"}{j.oil.diesel ? " (diesel)" : ""}</span>
                     <span className="text-[#4a5878]">Oil</span><span className="font-semibold">{j.oil.grade.replace(/^Euro /, "")}{j.oil.diesel ? " diesel oil" : " full synthetic"}, {j.oil.litres} L</span>
                     <span className="text-[#4a5878]">Must meet</span><span className="font-semibold">{j.oil.spec || "not on file"}</span>
-                    <span className="text-[#4a5878]">Oil filter</span><span className="font-semibold">{j.oil.filter ? (j.oil.filterUse ? `${j.oil.filterUse} (same as NAPA ${j.oil.filter})` : `NAPA ${j.oil.filter}${j.oil.filterAlt?.length ? ` or ${j.oil.filterAlt.join(" or ")}` : ""}`) : "find on site"}{j.oil.wix ? ` · WIX ${j.oil.wix}` : ""}{j.oil.filter ? (j.oil.filterInStock ? " · in stock" : " · buy") : ""}{j.oil.filterCost != null ? ` · $${j.oil.filterCost.toFixed(2)}` : ""}</span>
+                    <span className="text-[#4a5878]">Oil filter</span><span className="font-semibold">{j.oil.filter ? (j.oil.filterUse ? `${tag(j.oil.filterUse, day?.stores)} (same as ${tag(j.oil.filter, day?.stores, "NAPA")})` : `${tag(j.oil.filter, day?.stores, "NAPA")}${j.oil.filterAlt?.length ? ` or ${j.oil.filterAlt.map((p) => tag(p, day?.stores)).join(" or ")}` : ""}`) : "find on site"}{j.oil.wix ? ` · WIX ${j.oil.wix}` : ""}{j.oil.filter ? (j.oil.filterInStock ? " · in stock" : " · buy") : ""}{j.oil.filterCost != null ? ` · $${j.oil.filterCost.toFixed(2)}` : ""}</span>
                     {j.oil.filterNote && <span className="col-span-2 text-[12px] text-[#8a5a00]">{j.oil.filterNote}</span>}
                     {(j.partNos ?? []).length > 0 && <><span className="text-[#4a5878]">Used before</span><span className="font-semibold">{j.partNos!.join(" · ")}</span></>}
                     {j.oil.lowConfidence && <span className="col-span-2 text-[12px] text-[#8a5a00]">Found online but not sure: check the oil cap or the manual.</span>}
@@ -325,7 +326,7 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>{j.actual ? "Profit" : "Est. profit"}</span><span>{money(j.profit)}{j.sales ? <span className="ml-1.5 text-[13px] font-bold text-[#4a5878]">({Math.round((j.profit / j.sales) * 100)}%)</span> : null}</span></div>}
                   {j.profit != null && j.actual && j.family && <p className="text-xs text-[#4a5878]">Family price: the parts at what we paid before tax (the HST comes back on our return), no labour and no gas.</p>}
                   {j.profit != null && j.actual && !j.family && <p className="text-xs text-[#4a5878]">{j.took
-                    ? <>Took off (before HST): oil {money(j.took.oil)}{j.took.litres ? ` (${j.took.litres} L ${j.took.grade ?? ""}${j.took.litres ? `, ${money(j.took.oil / j.took.litres)}/L` : ""})` : ""}, filter and parts {money(j.took.parts)}{j.took.filter ? ` (filter ${j.took.filter})` : ""}, supplies {money(j.took.supplies)}{day?.gasPerJob ? `, gas about ${money(day.gasPerJob * (j.cars || 1))}` : ""}.
+                    ? <>Took off (before HST): oil {money(j.took.oil)}{j.took.litres ? ` (${j.took.litres} L ${j.took.grade ?? ""}${j.took.litres ? `, ${money(j.took.oil / j.took.litres)}/L` : ""})` : ""}, filter and parts {money(j.took.parts)}{j.took.filter ? ` (filter ${tag(j.took.filter, day?.stores, "NAPA")})` : ""}, supplies {money(j.took.supplies)}{day?.gasPerJob ? `, gas about ${money(day.gasPerJob * (j.cars || 1))}` : ""}.
                       {(j.took.litres && j.took.oil / j.took.litres > 15) || j.took.parts > 60 ? <strong className="block text-[#9b1c1c]">That looks too high. A receipt probably saved the wrong price: check it in Stock, then tap Recheck costs.</strong> : null}
                       <button onClick={async () => { const r = await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "recost", bookingId: j.id }) }); if (r.ok) load(date); }}
                         className="mt-1 h-8 px-2 rounded-lg border border-[#c8d0e0] text-xs font-bold text-[#0d1b3e]">Recheck costs</button></>

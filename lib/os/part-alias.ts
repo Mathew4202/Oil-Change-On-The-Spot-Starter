@@ -97,3 +97,17 @@ export async function fitsCar(part: string, category: string, years: string, mak
   }
   return { ok: true as const, cars: hit.length || 1, label: `${from === to ? from : `${from}-${to}`} ${make.trim()} ${model.trim()}` };
 }
+
+/** Where each part number we've bought is from: the latest receipt's store, or the part's brand. Keyed by storeKey(pn). */
+export async function loadStores(): Promise<Record<string, string>> {
+  const { storeName, storeKey } = await import("@/lib/os/store-tag");
+  const rows = await sbGet<{ part_number: string; brand: string | null; part_quotes: { supplier: string; checked_at: string }[] | null }>(
+    "parts?select=part_number,brand,part_quotes(supplier,checked_at)&limit=5000").catch(() => []);
+  const out: Record<string, string> = {};
+  for (const r of rows) {
+    const q = [...(r.part_quotes ?? [])].sort((a, b) => (a.checked_at < b.checked_at ? 1 : -1))[0];
+    const s = storeName(q?.supplier, r.brand) ?? storeName(null, r.brand);
+    if (s && !out[storeKey(r.part_number)]) out[storeKey(r.part_number)] = s;
+  }
+  return out;
+}

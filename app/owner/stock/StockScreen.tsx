@@ -5,7 +5,7 @@ import OwnerNav from "../OwnerNav";
 import { useRole } from "../RoleContext";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
-type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null; paid?: number | null; retail?: number | null };
+type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null; paid?: number | null; retail?: number | null; store?: string | null };
 type Buy = { kind: string; label: string; need: number; have: number; buy: number; unit: string };
 const CAT: Record<string, string> = { oil: "Oil", oil_filter: "Oil filters", cabin_filter: "Cabin filters", engine_filter: "Engine air filters", wiper: "Wipers", battery: "Batteries", gloves: "Gloves (boxes)", shop_towels: "Shop towels", washer_fluid: "Washer fluid (litres)", coolant: "Coolant (litres)" };
 
@@ -134,7 +134,7 @@ export default function StockScreen() {
                 <div key={p.id} className="flex items-center justify-between gap-2 py-2 px-1 border-t first:border-t-0" style={{ borderColor: "#eef1f6" }}>
                   <div className="min-w-0">
                     <p className="font-bold truncate">{p.unit === "L" ? (p.oil_grade ? `${p.oil_grade} oil` : p.category === "coolant" ? "Coolant" : "Washer fluid") : p.part_number}</p>
-                    <p className="text-xs text-[#4a5878] truncate">{p.brand}{low ? " · low" : ""}</p>
+                    <p className="text-xs text-[#4a5878] truncate">{[p.store && !(p.brand || "").toLowerCase().includes(p.store.toLowerCase()) ? `from ${p.store}` : null, p.brand].filter(Boolean).join(" · ")}{low ? " · low" : ""}</p>
                     <button onClick={() => setPaid(p)} className="text-xs font-semibold underline decoration-dotted text-left text-[#4a5878]">
                       {p.paid != null ? `paid $${Number(p.paid).toFixed(2)}${p.unit === "L" ? "/L" : " each"} with tax` : "paid: tap to add"}
                     </button>

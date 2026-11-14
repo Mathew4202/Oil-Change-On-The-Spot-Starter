@@ -69,8 +69,9 @@ export async function GET(req: NextRequest) {
   const addonList = sumNeeds(rows.filter((r) => !["done", "no_show", "cancelled"].includes(r.status)).map((r) => addonNeeds(r.services?.addons, r.vehicles?.vehicle_specs, r.cars || 1, { washer_fluid: topupRules.washer, coolant: topupRules.coolant })));
   // then everything that needs the day's jobs, also all at once
   // filters linked as the same part (Parts Source vs NAPA): count both, and say both on the Bring list
-  const { loadLinks, sameParts, onHandAll, eitherOf } = await import("@/lib/os/part-alias");
-  const links = await loadLinks();
+  const { loadLinks, sameParts, onHandAll, eitherOf, loadStores } = await import("@/lib/os/part-alias");
+  const { tagAll } = await import("@/lib/os/store-tag");
+  const [links, stores] = await Promise.all([loadLinks(), loadStores()]);
   const fl = Array.from(new Set(Object.keys(filters).flatMap((pn) => sameParts(pn, links))));
   const photoLinks: Record<string, string[]> = {};
   const filterCosts: Record<string, number> = {};
@@ -173,8 +174,8 @@ export async function GET(req: NextRequest) {
         : r.jobs?.[0]?.oil_grade ? { grade: r.jobs[0].oil_grade, litres: Number(r.jobs[0].oil_litres ?? 0) / (r.cars || 1), filter: r.jobs[0].filter_part ?? null, spec: null, engine: null, diesel: false, wix: null,
             checked: true, lowConfidence: false, filterInStock: null, filterCost: null, filterNote: null } : null,
       // part numbers we have used on this car before
-      partNos: s ? [s.cabin_filter_part ? `Cabin filter ${s.cabin_filter_part}` : null, s.air_filter_part ? `Engine air filter ${s.air_filter_part}` : null,
-        s.wiper_driver || s.wiper_passenger ? `Wipers ${[s.wiper_driver && `driver ${s.wiper_driver}`, s.wiper_passenger && `passenger ${s.wiper_passenger}`].filter(Boolean).join(", ")}` : null].filter(Boolean) as string[] : [],
+      partNos: s ? ([s.cabin_filter_part ? `Cabin filter ${s.cabin_filter_part}` : null, s.air_filter_part ? `Engine air filter ${s.air_filter_part}` : null,
+        s.wiper_driver || s.wiper_passenger ? `Wipers ${[s.wiper_driver && `driver ${s.wiper_driver}`, s.wiper_passenger && `passenger ${s.wiper_passenger}`].filter(Boolean).join(", ")}` : null].filter(Boolean) as string[]).map((x) => tagAll(x, stores)) : [],
       // finished: what was actually charged (with anything added on site), not what was booked
       lines: (r.jobs?.[0]?.lines?.length ? r.jobs[0].lines : r.quote_breakdown?.lines) ?? [],
       total: r.jobs?.[0]?.total != null ? Number(r.jobs[0].total) : r.quoted_total != null ? Number(r.quoted_total) : null,
@@ -205,7 +206,7 @@ export async function GET(req: NextRequest) {
   const holds = holdRows.map((h) => ({ id: h.id, start: h.starts_at, end: h.ends_at, expires: h.expires_at, name: h.first_name, phone: h.phone,
     job: h.job, cars: h.cars, note: h.note, by: h.created_by, link: holdLink(h.token) }));
   return NextResponse.json({
-    date, jobs, timeOff: off, holds, route, gasPerJob: money ? gas?.perJob ?? null : null,
+    date, jobs, timeOff: off, holds, route, stores, gasPerJob: money ? gas?.perJob ?? null : null,
     totals: {
       jobs: jobs.length,
       booked: money ? Math.round(jobs.reduce((s, j) => s + (j.total || 0), 0) * 100) / 100 : null,
@@ -213,8 +214,8 @@ export async function GET(req: NextRequest) {
     },
     bring: {
       oil: Object.entries(oil).map(([grade, litres]) => ({ grade, litres })),
-      filters: Object.entries(filters).map(([part, qty]) => ({ part: eitherOf(part, links), qty, inStock: onHandAll(part, links, parts) })),
-      addons: addonList.map((x) => ({ unit: x.unit ?? null, label: x.part ? x.label.replace(x.part, eitherOf(x.part, links)) : x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never, (pn) => sameParts(pn, links)) })),
+      filters: Object.entries(filters).map(([part, qty]) => ({ part: tagAll(eitherOf(part, links), { ...stores, ...Object.fromEntries(sameParts(part, links).filter((p) => !stores[p.replace(/[^a-z0-9]/gi, "").toUpperCase()]).slice(0, 1).map((p) => [p.replace(/[^a-z0-9]/gi, "").toUpperCase(), "NAPA"])) }), qty, inStock: onHandAll(part, links, parts) })),
+      addons: addonList.map((x) => ({ unit: x.unit ?? null, label: x.part ? tagAll(x.label.replace(x.part, eitherOf(x.part, links)), stores) : x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never, (pn) => sameParts(pn, links)) })),
     },
   });
 }

@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("booking") || "";
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
   const ctx = await jobContext(id);
-  return ctx ? NextResponse.json({ ...ctx, payOnline: payReady() }) : NextResponse.json({ error: "Not found" }, { status: 404 });
+  const stores = ctx ? await (await import("@/lib/os/part-alias")).loadStores().catch(() => ({})) : {};
+  return ctx ? NextResponse.json({ ...ctx, payOnline: payReady(), stores }) : NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 
 export async function POST(req: NextRequest) {

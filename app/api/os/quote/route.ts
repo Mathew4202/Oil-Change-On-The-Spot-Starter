@@ -61,7 +61,8 @@ export async function GET(req: NextRequest) {
         // the rest is for HQ: everything we know about this car's parts
         ...(owner ? { wix: (spec as { wix_filter?: string | null }).wix_filter ?? null, cabin: spec.cabin_filter_part ?? null, air: spec.air_filter_part ?? null,
           wiperDriver: spec.wiper_driver ?? null, wiperPassenger: spec.wiper_passenger ?? null, filterNote: spec.filter_note ?? null,
-          source: spec.source, confidence: spec.confidence, ...(spec.oil_filter_part ? await filterUse(spec.oil_filter_part, q.get("date")) : {}) } : {}) } : null,
+          source: spec.source, confidence: spec.confidence, ...(spec.oil_filter_part ? await filterUse(spec.oil_filter_part, q.get("date")) : {}),
+          stores: await (await import("@/lib/os/part-alias")).loadStores().catch(() => ({})) } : {}) } : null,
       engines,          // more than one engine: the booking page asks which one
       lookedUp,         // true the first time we see this car
       ...publicQuote,

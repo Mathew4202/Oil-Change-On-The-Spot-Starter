@@ -1,4 +1,5 @@
 "use client";
+import { tag } from "@/lib/os/store-tag";
 // Finish a job: odometer, quick check, what was used, extras, who did it, payment, receipt.
 import { useEffect, useMemo, useRef, useState } from "react";
 import SnapRead from "@/components/SnapRead";
@@ -6,6 +7,7 @@ import SnapRead from "@/components/SnapRead";
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type Line = { label: string; amount: number };
 type Ctx = {
+  stores?: Record<string, string>;
   booking: { id: string; status: string; starts_at: string; address: string | null; pay_mode: string; quote_breakdown: { lines?: Line[] } | null;
     services: { job?: string; own?: string | null } | null; cars: number; paid_at: string | null };
   customer: { first_name: string | null; last_name: string | null; phone: string | null; email: string | null } | null;
@@ -275,7 +277,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
                 </div>
                 {withOil && ctx.vehicle?.vehicle_specs && (() => { const sp = ctx.vehicle!.vehicle_specs!; return (
                   <p className="rounded-lg bg-[#f4f6fa] px-3 py-2 text-[14px] leading-snug">
-                    <strong>Spec:</strong> {ctx.vehicle!.engine || sp.engine || "engine not on file"}{sp.fuel === "diesel" ? " diesel" : ""} · {sp.oil_grade.replace(/^Euro /, "")} {sp.fuel === "diesel" ? "diesel oil" : "full synthetic"}{sp.oil_spec ? `, must meet ${sp.oil_spec}` : ""} · {Number(sp.capacity_l)} L · filter {sp.oil_filter_part ? `NAPA ${sp.oil_filter_part}` : "not on file"}{sp.wix_filter ? ` (WIX ${sp.wix_filter})` : ""}
+                    <strong>Spec:</strong> {ctx.vehicle!.engine || sp.engine || "engine not on file"}{sp.fuel === "diesel" ? " diesel" : ""} · {sp.oil_grade.replace(/^Euro /, "")} {sp.fuel === "diesel" ? "diesel oil" : "full synthetic"}{sp.oil_spec ? `, must meet ${sp.oil_spec}` : ""} · {Number(sp.capacity_l)} L · filter {sp.oil_filter_part ? tag(sp.oil_filter_part, ctx.stores, "NAPA") : "not on file"}{sp.wix_filter ? ` (WIX ${sp.wix_filter})` : ""}
                   </p>); })()}
                 {withOil && !ctx.vehicle?.vehicle_specs && ctx.booking.services?.own !== "both" && (
                   <p className="rounded-lg bg-[#fff6dd] px-3 py-2 text-[14px] leading-snug">Oil not on file for this car yet. Check the cap or the manual and fill these in: it&apos;s saved for this car{ctx.vehicle?.engine ? ` (${ctx.vehicle.engine})` : ""} next time.</p>
