@@ -328,6 +328,10 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                 <div className="border-t border-[#eef1f6] pt-2 flex flex-col gap-1 text-[15px]">
                   {j.lines.map((l, i) => <div key={i} className="flex justify-between gap-3"><span className="text-[#4a5878]">{l.label}</span><span>{money(l.amount)}</span></div>)}
                   {j.total != null && <div className="flex justify-between font-bold"><span>Total with HST</span><span>{money(j.total)}</span></div>}
+                  {j.status === "done" && j.took?.tip ? <>
+                    <div className="flex justify-between gap-3"><span className="text-[#4a5878]">Tip</span><span>{money(j.took.tip)}</span></div>
+                    {j.total != null && <div className="flex justify-between font-bold"><span>Total paid with tip</span><span>{money(j.total + j.took.tip)}</span></div>}
+                  </> : null}
                   {j.profit != null && <div className="flex justify-between text-[#1d6b3a] font-semibold"><span>{j.actual ? "Profit" : "Est. profit"}</span><span>{money(j.profit)}{j.sales ? <span className="ml-1.5 text-[13px] font-bold text-[#4a5878]">({Math.round((j.profit / j.sales) * 100)}%)</span> : null}</span></div>}
                   {j.profit != null && j.actual && j.family && <p className="text-xs text-[#4a5878]">Family price: the parts at what we paid before tax (the HST comes back on our return), no labour and no gas.</p>}
                   {j.profit != null && j.actual && !j.family && <p className="text-xs text-[#4a5878]">{j.took
