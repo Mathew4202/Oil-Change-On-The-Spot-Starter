@@ -1,5 +1,5 @@
 // Pay online: for a booking (pay before) or a finished job / cancellation fee (pay after, tip optional).
-import { payReady, payTarget, recheckUnconfirmed } from "@/lib/os/payments";
+import { payReady, payTarget, recheckUnconfirmed, PAY_AT_BOOKING_ON } from "@/lib/os/payments";
 import { PHONE, PHONE_TEL } from "@/lib/os/business";
 import PayBox from "./PayBox";
 import { BUSINESS } from "@/lib/os/receipt";
@@ -14,7 +14,7 @@ const whenText = (iso: string) => new Date(iso).toLocaleString("en-CA", { timeZo
 export default async function PayPage({ params, searchParams }: { params: { token: string }; searchParams: { result?: string } }) {
   let t = await payTarget(params.token).catch(() => null);
   // a card payment Converge hasn't confirmed yet: ask again now; while it's still unconfirmed, no second payment
-  const waiting = t && t.due > 0 && t.bookingId ? await recheckUnconfirmed(t.bookingId).catch(() => 0) : 0;
+  const waiting = t && t.due > 0 ? await recheckUnconfirmed({ bookingId: t.bookingId, invoiceId: t.invoiceId, planBillId: t.planBillId }).catch(() => 0) : 0;
   if (t && waiting === 0 && searchParams.result === "pending") t = await payTarget(params.token).catch(() => t);
   const result = waiting > 0 ? "pending" : searchParams.result === "pending" && t && t.due === 0 ? "approved" : searchParams.result;
   return (
@@ -48,7 +48,7 @@ export default async function PayPage({ params, searchParams }: { params: { toke
                 {t.paid > 0 && <div className="flex justify-between gap-3 text-[#1d6b3a] font-semibold"><span>Paid</span><span>{money(-Math.min(t.paid, t.total))}</span></div>}
               </div>
               {t.due > 0 && result !== "pending" && (payReady()
-                ? t.kind === "prepay" ? <PayBox token={t.token} due={t.due} allowTip={false} /> : (
+                ? t.kind === "prepay" ? (PAY_AT_BOOKING_ON ? <PayBox token={t.token} due={t.due} allowTip={false} /> : <p className="rounded-xl p-4 bg-[#fff6dd] text-[15px]">Nothing to pay now. You pay after the job: card, tap, cash or e-transfer when we&apos;re done.</p>) : (
                   <>
                     <div className="rounded-xl p-4 bg-[#fff6dd] text-[15px] flex flex-col gap-1">
                       <p className="font-bold">Preferred: Interac e-Transfer</p>

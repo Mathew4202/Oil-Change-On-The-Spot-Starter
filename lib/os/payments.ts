@@ -13,8 +13,12 @@ export const payReady = () => !!convergeEnv();
  * May customers pay when they book? Off unless pay_at_booking is set to 1 in pricing_rules (and Converge is set up).
  * Paying after the job is always fine: the price is final by then (extra parts, a filter that cost more).
  */
+/** Master switch for paying when booking on the website. Off (Nov 15 2026): customers pay after the job or by invoice.
+ *  The whole flow is still here: set this to true (and pay_at_booking to 1) to turn it back on. */
+export const PAY_AT_BOOKING_ON = false;
+
 export async function payAtBooking() {
-  if (!payReady()) return false;
+  if (!PAY_AT_BOOKING_ON || !payReady()) return false;
   const [r] = await sbGet<{ value: number }>("pricing_rules?select=value&key=eq.pay_at_booking").catch(() => []);
   return Number(r?.value ?? 0) === 1;
 }
@@ -142,8 +146,10 @@ export async function startOnlinePayment(token: string, tipIn: number): Promise<
   const t = await payTarget(token);
   if (!t) return { ok: false, error: "This pay link isn't valid anymore." };
   if (t.due <= 0) return { ok: false, error: "This is already paid. Thank you!" };
+  // paying before the job is switched off: a booking's pay link can't start a card payment
+  if (t.kind === "prepay" && !PAY_AT_BOOKING_ON) return { ok: false, error: "You pay after the job: card, tap, cash or e-transfer when we're done." };
   // an earlier card payment on this booking that Converge hasn't confirmed yet: never start a second charge
-  if (t.bookingId && (await recheckUnconfirmed(t.bookingId).catch(() => 0)) > 0)
+  if ((await recheckUnconfirmed({ bookingId: t.bookingId, invoiceId: t.invoiceId, planBillId: t.planBillId }).catch(() => 0)) > 0)
     return { ok: false, error: "We're still confirming your last card payment with the bank. Please don't pay again. If it went through, it's marked paid on its own." };
   const tip = t.kind === "job" ? r2(Math.min(500, Math.max(0, tipIn || 0))) : 0;
   const amount = r2(t.due + tip);
@@ -214,9 +220,12 @@ export async function finishOnlinePayment(paymentId: string, txnId: string | nul
 }
 
 /** Card payments Converge hasn't confirmed yet (for one booking, or all in the last 3 days): ask again. */
-export async function recheckUnconfirmed(bookingId?: string): Promise<number> {
+export async function recheckUnconfirmed(on?: string | { bookingId?: string | null; invoiceId?: string | null; planBillId?: string | null }): Promise<number> {
   const since = new Date(Date.now() - 3 * 864e5).toISOString();
-  const rows = await sbGet<{ id: string; message: string }>(`online_payments?select=id,message&status=eq.started&message=like.unconfirmed*&created_at=gte.${since}${bookingId ? `&booking_id=eq.${enc(bookingId)}` : ""}&limit=20`).catch(() => []);
+  const w = typeof on === "string" ? { bookingId: on } : on ?? {};
+  const where = w.invoiceId ? `&invoice_id=eq.${enc(w.invoiceId)}` : w.planBillId ? `&plan_bill_id=eq.${enc(w.planBillId)}` : w.bookingId ? `&booking_id=eq.${enc(w.bookingId)}` : "";
+  if (on && !where) return 0;
+  const rows = await sbGet<{ id: string; message: string }>(`online_payments?select=id,message&status=eq.started&message=like.unconfirmed*&created_at=gte.${since}${where}&limit=20`).catch(() => []);
   let left = 0;
   for (const r of rows) {
     const txn = r.message.match(/^unconfirmed ([A-Za-z0-9-]{4,64}):/)?.[1];
