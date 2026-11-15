@@ -54,3 +54,12 @@ test("a lookup without ssl_result but with APPROVAL counts as approved", () => {
   assert.equal(v.last4, "8700");
   assert.equal(judge({ ssl_result_message: "DECLINED", ssl_amount: "146.80" }, { amount: 146.8, invoice: "OCX" }).approved, false);
 });
+
+test("judge: only Converge saying no is a sure decline; a lookup that failed isn't", () => {
+  const ex = { amount: 108.3, invoice: "OCX" };
+  assert.equal(judge({ ssl_result: "1", ssl_result_message: "DECLINED", ssl_amount: "108.30" }, ex).certain, true);
+  assert.equal(judge({ errorCode: "5040", errorMessage: "Invalid Transaction ID" }, ex).certain, false);
+  assert.equal(judge({ errorMessage: "Converge didn't answer" }, ex).certain, false);
+  assert.equal(judge({ ssl_result: "0", ssl_amount: "100.00" }, ex).certain, false);
+  assert.equal(judge({ ssl_result: "0", ssl_amount: "108.30", ssl_trans_status: "VOID" }, ex).certain, true);
+});

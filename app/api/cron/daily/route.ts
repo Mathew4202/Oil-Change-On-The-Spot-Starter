@@ -74,6 +74,8 @@ export async function GET(req: NextRequest) {
   }
   // 3) Maintenance plans: this month's pay link on each plan's bill day, and plans that finished their year
   const plans = await runPlanBilling(today).catch(() => ({ billed: 0, ended: 0 }));
+  // 3b) Card payments Converge hadn't confirmed: ask again (recorded if approved, declined if it says so)
+  const cardsWaiting = await (await import("@/lib/os/payments")).recheckUnconfirmed().catch(() => 0);
   // 4) A couple of cars we've done get their oil approval filled in (under the daily lookup cap)
   const specs = await backfillSpecs(2).catch(() => ({ filled: 0 }));
   // 4b) Bookings in the next few days still without the oil on file: look them up again and attach it
@@ -96,7 +98,7 @@ export async function GET(req: NextRequest) {
     ? await backupNow().catch((e) => ({ sent: false, reason: String(e).slice(0, 120) })) : null;
   // 5) What Quo sent us is only kept two weeks
   await sbDelete("webhook_log", `at=lt.${new Date(Date.now() - 14 * 86400000).toISOString()}`).catch(() => null);
-  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached, route, late, fillIns, backup, square });
+  return NextResponse.json({ ok: true, today, tomorrow, ...out, planBills: plans.billed, plansEnded: plans.ended, specsFilled: specs.filled, oilAttached, cardsWaiting, route, late, fillIns, backup, square });
 }
 
 function addDays(d: string, n: number) { const [y, m, dd] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); }

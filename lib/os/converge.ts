@@ -61,19 +61,26 @@ export function parseAscii(text: string): Record<string, string> {
   return out;
 }
 
-export type Verdict = { approved: boolean; reason: string; last4: string | null };
+/** certain: Converge itself said no (the bank declined, or it was voided). Not certain: we couldn't confirm it
+ *  (no answer, an error from the lookup, not found yet, numbers that don't match). The card may well have been charged,
+ *  so an uncertain "no" must never tell the customer "nothing was charged, try again". */
+export type Verdict = { approved: boolean; certain: boolean; reason: string; last4: string | null };
 
 /** Approved only if Converge says so, for exactly our amount and our invoice number. */
 export function judge(q: Record<string, string>, expect: { amount: number; invoice: string }): Verdict {
   const last4 = (q.ssl_card_number || "").replace(/\D/g, "").slice(-4) || null;
-  if (q.errorCode || q.errorMessage) return { approved: false, reason: q.errorMessage || `error ${q.errorCode}`, last4 };
+  if (q.errorCode || q.errorMessage) return { approved: false, certain: false, reason: q.errorMessage || `error ${q.errorCode}`, last4 };
   // a transaction lookup doesn't always include ssl_result: an "APPROVAL" message counts as approved too
   const ok = q.ssl_result === "0" || (q.ssl_result == null && /APPROV/i.test(q.ssl_result_message || ""));
-  if (!ok) return { approved: false, reason: q.ssl_result_message || (q.ssl_result == null ? "no result from Converge" : "declined"), last4 };
-  if ((q.ssl_trans_status || "").toUpperCase() && /^(VOID|DECLINED|ERROR)/i.test(q.ssl_trans_status || "")) return { approved: false, reason: q.ssl_trans_status!, last4 };
-  if (money(Number(q.ssl_amount)) !== money(expect.amount)) return { approved: false, reason: `amount was ${q.ssl_amount}, expected ${money(expect.amount)}`, last4 };
-  if (q.ssl_invoice_number && q.ssl_invoice_number !== expect.invoice) return { approved: false, reason: "invoice number doesn't match", last4 };
-  return { approved: true, reason: "approved", last4 };
+  if (!ok) {
+    const said = (q.ssl_result != null && q.ssl_result !== "0") || /DECLIN|DENIED|PICK UP|EXPIRED|INSUFF|CALL AUTH/i.test(q.ssl_result_message || "");
+    return { approved: false, certain: said, reason: q.ssl_result_message || (q.ssl_result == null ? "no result from Converge" : "declined"), last4 };
+  }
+  if (/^(VOID|DECLINED)/i.test(q.ssl_trans_status || "")) return { approved: false, certain: true, reason: q.ssl_trans_status!, last4 };
+  if (/^ERROR/i.test(q.ssl_trans_status || "")) return { approved: false, certain: false, reason: q.ssl_trans_status!, last4 };
+  if (money(Number(q.ssl_amount)) !== money(expect.amount)) return { approved: false, certain: false, reason: `amount was ${q.ssl_amount}, expected ${money(expect.amount)}`, last4 };
+  if (q.ssl_invoice_number && q.ssl_invoice_number !== expect.invoice) return { approved: false, certain: false, reason: "invoice number doesn't match", last4 };
+  return { approved: true, certain: true, reason: "approved", last4 };
 }
 
 /** What's still owed: the receipt total minus whatever was already paid (a booking paid online, say). */

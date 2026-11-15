@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(r, { status: r.ok ? 200 : 400 });
     }
     if (body.action === "claim") {   // paid by card online, but HQ didn't hear back: check the Converge transaction ID
-      const r = await claimByTxn(id, String(body.txnId || ""));
+      const r = await claimByTxn(id, String(body.txnId || ""), body.force === true);
       return NextResponse.json(r, { status: r.ok ? 200 : 400 });
     }
     if (body.action === "paylink") {   // text them a link to pay online

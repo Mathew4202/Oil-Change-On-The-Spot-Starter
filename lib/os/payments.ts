@@ -6,7 +6,7 @@ import { markBillPaid } from "@/lib/os/plans";
 import { siteUrl } from "@/lib/os/customer-texts";
 import { pushToOwners } from "@/lib/os/push";
 import { cfetch, viaFixedAddress } from "@/lib/os/converge-fetch";
-import { amountDue, convergeEnv, invoiceFor, judge, parseAscii, payPageUrl, processUrl, queryForm, tokenForm, tokenUrl } from "@/lib/os/converge";
+import { amountDue, convergeEnv, invoiceFor, judge, parseAscii, payPageUrl, processUrl, queryForm, tokenForm, tokenUrl, type Verdict } from "@/lib/os/converge";
 
 export const payReady = () => !!convergeEnv();
 /**
@@ -142,6 +142,9 @@ export async function startOnlinePayment(token: string, tipIn: number): Promise<
   const t = await payTarget(token);
   if (!t) return { ok: false, error: "This pay link isn't valid anymore." };
   if (t.due <= 0) return { ok: false, error: "This is already paid. Thank you!" };
+  // an earlier card payment on this booking that Converge hasn't confirmed yet: never start a second charge
+  if (t.bookingId && (await recheckUnconfirmed(t.bookingId).catch(() => 0)) > 0)
+    return { ok: false, error: "We're still confirming your last card payment with the bank. Please don't pay again. If it went through, it's marked paid on its own." };
   const tip = t.kind === "job" ? r2(Math.min(500, Math.max(0, tipIn || 0))) : 0;
   const amount = r2(t.due + tip);
   const row = await sbInsert<{ id: string }>("online_payments", { booking_id: t.bookingId, job_id: t.jobId, kind: t.kind, amount, tip, status: "started", ...(t.invoiceId ? { invoice_id: t.invoiceId } : {}), ...(t.planBillId ? { plan_bill_id: t.planBillId } : {}) });
@@ -160,23 +163,44 @@ export async function startOnlinePayment(token: string, tipIn: number): Promise<
 
 type OnlineRow = { id: string; booking_id: string; job_id: string | null; invoice_id?: string | null; plan_bill_id?: string | null; kind: "job" | "prepay" | "invoice" | "plan"; amount: number; tip: number; status: string };
 
-/** Converge sent them back. Check the transaction with Converge itself, then record it once. Returns the pay link token to show. */
-export async function finishOnlinePayment(paymentId: string, txnId: string | null): Promise<{ token: string | null; status: "approved" | "declined" | "error" }> {
+/** Converge sent them back. Check the transaction with Converge itself, then record it once. Returns the pay link token to show.
+ *  "pending": Converge didn't confirm it either way (a lookup error, or it isn't there yet). The card may have been charged,
+ *  so the customer is told not to pay again, owners get a notice, and it's checked again later. */
+export async function finishOnlinePayment(paymentId: string, txnId: string | null, opts: { quiet?: boolean } = {}): Promise<{ token: string | null; status: "approved" | "declined" | "pending" | "error" }> {
   const [p] = await sbGet<OnlineRow>(`online_payments?select=id,booking_id,job_id,invoice_id,plan_bill_id,kind,amount,tip,status&id=eq.${enc(paymentId)}`);
   if (!p) return { token: null, status: "error" };
   const token = await tokenOf(p);
   if (p.status === "approved") return { token, status: "approved" };    // refresh / back button
   const c = convergeEnv();
   if (!c || !txnId || !/^[A-Za-z0-9-]{4,64}$/.test(txnId)) {
+    // no transaction came back: they closed or cancelled the card page
     await sbPatch("online_payments", `id=eq.${p.id}&status=eq.started`, { status: "declined", message: "no transaction id", finished_at: new Date().toISOString() });
     return { token, status: "declined" };
   }
-  const res = await cfetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, txnId)) }).catch(() => null);
-  const q = res?.ok ? parseAscii(await res.text()) : { errorMessage: "Converge didn't answer" };
-  const v = judge(q, { amount: Number(p.amount), invoice: invoiceFor(p.id) });
-  if (!v.approved) {
+  // ask Converge; a sale it only just made can take a few seconds to show up, so ask again before giving up
+  let v: Verdict = { approved: false, certain: false, reason: "not checked", last4: null };
+  for (let i = 0; i < (opts.quiet ? 1 : 3); i++) {
+    if (i) await new Promise((r) => setTimeout(r, 3000));
+    const res = await cfetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, txnId)), signal: AbortSignal.timeout(8000) }).catch(() => null);
+    const q = res?.ok ? parseAscii(await res.text()) : { errorMessage: "Converge didn't answer" };
+    v = judge(q, { amount: Number(p.amount), invoice: invoiceFor(p.id) });
+    if (v.approved || v.certain) break;
+  }
+  if (!v.approved && v.certain) {
     await sbPatch("online_payments", `id=eq.${p.id}&status=eq.started`, { status: "declined", message: `${txnId}: ${v.reason}`.slice(0, 300), card_last4: v.last4, finished_at: new Date().toISOString() });
     return { token, status: "declined" };
+  }
+  if (!v.approved) {
+    // couldn't confirm: stays "started" with the transaction kept, so it's checked again (pay page, owners, daily)
+    const first = !(await sbGet<{ message: string | null }>(`online_payments?select=message&id=eq.${p.id}`).catch(() => []))[0]?.message?.startsWith("unconfirmed");
+    await sbPatch("online_payments", `id=eq.${p.id}&status=eq.started`, { message: `unconfirmed ${txnId}: ${v.reason}`.slice(0, 300), card_last4: v.last4 });
+    if (first) {
+      const title = `Card payment not confirmed: $${Number(p.amount).toFixed(2)}`;
+      const body = `Converge didn't confirm it (${v.reason}). The card may have been charged. Check Converge for transaction ${txnId}. The customer was told not to pay again.`;
+      try { await sbInsert("notifications", { kind: "paid_online", booking_id: p.booking_id, title, body }); } catch { /* best effort */ }
+      await Promise.race([pushToOwners({ title, body: `Check Converge for ${txnId}`, url: "/owner/money", tag: `unconf-${p.id}` }).catch(() => null), new Promise((r) => setTimeout(r, 4000))]);
+    }
+    return { token, status: "pending" };
   }
   // claim it: only the request that flips started → approved records the money (the txn id is unique too)
   const claimed = await sbPatchRows("online_payments", `id=eq.${p.id}&status=eq.started`, { status: "approved", txn_id: txnId, card_last4: v.last4, message: null, finished_at: new Date().toISOString() });
@@ -187,6 +211,20 @@ export async function finishOnlinePayment(paymentId: string, txnId: string | nul
   }
   await recordOnline(p, txnId, v.last4);
   return { token, status: "approved" };
+}
+
+/** Card payments Converge hasn't confirmed yet (for one booking, or all in the last 3 days): ask again. */
+export async function recheckUnconfirmed(bookingId?: string): Promise<number> {
+  const since = new Date(Date.now() - 3 * 864e5).toISOString();
+  const rows = await sbGet<{ id: string; message: string }>(`online_payments?select=id,message&status=eq.started&message=like.unconfirmed*&created_at=gte.${since}${bookingId ? `&booking_id=eq.${enc(bookingId)}` : ""}&limit=20`).catch(() => []);
+  let left = 0;
+  for (const r of rows) {
+    const txn = r.message.match(/^unconfirmed ([A-Za-z0-9-]{4,64}):/)?.[1];
+    if (!txn) continue;
+    const x = await finishOnlinePayment(r.id, txn, { quiet: true }).catch(() => null);
+    if (x?.status === "pending") left++;
+  }
+  return left;
 }
 
 async function tokenOf(p: OnlineRow) {
@@ -279,23 +317,33 @@ export async function convergeCheck(): Promise<{ set: boolean; mode?: "demo" | "
  * first). Paste the Converge transaction ID: HQ checks it with Converge, matches it to this booking's card page,
  * then records it exactly as if they'd come back (paid, tip, receipt).
  */
-export async function claimByTxn(bookingId: string, txnIdIn: string): Promise<{ ok: boolean; error?: string; amount?: number }> {
+export async function claimByTxn(bookingId: string, txnIdIn: string, force = false): Promise<{ ok: boolean; error?: string; amount?: number; canForce?: boolean }> {
   const txnId = txnIdIn.trim();
   const c = convergeEnv();
   if (!c) return { ok: false, error: "Card payments aren't set up" };
   if (!/^[A-Za-z0-9-]{4,64}$/.test(txnId)) return { ok: false, error: "That doesn't look like a Converge transaction ID" };
+  // the owner checked Converge themselves and it's there: record the attempt that came back with this transaction
+  if (force) {
+    const [p] = await sbGet<OnlineRow & { message: string | null }>(`online_payments?select=id,booking_id,job_id,invoice_id,plan_bill_id,kind,amount,tip,status,message&booking_id=eq.${enc(bookingId)}&status=eq.started&message=like.${enc(`unconfirmed ${txnId}:*`)}&limit=1`).catch(() => []);
+    if (!p) return { ok: false, error: "No card payment waiting on that transaction for this booking" };
+    const claimed = await sbPatchRows("online_payments", `id=eq.${p.id}&status=eq.started`, { status: "approved", txn_id: txnId, message: "confirmed by an owner in Converge", finished_at: new Date().toISOString() });
+    if (claimed.length) await recordOnline(p, txnId, null);
+    return { ok: true, amount: Number(p.amount) };
+  }
   const res = await cfetch(processUrl(c), { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(queryForm(c, txnId)) }).catch(() => null);
   const q = res?.ok ? parseAscii(await res.text()) : null;
-  if (!q) return { ok: false, error: "Converge didn't answer. Try again in a minute." };
+  const waiting = (await sbGet<{ id: string }>(`online_payments?select=id&booking_id=eq.${enc(bookingId)}&status=eq.started&message=like.${enc(`unconfirmed ${txnId}:*`)}&limit=1`).catch(() => [])).length > 0;
+  if (!q) return { ok: false, error: "Converge didn't answer. Try again in a minute.", canForce: waiting };
   const rows = await sbGet<{ id: string; status: string }>(`online_payments?select=id,status&booking_id=eq.${enc(bookingId)}&order=created_at.desc`).catch(() => []);
   const p = rows.find((r) => invoiceFor(r.id) === (q.ssl_invoice_number || ""));
-  if (!p) return { ok: false, error: `That transaction${q.ssl_invoice_number ? ` (invoice ${q.ssl_invoice_number})` : ""} isn't one of this job's card payments` };
+  if (!p && waiting && (q.errorCode || q.errorMessage)) return { ok: false, error: `Converge's lookup couldn't confirm it (${q.errorMessage || q.errorCode}). If you see it approved in Converge, tap the button below.`, canForce: true };
+  if (!p) return { ok: false, error: `That transaction${q.ssl_invoice_number ? ` (invoice ${q.ssl_invoice_number})` : ""} isn't one of this job's card payments`, canForce: waiting };
   if (p.status === "approved") return { ok: true };
   if (p.status !== "started") await sbPatch("online_payments", `id=eq.${p.id}`, { status: "started" });
   const r = await finishOnlinePayment(p.id, txnId);
   if (r.status !== "approved") {
     const [now] = await sbGet<{ message: string | null }>(`online_payments?select=message&id=eq.${p.id}`).catch(() => []);
-    return { ok: false, error: `Converge doesn't show it as approved: ${now?.message ?? r.status}` };
+    return { ok: false, error: `Converge doesn't show it as approved: ${now?.message ?? r.status}`, canForce: r.status === "pending" };
   }
   return { ok: true, amount: Number(q.ssl_amount) || undefined };
 }

@@ -127,6 +127,7 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
   const needPay = !!ctx && !fleetJob && !notLastCar && !pay && balance > 0;
   const payChoices: [string, string][] = [...(prepaid > 0 ? PAY.filter(([k]) => k !== "card_online") : PAY), ...(ctx?.planId ? [["plan", "On next plan bill"] as [string, string]] : [])];
 
+  const [canForce, setCanForce] = useState(false);
   async function post(body: object) {
     setBusy(true); setErr("");
     const r = await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId, ...body }) });
@@ -165,10 +166,15 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
     const j = await post({ action: "pay", method: pay, tip: Number(tip) > 0 ? Number(tip) : 0, email: email.trim() || null });
     if (j) setResult(`Marked paid.${receiptMsg(j.receipt)}`);
   }
-  async function claim() {
+  async function claim(force = false) {
     if (!txnId.trim()) return setErr("Paste the transaction ID from Converge");
-    const j = await post({ action: "claim", txnId: txnId.trim() });
-    if (j) setResult(`Card payment found in Converge${j.amount ? ` (${money(j.amount)})` : ""} and marked paid. The receipt went out.`);
+    setCanForce(false);
+    setBusy(true); setErr("");
+    const r = await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId, action: "claim", txnId: txnId.trim(), force }) });
+    const j = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok || j.ok === false) { setErr(j.error || "Something went wrong"); setCanForce(!!j.canForce); return; }
+    setResult(force ? "Marked paid by card. The receipt went out." : `Card payment found in Converge${j.amount ? ` (${money(j.amount)})` : ""} and marked paid. The receipt went out.`);
   }
   async function sendPayLink() {
     const j = await post({ action: "paylink" });
@@ -229,7 +235,8 @@ function OneCar({ bookingId, owner, onClose, onNext }: { bookingId: string; owne
                     <div className="flex flex-col gap-2 rounded-lg bg-[#f4f6fa] p-2">
                       <label className="flex flex-col gap-1 text-sm font-semibold">Converge transaction ID <span className="font-normal text-xs text-[#4a5878]">They paid by card on the link but it still shows unpaid? In Converge, open the payment and copy its Transaction ID. HQ checks it and records the right amount and tip.</span>
                         <input id="job-txn" value={txnId} onChange={(e) => setTxnId(e.target.value)} placeholder="e.g. 071126O74-2726321D-..." autoCapitalize="characters" className={field} style={{ borderColor: LINE }} /></label>
-                      <button onClick={claim} disabled={busy || !txnId.trim()} className="h-11 rounded-lg font-bold text-sm disabled:opacity-50" style={{ background: NAVY, color: "#fff" }}>Check with Converge and mark paid</button>
+                      <button onClick={() => claim()} disabled={busy || !txnId.trim()} className="h-11 rounded-lg font-bold text-sm disabled:opacity-50" style={{ background: NAVY, color: "#fff" }}>Check with Converge and mark paid</button>
+                      {canForce && <button onClick={() => claim(true)} disabled={busy} className="h-11 rounded-lg border-2 font-bold text-sm" style={{ borderColor: NAVY }}>I see it approved in Converge: mark paid</button>}
                     </div>
                   )}
                   {ctx.customer?.phone && (

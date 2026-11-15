@@ -1,5 +1,5 @@
 // Pay online: for a booking (pay before) or a finished job / cancellation fee (pay after, tip optional).
-import { payReady, payTarget } from "@/lib/os/payments";
+import { payReady, payTarget, recheckUnconfirmed } from "@/lib/os/payments";
 import { PHONE, PHONE_TEL } from "@/lib/os/business";
 import PayBox from "./PayBox";
 import { BUSINESS } from "@/lib/os/receipt";
@@ -12,8 +12,11 @@ const money = (n: number) => `${n < 0 ? "−" : ""}$${Math.abs(n).toFixed(2)}`;
 const whenText = (iso: string) => new Date(iso).toLocaleString("en-CA", { timeZone: "America/Halifax", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).replace(/\./g, "");
 
 export default async function PayPage({ params, searchParams }: { params: { token: string }; searchParams: { result?: string } }) {
-  const t = await payTarget(params.token).catch(() => null);
-  const result = searchParams.result;
+  let t = await payTarget(params.token).catch(() => null);
+  // a card payment Converge hasn't confirmed yet: ask again now; while it's still unconfirmed, no second payment
+  const waiting = t && t.due > 0 && t.bookingId ? await recheckUnconfirmed(t.bookingId).catch(() => 0) : 0;
+  if (t && waiting === 0 && searchParams.result === "pending") t = await payTarget(params.token).catch(() => t);
+  const result = waiting > 0 ? "pending" : searchParams.result === "pending" && t && t.due === 0 ? "approved" : searchParams.result;
   return (
     <div className="min-h-[70vh] bg-[#eef1f6] flex justify-center px-4 py-8">
       <div className="w-full max-w-md flex flex-col gap-4 text-[#0d1b3e]">
@@ -29,7 +32,8 @@ export default async function PayPage({ params, searchParams }: { params: { toke
         {t && (
           <>
             {result === "approved" && <p className="rounded-xl p-4 font-semibold" style={{ background: "#dff3e6", color: "#1d6b3a" }} role="status">Your payment went through.{t.kind === "job" ? " Your receipt is below, and we've emailed it if we have your email." : t.kind === "invoice" ? " The invoice is marked paid. Thank you!" : t.kind === "plan" ? " Thanks, your plan payment is in." : " See you at your appointment!"}</p>}
-            {result === "declined" && t.due > 0 && <p className="rounded-xl p-4 font-semibold" style={{ background: "#fde2e1", color: "#8a1c1c" }} role="alert">The payment didn&apos;t go through, and nothing was charged. You can try again{t.kind === "prepay" ? ", or just pay after the job" : ""}.</p>}
+            {result === "declined" && t.due > 0 && <p className="rounded-xl p-4 font-semibold" style={{ background: "#fde2e1", color: "#8a1c1c" }} role="alert">Your card was declined, so the payment didn&apos;t go through. You can try again{t.kind === "prepay" ? ", or just pay after the job" : ""}.</p>}
+            {result === "pending" && <p className="rounded-xl p-4 font-semibold" style={{ background: "#fff6dd", color: "#8a5a00" }} role="status">We&apos;re confirming your card payment with the bank. Please don&apos;t pay again: if it went through, it&apos;s marked paid here on its own. Questions? Call or text us at {PHONE}.</p>}
             {result === "error" && <p className="rounded-xl p-4 font-semibold" style={{ background: "#fff6dd", color: "#8a5a00" }} role="alert">We couldn&apos;t confirm that payment. Please don&apos;t pay again yet. Call or text us at {PHONE} and we&apos;ll check.</p>}
 
             <section className="bg-white rounded-2xl p-5 flex flex-col gap-3">
@@ -43,7 +47,7 @@ export default async function PayPage({ params, searchParams }: { params: { toke
                 <div className="flex justify-between gap-3 font-extrabold text-lg"><span>Total</span><span>{money(t.total)}</span></div>
                 {t.paid > 0 && <div className="flex justify-between gap-3 text-[#1d6b3a] font-semibold"><span>Paid</span><span>{money(-Math.min(t.paid, t.total))}</span></div>}
               </div>
-              {t.due > 0 && (payReady()
+              {t.due > 0 && result !== "pending" && (payReady()
                 ? t.kind === "prepay" ? <PayBox token={t.token} due={t.due} allowTip={false} /> : (
                   <>
                     <div className="rounded-xl p-4 bg-[#fff6dd] text-[15px] flex flex-col gap-1">
