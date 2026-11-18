@@ -109,6 +109,12 @@ export async function loadStores(): Promise<Record<string, string>> {
     const s = storeName(q?.supplier, r.brand) ?? storeName(null, r.brand);
     if (s && !out[storeKey(r.part_number)]) out[storeKey(r.part_number)] = s;
   }
+  // a number linked to a part (the PART NO next to the PROD NO) is from the same store as that part
+  for (const l of await loadLinks()) {
+    const a = storeKey(l.alias), m = storeKey(l.part_number);
+    if (out[m] && !out[a]) out[a] = out[m];
+    else if (out[a] && !out[m]) out[m] = out[a];
+  }
   return out;
 }
 

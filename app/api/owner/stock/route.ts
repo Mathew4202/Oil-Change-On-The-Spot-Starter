@@ -47,8 +47,8 @@ export async function GET() {
   const { loadLinks, onHandAll, eitherOf, sameParts, loadStores } = await import("@/lib/os/part-alias");
   const { tagAll, tag, storeKey, storeName } = await import("@/lib/os/store-tag");
   const [links, stores] = await Promise.all([loadLinks(), loadStores()]);
-  // a filter number off a spec we've never bought: those come from NAPA's lookup
-  const either = (pn: string) => sameParts(pn, links).map((p, i) => tag(p, stores, i === 0 ? "NAPA" : null)).join(" or ");
+  // a filter number off a spec we've never bought (and nothing linked to it has a store): those come from NAPA's lookup
+  const either = (pn: string) => { const grp = sameParts(pn, links); const known = grp.some((p) => stores[storeKey(p)]); return grp.map((p, i) => tag(p, stores, !known && i === 0 ? "NAPA" : null)).join(" or "); };
   const have = (pn: string) => onHandAll(pn, links, parts);
   const haveOil = (g: string) => parts.filter((p) => p.unit === "L" && (p.oil_grade === g || p.oil_grade === g.replace(/^Euro /, ""))).reduce((t, p) => t + Number(p.on_hand), 0);
   const toBuy = [

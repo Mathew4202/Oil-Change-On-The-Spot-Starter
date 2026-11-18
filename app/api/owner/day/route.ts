@@ -226,7 +226,7 @@ export async function GET(req: NextRequest) {
     },
     bring: {
       oil: Object.entries(oil).map(([grade, litres]) => ({ grade, litres })),
-      filters: Object.entries(filters).map(([part, qty]) => ({ part: tagAll(eitherOf(part, links), { ...stores, ...Object.fromEntries(sameParts(part, links).filter((p) => !stores[p.replace(/[^a-z0-9]/gi, "").toUpperCase()]).slice(0, 1).map((p) => [p.replace(/[^a-z0-9]/gi, "").toUpperCase(), "NAPA"])) }), qty, inStock: onHandAll(part, links, parts) })),
+      filters: Object.entries(filters).map(([part, qty]) => ({ part: tagAll(eitherOf(part, links), { ...stores, ...(sameParts(part, links).some((p) => stores[p.replace(/[^a-z0-9]/gi, "").toUpperCase()]) ? {} : { [part.replace(/[^a-z0-9]/gi, "").toUpperCase()]: "NAPA" }) }), qty, inStock: onHandAll(part, links, parts) })),
       missing,
       addons: addonList.filter((x) => !x.key.endsWith(":?")).map((x) => ({ unit: x.unit ?? null, label: x.part ? tagAll(x.label.replace(x.part, eitherOf(x.part, links)), stores) : x.label, qty: x.qty, inStock: onShelf(x, (shelf ?? []) as never, (pn) => sameParts(pn, links)) })),
     },
