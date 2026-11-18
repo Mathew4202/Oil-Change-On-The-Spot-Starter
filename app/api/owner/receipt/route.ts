@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     const scan = cleanScan(body.scan ? { ...body.scan, paid_with: body.scan.paidWith, invoice_no: body.scan.invoiceNo,
       items: (body.scan.items || []).map((i: Record<string, unknown>) => ({ description: i.description, part_number: i.partNumber, brand: i.brand, qty: i.qty,
         unit_price: i.unitPrice, line_total: i.lineTotal, category: i.category, litres_per_unit: i.litresPerUnit, oil_grade: i.oilGrade, units_per_pack: i.unitsPerPack,
-        list_price: i.listPrice, car: i.car })) } : null);
+        list_price: i.listPrice, car: i.car, alt_part_number: i.altPartNumber })) } : null);
     if (!scan) return NextResponse.json({ error: "Nothing to save" }, { status: 400 });
     // "Same as 27356" typed on a filter: link it first, so it isn't asked about again
     const linked: string[] = [];
@@ -44,6 +44,15 @@ export async function POST(req: NextRequest) {
       const { linkPart } = await import("@/lib/os/part-alias");
       const l = await linkPart(String(i.partNumber), String(i.sameAs), owner);
       linked.push(l.ok ? `${i.partNumber} = ${l.to}` : `${i.partNumber}: ${l.error}`);
+    }
+    // PartSource's other number for the same part (PART NO, e.g. CPH9688 next to PROD NO 0179939): link it, so both mean one part
+    for (const i of (body.scan.items || []) as { partNumber?: string | null; altPartNumber?: string | null }[]) {
+      if (!i.partNumber || !i.altPartNumber) continue;
+      const { linkPart, loadLinks, sameParts } = await import("@/lib/os/part-alias");
+      const alt = String(i.altPartNumber).toUpperCase();
+      if (sameParts(String(i.partNumber), await loadLinks()).some((x) => x.toUpperCase() === alt)) continue;
+      const l = await linkPart(alt, String(i.partNumber), owner);
+      linked.push(l.ok ? `${alt} = ${l.to}` : `${alt}: ${l.error}`);
     }
     // the invoice says which car a filter is for: save it to that car (or link it to the number the car already has)
     const fitted: string[] = [], fittedParts = new Set<string>();

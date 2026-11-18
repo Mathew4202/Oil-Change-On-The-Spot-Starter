@@ -5,6 +5,7 @@ export type ScanItem = {
   litresPerUnit: number | null; oilGrade: string | null;
   unitsPerPack?: number | null;   // shop towels: towels in each pack or roll
   listPrice?: number | null;      // the store's regular/retail price for one (NAPA "List"), before tax: what we charge for add-on parts
+  altPartNumber?: string | null;  // PartSource's other number for the same filter (its PART NO, like CPH9688); stored as an alias of partNumber
   car?: ScanCar | null;           // the car the invoice says the part is for ("THIS TICKET CONTAINS PARTS FOR A: 2018 ... GRAND CARAVAN 3.6L")
 };
 export type ScanCar = { year: number; make: string; model: string; engine: string | null };
@@ -88,7 +89,11 @@ export function cleanScan(raw: unknown): Scan | null {
     else if (/shop\s*towel|blue\s*towel|wypall|wipers? towel|paper towel/i.test(words)) cat = "shop_towels";
     else if (/washer|windshield\s*(wash|fluid)|w\/s\s*fluid|-40\b|bug\s*wash/i.test(words) && cat !== "oil") cat = "washer_fluid";
     else if (/coolant|antifreeze|anti-freeze/i.test(words) && cat !== "oil") cat = "coolant";
-    const pn = it.part_number ? String(it.part_number).toUpperCase().replace(/^(PPF|NAPA|PFG)\s*/, "").replace(/[^A-Z0-9-]/g, "").slice(0, 20) || null : null;
+    const clean = (v: unknown) => v ? String(v).toUpperCase().replace(/^(PPF|NAPA|PFG)\s*/, "").replace(/[^A-Z0-9-]/g, "").slice(0, 20) || null : null;
+    let pn = clean(it.part_number), alt = clean(it.alt_part_number);
+    // PartSource prints two numbers: PART NO (letters and digits, CPH9688) and PROD NO (7 digits, 0179939). We always keep the PROD NO.
+    if (supplierOf(vendor) === "partsource" && alt && /^\d{5,}$/.test(alt) && !/^\d{5,}$/.test(pn ?? "")) [pn, alt] = [alt, pn];
+    if (alt === pn) alt = null;
     const grade = it.oil_grade ? String(it.oil_grade).toUpperCase().replace(/\s+/g, "").match(/^(\d{1,2})W-?(\d{1,2})$/) : null;
     return {
       description: String(it.description ?? "").trim().slice(0, 120) || "Item", partNumber: pn,
@@ -96,6 +101,7 @@ export function cleanScan(raw: unknown): Scan | null {
       litresPerUnit: num(it.litres_per_unit) ?? (cat === "washer_fluid" || cat === "coolant" ? jugLitres(words) : null), oilGrade: grade ? `${grade[1]}W-${grade[2]}` : null,
       ...(cat === "shop_towels" ? { unitsPerPack: num(it.units_per_pack) ?? towelsIn(words) } : {}),
       ...(num(it.list_price) != null && (num(it.list_price) as number) > 0 ? { listPrice: r2(num(it.list_price) as number) } : {}),
+      ...(alt ? { altPartNumber: alt } : {}),
       ...(cleanCar(it.car) ? { car: cleanCar(it.car) } : {}),
     };
   }).filter((i) => i.lineTotal !== 0 || i.description !== "Item");
@@ -134,8 +140,9 @@ Read it carefully. Reply with ONLY this JSON (no other text):
  "items":[{"description":"","part_number":"string or null","brand":"string or null","qty":1,"unit_price":0,"line_total":0,"list_price":"number or null",
    "category":"oil_filter|cabin_filter|engine_filter|wiper|battery|oil|fluid|tool|supply|gloves|shop_towels|fuel|other",
    "car":"{year, make, model, engine} or null",
+   "alt_part_number":"string or null",
    "litres_per_unit":null,"oil_grade":null,"units_per_pack":null}]}
-Rules: prices before tax per line. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). unit_price is the price of ONE of what qty counts (one case, jug or pail): if the invoice shows a price per litre and qty in cases or jugs, unit_price = price per litre x litres in each. For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". Disposable/nitrile gloves -> category "gloves", qty = number of boxes. Shop towels (blue towels, WypAll, rolls or boxes of wipes) -> category "shop_towels", qty = number of packs/rolls/boxes, units_per_pack = towels in each one (from "200 CT", "55 sheets" etc.). list_price: when the invoice shows a regular/list/retail price for one item next to the price we paid (NAPA "LIST" and "NET" or "YOUR PRICE" columns), give the list/retail price for one, before tax; otherwise null. unit_price is always what we actually paid. Windshield washer fluid -> category "washer_fluid", coolant/antifreeze -> category "coolant", both with litres_per_unit (3.78 for a 1 gallon jug, 4 for a 4 L jug). Environmental fee lines (e.g. NAPA "035 FILTERS LESS THAN 8IN") are their own items. "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". car: when the invoice says which vehicle a part is for (PartSource prints "THIS TICKET CONTAINS PARTS FOR A: 2018 DODGE-RAM TRUCK GRAND CARAVAN V6-3604 3.6L DOHC" above the parts; NAPA may print a vehicle line), give that car on every item under it until the next vehicle line, as {"year":2018,"make":"Dodge","model":"Grand Caravan","engine":"3.6L"} with the make and model in plain words (drop "TRUCK", "-RAM TRUCK", engine codes). Otherwise null. If something is unreadable use null.`;
+Rules: prices before tax per line. Part numbers: PartSource invoices have a PART NO column (letters and digits, like CPH9688 or PH12447) and a PROD NO column (a 7-digit number, like 0179939 or 1175404). part_number is ALWAYS the 7-digit PROD NO, never the PART NO; put the PART NO in alt_part_number. For NAPA and other stores, part_number is the part number and alt_part_number is null. "on_account" means charged to a store account (e.g. "ACCOUNT", "CHARGE", "AR"). unit_price is the price of ONE of what qty counts (one case, jug or pail): if the invoice shows a price per litre and qty in cases or jugs, unit_price = price per litre x litres in each. For motor oil give litres_per_unit (e.g. 4.4 for a 4.4 L jug, 18.9 for a pail; convert quarts x 0.946) and oil_grade like "0W-20". NAPA part numbers like "PPF 27356" -> part_number "27356", brand "NAPA ProFormer". Gas station fuel -> category "fuel". Disposable/nitrile gloves -> category "gloves", qty = number of boxes. Shop towels (blue towels, WypAll, rolls or boxes of wipes) -> category "shop_towels", qty = number of packs/rolls/boxes, units_per_pack = towels in each one (from "200 CT", "55 sheets" etc.). list_price: when the invoice shows a regular/list/retail price for one item next to the price we paid (NAPA "LIST" and "NET" or "YOUR PRICE" columns), give the list/retail price for one, before tax; otherwise null. unit_price is always what we actually paid. Windshield washer fluid -> category "washer_fluid", coolant/antifreeze -> category "coolant", both with litres_per_unit (3.78 for a 1 gallon jug, 4 for a 4 L jug). Environmental fee lines (e.g. NAPA "035 FILTERS LESS THAN 8IN") are their own items. "currency": "USD" only when the invoice is in US dollars (USD, US$, a US company's online invoice like a software subscription), otherwise "CAD". car: when the invoice says which vehicle a part is for (PartSource prints "THIS TICKET CONTAINS PARTS FOR A: 2018 DODGE-RAM TRUCK GRAND CARAVAN V6-3604 3.6L DOHC" above the parts; NAPA may print a vehicle line), give that car on every item under it until the next vehicle line, as {"year":2018,"make":"Dodge","model":"Grand Caravan","engine":"3.6L"} with the make and model in plain words (drop "TRUCK", "-RAM TRUCK", engine codes). Otherwise null. If something is unreadable use null.`;
 
 export async function scanReceipt(imageBase64: string, mediaType: string): Promise<{ scan: Scan | null; error?: string }> {
   const { askAI, aiLastError } = await import("@/lib/os/ai");   // loaded here so this file stays testable on its own

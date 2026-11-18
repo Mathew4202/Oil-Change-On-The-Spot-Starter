@@ -77,3 +77,24 @@ test("the car a PartSource line is for, in plain words", () => {
     car: { year: 2020, make: "FORD TRUCK", model: "ESCAPE", engine: "2.0L" } }] })!;
   assert.equal(s.items[0].car?.model, "Escape");
 });
+
+test("PartSource: always the 7-digit PROD NO, even when the model put the PART NO first; the PART NO is kept as the alias", () => {
+  const s = cleanScan({ vendor: "PartSource", total: 6.48, items: [
+    { description: "Oil Filter", part_number: "CPH9688", alt_part_number: "0179939", qty: 1, unit_price: 3.24, line_total: 3.24, category: "oil_filter",
+      car: { year: 2011, make: "HYUNDAI TRUCK", model: "TUCSON", engine: "2.4L" } },
+    { description: "Oil Filter", part_number: "0179939", alt_part_number: "CPH9688", qty: 1, unit_price: 3.24, line_total: 3.24, category: "oil_filter" },
+    { description: "Oil Filter", part_number: "PH12447", alt_part_number: "1175404", qty: 1, unit_price: 7.39, line_total: 7.39, category: "oil_filter" },
+  ] })!;
+  assert.equal(s.items[0].partNumber, "0179939");
+  assert.equal(s.items[0].altPartNumber, "CPH9688");
+  assert.equal(s.items[1].partNumber, "0179939");
+  assert.equal(s.items[1].altPartNumber, "CPH9688");
+  assert.equal(s.items[2].partNumber, "1175404");
+  assert.equal(s.items[2].altPartNumber, "PH12447");
+});
+
+test("NAPA: part number is kept as is, no alias added", () => {
+  const s = cleanScan({ vendor: "NAPA", total: 10, items: [{ description: "Oil filter", part_number: "PPF 27356", alt_part_number: null, qty: 1, unit_price: 5, line_total: 5, category: "oil_filter" }] })!;
+  assert.equal(s.items[0].partNumber, "27356");
+  assert.equal(s.items[0].altPartNumber, undefined);
+});
