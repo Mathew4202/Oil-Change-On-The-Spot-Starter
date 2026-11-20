@@ -380,7 +380,18 @@ export default function Calendar({ owner, initialDate, bookFor }: { owner: strin
                   <button data-tour="start-job" onClick={async () => { await fetch("/api/owner/job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", bookingId: j.id }) }); setJobOpen(j.id); load(date); }}
                     className="h-12 rounded-xl font-extrabold text-base" style={{ background: GOLD, color: NAVY }}>Start job</button>
                 ) : j.status === "in_progress" ? (
-                  <button onClick={() => setJobOpen(j.id)} className="h-12 rounded-xl font-extrabold text-base" style={{ background: GOLD, color: NAVY }}>Finish job</button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => setJobOpen(j.id)} className="h-12 rounded-xl font-extrabold text-base" style={{ background: GOLD, color: NAVY }}>Finish job</button>
+                    <button onClick={async () => {
+                      // started but couldn't be done (e.g. winter tires don't fit): cancel it, no charge, the customer is told
+                      const why = window.prompt("Why couldn't you do it? The customer is told.", "Couldn't do the job");
+                      if (!why || !why.trim()) return;
+                      const r = await fetch("/api/owner/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId: j.id, action: "cancel", reason: why.trim() }) });
+                      const d = await r.json().catch(() => ({}));
+                      if (!r.ok) { window.alert(d.error || "Couldn't cancel it. Try again."); return; }
+                      load(date); loadAlerts();
+                    }} className="h-12 rounded-xl border-2 font-bold text-sm" style={{ borderColor: "#9b1c1c", color: "#9b1c1c" }}>Couldn't do it: cancel</button>
+                  </div>
                 ) : j.status === "done" ? (
                   <button onClick={() => setJobOpen(j.id)} className="h-12 rounded-xl font-bold text-base border"
                     style={j.paid ? { borderColor: "#c8d0e0" } : { background: GOLD, color: NAVY, borderColor: GOLD }}>
