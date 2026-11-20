@@ -113,7 +113,9 @@ export async function GET() {
       : Object.entries(bookedPart).filter(([pn]) => group.includes(normPart(pn))).reduce((t, [, q]) => t + q, 0);
     const need = Math.max(perMonth, booked);
     if (need <= 0) return [];
-    const short = need + Number(p.reorder_at ?? 0) - Number(p.on_hand);
+    // reorder before it runs out: the shelf should hold next month's need plus one spare box
+    const target = need + Number(p.reorder_at ?? 0) + boxL;
+    const short = target - Number(p.on_hand);
     if (short <= 0) return [];
     const isOil = p.category === "oil";
     const buy = isOil ? Math.ceil(short / boxL) : Math.ceil(short);
