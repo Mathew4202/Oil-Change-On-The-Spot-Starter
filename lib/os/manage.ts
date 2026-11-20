@@ -1,6 +1,6 @@
 // Change or cancel a booking (customer self-serve link, or owners in HQ).
 import { sbGet, sbPatch, sbInsert, sbRpc, enc } from "@/lib/os/db";
-import { dayAvailability, jobMinutes } from "@/lib/os/calendar";
+import { dayAvailability, driveClash, jobMinutes } from "@/lib/os/calendar";
 import { halifaxDate } from "@/lib/os/slots";
 import { pushToOwners } from "@/lib/os/push";
 import crypto from "crypto";
@@ -102,10 +102,15 @@ export async function moveGroup(members: ManagedBooking[], startIso: string, by:
   const first = new Date(members[0].starts_at).getTime();
   const total = (new Date(members[members.length - 1].ends_at).getTime() - first) / 60000;
   if (by === "customer") {
-    const day = await dayAvailability(halifaxDate(start), { cars: 1, minutes: total, filterInStock: false, ignoreBookingIds: members.map((m) => m.id) });
+    const day = await dayAvailability(halifaxDate(start), { cars: 1, minutes: total, filterInStock: false, ignoreBookingIds: members.map((m) => m.id), address: members[0].address });
     if (!day.slots.some((s) => s.start === start.toISOString())) return { ok: false, error: "That time doesn't have room for all the cars. Please pick another." };
   }
   const shift = start.getTime() - first;
+  if (by !== "customer" && members.length) {
+    // owners can pick any time, but the drive to and from the visit next to it still has to fit
+    const hit = await driveClash(halifaxDate(start), start, new Date(start.getTime() + total * 60000), members[0].address, members.map((m) => m.id));
+    if (hit) return { ok: false, error: "Too close to another visit: the drive between them doesn't fit. Pick another time." };
+  }
   // move in an order that never makes a car overlap its own sibling's old time
   const order = shift > 0 ? [...members].reverse() : members;
   for (const m of order) {
@@ -130,10 +135,15 @@ export async function moveBooking(b: ManagedBooking, startIso: string, by: "cust
   let end = new Date(start.getTime() + minutes * 60000);
   if (by === "customer") {
     // free up this booking's own time while checking, so moving within the same day works
-    const day = await dayAvailability(halifaxDate(start), { cars: b.cars, minutes: minutes / (b.cars || 1), filterInStock: true, ignoreBookingId: b.id });
+    const day = await dayAvailability(halifaxDate(start), { cars: b.cars, minutes: minutes / (b.cars || 1), filterInStock: true, ignoreBookingId: b.id, address: b.address });
     const slot = day.slots.find((s) => s.start === start.toISOString());
     if (!slot) return { ok: false, error: "That time isn't open. Please pick another." };
     end = new Date(slot.end);
+  }
+  if (by !== "customer") {
+    // owners can pick any time, but the drive to and from the visit next to it still has to fit
+    const hit = await driveClash(halifaxDate(start), start, end, b.address, [b.id]);
+    if (hit) return { ok: false, error: "Too close to another visit: the drive between them doesn't fit. Pick another time." };
   }
   const old = b.starts_at;
   const okPatch = await sbPatch("bookings", `id=eq.${b.id}`, { starts_at: start.toISOString(), ends_at: end.toISOString(), reminder_sent_at: null });

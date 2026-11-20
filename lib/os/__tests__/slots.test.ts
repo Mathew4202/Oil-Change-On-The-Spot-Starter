@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { slotsForDay, halifaxToDate, halifaxDate } from "../slots.ts";
+import { slotsForDay, halifaxToDate, halifaxDate, driveMin } from "../slots.ts";
 
 const at = (s: string) => new Date(s);
 const yesterday = at("2026-10-23T12:00:00-03:00");
@@ -21,12 +21,35 @@ test("Saturday with nothing booked: every half hour from 10:00 am to 10:00 pm", 
   assert.equal(r.slots.at(-1)!.label, "10:00 pm");
 });
 
-test("a booking at 12:00 blocks the full 1 h 15 min, and nobody can overlap it", () => {
-  const busy = [{ start: halifaxToDate("2026-10-24", 720), end: halifaxToDate("2026-10-24", 795) }];
+test("a 12:00 oil change blocks its 45 min on site, and nobody can overlap it", () => {
+  const busy = [{ start: halifaxToDate("2026-10-24", 720), end: halifaxToDate("2026-10-24", 765) }];
   const times = slotsForDay({ date: "2026-10-24", now: yesterday, busy }).slots.map((s) => s.time);
-  for (const gone of ["11:00", "11:30", "12:00", "12:30", "13:00"]) assert.ok(!times.includes(gone), gone);
-  assert.ok(times.includes("10:30"));   // 10:30 to 11:45, finishes before 12:00
-  assert.ok(times.includes("13:30"));   // starts after 1:15
+  for (const gone of ["11:30", "12:00", "12:30"]) assert.ok(!times.includes(gone), gone);
+  assert.ok(times.includes("11:00"));   // 11:00 to 11:45, done before 12:00 (no drive: no places given)
+  assert.ok(times.includes("13:00"));   // free from 12:45
+});
+
+const HALIFAX = { lat: 44.67, lng: -63.6 };
+const near = { lat: HALIFAX.lat + 0.046, lng: HALIFAX.lng };   // about 5 km away
+const far = { lat: HALIFAX.lat + 0.27, lng: HALIFAX.lng };     // about 30 km away
+
+test("the drive to the next visit is counted: a close one fits back to back, a far one leaves a gap", () => {
+  // the visit is at HALIFAX (its 12:00 job); the new job is near it or far from it
+  const busy = [{ start: halifaxToDate("2026-10-24", 720), end: halifaxToDate("2026-10-24", 765), pt: HALIFAX }];
+  const at = (pt: typeof near) => slotsForDay({ date: "2026-10-24", now: yesterday, busy, at: pt }).slots.map((s) => s.time);
+  assert.ok(driveMin(near, HALIFAX) <= 15 && driveMin(far, HALIFAX) >= 45);
+  assert.ok(at(near).includes("13:00"));    // 12:45 + a 10 min drive: 1:00 is fine
+  assert.ok(!at(far).includes("13:00"));    // 12:45 + about an hour of driving: not yet
+  assert.ok(!at(far).includes("13:30"));
+  assert.ok(at(near).includes("11:00"));    // done 11:45, 10 min drive, before 12:00
+  assert.ok(!at(far).includes("11:00"));
+});
+
+test("two cars take 2 x 45 min", () => {
+  const busy = [{ start: halifaxToDate("2026-10-24", 14 * 60), end: halifaxToDate("2026-10-24", 15 * 60 + 15) }];
+  const times = slotsForDay({ date: "2026-10-24", now: yesterday, busy, cars: 2 }).slots.map((s) => s.time);
+  assert.ok(times.includes("12:30"));   // 12:30 to 2:00 fits exactly
+  assert.ok(!times.includes("13:00"));  // 1:00 to 2:30 hits the 2:00 visit
 });
 
 test("same day needs 1 hour notice", () => {
@@ -47,13 +70,6 @@ test("public holiday: no same-day booking unless the filter is in stock", () => 
   assert.equal(slotsForDay({ date: "2026-11-11", now, busy: [], partsClosedDates: holidays }).open, false);
   assert.equal(slotsForDay({ date: "2026-11-11", now, busy: [], partsClosedDates: holidays, needsPartsRun: false }).open, true);
   assert.equal(slotsForDay({ date: "2026-11-11", now: yesterday, busy: [], partsClosedDates: holidays }).open, true); // booked ahead is fine
-});
-
-test("two cars take 2 x 1 h 15 min", () => {
-  const busy = [{ start: halifaxToDate("2026-10-24", 14 * 60), end: halifaxToDate("2026-10-24", 15 * 60 + 15) }];
-  const times = slotsForDay({ date: "2026-10-24", now: yesterday, busy, cars: 2 }).slots.map((s) => s.time);
-  assert.ok(!times.includes("12:00"));  // 12:00 to 2:30 would hit the 2:00 job
-  assert.ok(times.includes("11:30"));   // 11:30 to 2:00 fits exactly
 });
 
 test("past days and more than 30 days ahead are closed", () => {

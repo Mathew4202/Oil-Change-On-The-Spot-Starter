@@ -108,7 +108,7 @@ async function createBookingInner(b: BookingInput, opts: Opts): Promise<BookingR
   let when = label(halifaxMinutes(start));
   if (!opts.anyTime) {
     // the whole visit has to fit; a parts run is needed if any oil change's filter isn't on the shelf
-    const day = await dayAvailability(date, { cars: 1, minutes: total, filterInStock: false });
+    const day = await dayAvailability(date, { cars: 1, minutes: total, filterInStock: false, address: b.address });
     const slot = day.slots.find((s) => s.start === start.toISOString());
     if (!slot) return { ok: false, status: 409, error: "Sorry, that time doesn't have room for all the cars. Please pick another time.", slots: day.slots };
     when = slot.label;
@@ -185,7 +185,7 @@ async function createOne(b: BookingInput, opts: Opts & {
   let slotEnd = new Date(start.getTime() + jobMinutes * 60000).toISOString();
   let when = label(halifaxMinutes(start));
   if (!opts.anyTime) {
-    const day = await dayAvailability(date, { cars: b.cars, minutes: perCar,
+    const day = await dayAvailability(date, { cars: b.cars, minutes: perCar, address: b.address,
       filterInStock: b.job === "diagnostic" || b.job === "tires" || b.job === "rotation" ? true : b.job === "parts" ? false : await filterInStock(spec?.oil_filter_part) });
     const slot = day.slots.find((s) => s.start === start.toISOString());
     if (!slot) return { ok: false, status: 409, error: "Sorry, that time was just taken. Please pick another time.", slots: day.slots };

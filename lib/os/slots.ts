@@ -5,16 +5,28 @@
 export const TZ = "America/Halifax";
 
 export type Hours = { dow: number; firstStart: number; lastStart: number }; // minutes after midnight; dow 0 = Sunday
-export type Busy = { start: Date; end: Date };
+export type Pt = { lat: number; lng: number };
+export type Busy = { start: Date; end: Date; pt?: Pt | null };   // pt: where that visit is (for the drive to the next one)
+
+export const DRIVE_KMH = 40;   // same speed the money page uses around HRM
+/** Minutes to drive between two places: straight-line km x 1.3 for roads, at 40 km/h, rounded up. 0 when a place is unknown. */
+export function driveMin(a?: Pt | null, b?: Pt | null): number {
+  if (!a || !b) return 0;
+  const R = 6371, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  const km = 2 * R * Math.asin(Math.sqrt(h)) * 1.3;
+  return Math.ceil((km / DRIVE_KMH) * 60);
+}
 
 export type SlotRules = {
-  jobMinutes: number;        // 75: 1 h 15 min per car, including travel to the next job
+  jobMinutes: number;        // 45: on-site time per car for an oil change (the drive between visits is counted from the map)
   stepMinutes: number;       // 30: start times offered every half hour
   minNoticeMinutes: number;  // 60: earliest start is 1 hour from now (changed from 2 h, Nov 2)
   maxDaysAhead: number;      // 30
 };
 
-export const DEFAULT_SLOT_RULES: SlotRules = { jobMinutes: 75, stepMinutes: 30, minNoticeMinutes: 60, maxDaysAhead: 30 };
+export const DEFAULT_SLOT_RULES: SlotRules = { jobMinutes: 45, stepMinutes: 30, minNoticeMinutes: 60, maxDaysAhead: 30 };
 
 // Same hours as the current website (last start, not closing time)
 export const DEFAULT_HOURS: Hours[] = [
@@ -77,6 +89,7 @@ export function slotsForDay(opts: {
   partsClosedDates?: string[];      // public holidays: parts stores closed
   needsPartsRun?: boolean;          // true if the filter is not in stock
   cars?: number;                    // a booking for 2 cars takes 2 x jobMinutes
+  at?: Pt | null;                   // where the new job is: the drive to and from each visit next to it must fit too
   rules?: SlotRules;
 }): DayResult {
   const rules = opts.rules ?? DEFAULT_SLOT_RULES;
@@ -102,7 +115,9 @@ export function slotsForDay(opts: {
     const start = halifaxToDate(date, t);
     const end = new Date(start.getTime() + length * 60000);
     if (start.getTime() < earliest) continue;
-    const clash = opts.busy.some((b) => start < b.end && end > b.start);
+    // a visit before or after needs its drive time as well (none when a place is unknown)
+    const clash = opts.busy.some((b) => start.getTime() < b.end.getTime() + driveMin(b.pt, opts.at) * 60000
+      && end.getTime() + driveMin(opts.at, b.pt) * 60000 > b.start.getTime());
     if (clash) continue;
     slots.push({ time: `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`,
       label: label(t), start: start.toISOString(), end: end.toISOString() });
