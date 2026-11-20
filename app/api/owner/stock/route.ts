@@ -104,6 +104,7 @@ export async function GET() {
   for (const u of uses) used.set(u.part_id, (used.get(u.part_id) ?? 0) + Math.abs(Number(u.qty)));
   const { normPart } = await import("@/lib/os/addon-needs");
   const restock = parts.flatMap((p) => {
+    if (p.category !== "oil") return [];   // oil only for now: filters and other parts are still in the buy list
     const perMonth = (used.get(p.id) ?? 0) / months;
     // next month needs what's booked for it, or what we've been using, whichever is more
     const group = sameParts(p.part_number, links).map(normPart);
