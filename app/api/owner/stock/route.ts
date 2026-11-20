@@ -68,7 +68,29 @@ export async function GET() {
     const col = p.category === "oil_filter" ? "oil_filter_part" : p.category === "cabin_filter" ? "cabin_filter_part" : p.category === "engine_filter" ? "air_filter_part" : null;
     if (col) p.fits = carsFor(fitRows, sameParts(p.part_number, links), col);
   }
-  return NextResponse.json({ parts, toBuy, missing, bookingsCounted: upcoming.length });
+  // Restock for next month: what each part has used per month over the last 3 months (jobs take it off the shelf),
+  // then what's short once the reorder level is kept. Oil is bought in boxes (4 x 5 L by default).
+  const since = new Date(); since.setMonth(since.getMonth() - 3);
+  const uses = await sbGet<{ part_id: string; qty: number; at: string }>(`stock_moves?select=part_id,qty,at&reason=eq.job&qty=lt.0&at=gte.${since.toISOString()}&limit=20000`).catch(() => []);
+  const boxRule = await sbGet<{ value: number }>("pricing_rules?select=value&key=eq.oil_box_litres").catch(() => []);
+  const boxL = Number(boxRule[0]?.value) || 20;
+  const monthsSeen = new Set(uses.map((u) => u.at.slice(0, 7))).size;
+  const months = Math.min(3, Math.max(1, monthsSeen));
+  const used = new Map<string, number>();
+  for (const u of uses) used.set(u.part_id, (used.get(u.part_id) ?? 0) + Math.abs(Number(u.qty)));
+  const restock = parts.flatMap((p) => {
+    const perMonth = (used.get(p.id) ?? 0) / months;
+    if (perMonth <= 0) return [];
+    const short = perMonth + Number(p.reorder_at ?? 0) - Number(p.on_hand);
+    if (short <= 0) return [];
+    const isOil = p.category === "oil";
+    const buy = isOil ? Math.ceil(short / boxL) : Math.ceil(short);
+    const unit = isOil ? "boxes" : p.unit === "L" ? "L" : p.unit === "towels" ? "towels" : p.unit === "box" ? "boxes" : "each";
+    return [{ part: p.part_number, name: isOil ? `${p.oil_grade} oil` : (p.description || p.part_number), category: p.category ?? "other",
+      buy, unit, perMonth: Math.round(perMonth * 10) / 10, onHand: Math.round(Number(p.on_hand) * 10) / 10,
+      boxSize: isOil ? boxL : null }];
+  });
+  return NextResponse.json({ parts, toBuy, missing, restock, restockMonths: months, bookingsCounted: upcoming.length });
 }
 
 const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "washer_fluid", "coolant", "gloves", "shop_towels", "other"];

@@ -7,13 +7,15 @@ import { useRole } from "../RoleContext";
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null; paid?: number | null; retail?: number | null; store?: string | null; fits?: string[] };
 type Buy = { kind: string; label: string; need: number; have: number; buy: number; unit: string };
+type Restock = { part: string; name: string; category: string; buy: number; unit: string; perMonth: number; onHand: number; boxSize: number | null };
 const CAT: Record<string, string> = { oil: "Oil", oil_filter: "Oil filters", cabin_filter: "Cabin filters", engine_filter: "Engine air filters", wiper: "Wipers", battery: "Batteries", gloves: "Gloves (boxes)", shop_towels: "Shop towels", washer_fluid: "Washer fluid (litres)", coolant: "Coolant (litres)" };
 
 export default function StockScreen() {
   const { can } = useRole();
   const [parts, setParts] = useState<Part[]>([]); const [toBuy, setToBuy] = useState<Buy[]>([]); const [count, setCount] = useState(0); const [missing, setMissing] = useState<string[]>([]);
   const [q, setQ] = useState(""); const [showEmpty, setShowEmpty] = useState(false); const [loading, setLoading] = useState(true);
-  const load = () => fetch("/api/owner/stock", { cache: "no-store" }).then((r) => r.json()).then((d) => { setParts(d.parts || []); setToBuy(d.toBuy || []); setCount(d.bookingsCounted || 0); setMissing(d.missing || []); setLoading(false); });
+  const [restock, setRestock] = useState<Restock[]>([]); const [restockMonths, setRestockMonths] = useState(0);
+  const load = () => fetch("/api/owner/stock", { cache: "no-store" }).then((r) => r.json()).then((d) => { setParts(d.parts || []); setToBuy(d.toBuy || []); setRestock(d.restock || []); setRestockMonths(d.restockMonths || 0); setCount(d.bookingsCounted || 0); setMissing(d.missing || []); setLoading(false); });
   useEffect(() => { load(); }, []);
 
   // Oil approvals (dexos, VW 508 00...) for cars we've done: the sheet never recorded them, so they're looked up once
@@ -112,6 +114,18 @@ export default function StockScreen() {
             <h2 className="font-extrabold text-lg text-[#9b1c1c]">Part # missing for {missing.length} part{missing.length === 1 ? "" : "s"}</h2>
             <p className="text-sm text-[#4a5878]">Look these up and buy them. HQ can&apos;t check Stock for a part it has no number for. Add the number in Edit details or Edit car and it moves to the list below.</p>
             {missing.map((m) => <p key={m} className="text-[15px] font-semibold">{m}</p>)}
+          </section>
+        )}
+        {!loading && (
+          <section className="rounded-2xl p-4 flex flex-col gap-2 border" style={{ background: "#eef3fb", borderColor: "#c8d0e0" }}>
+            <h2 className="font-extrabold text-lg">Restock for next month</h2>
+            <p className="text-sm text-[#4a5878]">{restock.length ? `What we used per month over the last ${restockMonths} month${restockMonths === 1 ? "" : "s"}, less what's on the shelf. Oil is in boxes of 4 × 5 L.` : "Not enough use logged yet. It fills in as jobs are finished."}</p>
+            {restock.map((r) => (
+              <div key={r.part} className="flex justify-between gap-3 text-[15px]">
+                <span className="font-semibold">{r.name} <span className="text-[#4a5878] font-normal">· {r.part}</span></span>
+                <span className="whitespace-nowrap"><strong>buy {r.buy} {r.unit}</strong> <span className="text-[#4a5878]">(uses {r.perMonth}/mo, have {r.onHand})</span></span>
+              </div>
+            ))}
           </section>
         )}
         {!loading && (
