@@ -119,11 +119,11 @@ export default function StockScreen() {
         {!loading && (
           <section className="rounded-2xl p-4 flex flex-col gap-2 border" style={{ background: "#eef3fb", borderColor: "#c8d0e0" }}>
             <h2 className="font-extrabold text-lg">Restock for next month</h2>
-            <p className="text-sm text-[#4a5878]">{restock.length ? `What we used per month over the last ${restockMonths} month${restockMonths === 1 ? "" : "s"}, less what's on the shelf. Oil is in boxes of 4 × 5 L.` : "Not enough use logged yet. It fills in as jobs are finished."}</p>
+            <p className="text-sm text-[#4a5878]">{restock.length ? `For next month: whichever is more, what's booked for it or what we used per month over the last ${restockMonths} month${restockMonths === 1 ? "" : "s"}, less what's on the shelf. Oil is in boxes of 4 × 5 L.` : "Not enough use logged yet. It fills in as jobs are finished."}</p>
             {restock.map((r) => (
               <div key={r.part} className="flex justify-between gap-3 text-[15px]">
                 <span className="font-semibold">{r.name} <span className="text-[#4a5878] font-normal">· {r.part}</span></span>
-                <span className="whitespace-nowrap"><strong>buy {r.buy} {r.unit}</strong> <span className="text-[#4a5878]">(uses {r.perMonth}/mo, have {r.onHand})</span></span>
+                <span className="whitespace-nowrap"><strong>buy {r.buy} {r.unit}</strong> <span className="text-[#4a5878]">(need {r.perMonth}, have {r.onHand})</span></span>
               </div>
             ))}
           </section>

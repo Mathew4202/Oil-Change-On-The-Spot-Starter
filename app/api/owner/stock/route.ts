@@ -9,6 +9,12 @@ export const dynamic = "force-dynamic";
 type Part = { id: string; part_number: string; brand: string | null; description: string | null; category: string | null; on_hand: number; unit: string | null; oil_grade: string | null; reorder_at: number | null;
   paid?: number | null; retail?: number | null; store?: string | null; fits?: string[] };
 
+
+/** Bookings that start between two times (confirmed, requested, or in progress). */
+function bookingsQuery(from: string, to: string) {
+  return "bookings?select=cars,starts_at,quote_breakdown,services,vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&status=in.(confirmed,requested,in_progress)&starts_at=gte." + from + "&starts_at=lt." + to + "&order=starts_at";
+}
+
 export async function GET() {
   if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
   const today = halifaxDate(new Date());
@@ -17,7 +23,7 @@ export async function GET() {
     sbGet<Part>("parts?select=id,part_number,brand,description,category,on_hand,unit,oil_grade,reorder_at&order=category,part_number"),
     sbGet<{ cars: number; starts_at: string; quote_breakdown: { lines?: { label: string }[] } | null; services: { job?: string; own?: string | null; addons?: string[] } | null; vehicles: { year?: number | null; make?: string | null; model?: string | null; engine?: string | null; vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null;
       cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null } | null } | null }>(
-      `bookings?select=cars,starts_at,quote_breakdown,services,vehicles(year,make,model,engine,vehicle_specs(oil_grade,capacity_l,oil_filter_part,cabin_filter_part,air_filter_part,wiper_driver,wiper_passenger))&status=in.(confirmed,requested,in_progress)&starts_at=gte.${from}&starts_at=lt.${to}&order=starts_at`),
+      `${bookingsQuery(from, to)}`),
   ]);
   // What the next 7 days need
   const needFilters: Record<string, number> = {}, needOil: Record<string, number> = {};
@@ -28,6 +34,24 @@ export async function GET() {
     if (s.oil_filter_part && own !== "filter") needFilters[s.oil_filter_part] = (needFilters[s.oil_filter_part] || 0) + n;
     if (own !== "oil") { const g = s.oil_grade.replace(/^Euro /, "Euro "); needOil[g] = Math.round(((needOil[g] || 0) + Number(s.capacity_l) * n) * 10) / 10; }
   }
+  // Next calendar month: what's already booked (oil by grade, filters and add-ons by part number)
+  const [ty, tm] = today.split("-").map(Number);
+  const monthStart = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}-01`;
+  const nextFrom = monthStart(tm === 12 ? ty + 1 : ty, tm === 12 ? 1 : tm + 1), nextTo = monthStart(tm >= 11 ? ty + 1 : ty, tm >= 11 ? (tm + 2) - 12 : tm + 2);
+  const nextBookings = await sbGet<typeof upcoming[number]>(bookingsQuery(halifaxToDate(nextFrom, 0).toISOString(), halifaxToDate(nextTo, 0).toISOString())).catch(() => []);
+  const bookedOil: Record<string, number> = {}, bookedPart: Record<string, number> = {};
+  for (const b of nextBookings) {
+    const s = b.vehicles?.vehicle_specs; const job = b.services?.job ?? "oil_change"; const own = b.services?.own;
+    if (s && ["oil_change", "seasonal"].includes(job) && own !== "both") {
+      const n = b.cars || 1;
+      if (s.oil_filter_part && own !== "filter") bookedPart[s.oil_filter_part] = (bookedPart[s.oil_filter_part] || 0) + n;
+      if (own !== "oil") { const g = s.oil_grade.replace(/^Euro /, ""); bookedOil[g] = (bookedOil[g] || 0) + Number(s.capacity_l) * n; }
+    }
+  }
+  for (const x of sumNeeds(nextBookings.map((b) => addonNeeds(b.services?.addons, b.vehicles?.vehicle_specs, b.cars)))) {
+    if (x.part && !x.key.endsWith(":?")) bookedPart[x.part] = (bookedPart[x.part] || 0) + Number(x.qty);
+  }
+
   // part numbers we still need to look up: listed by car and day, never counted as covered
   const { missingParts, ownParts } = await import("@/lib/os/addon-needs");
   const dayName = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Halifax", weekday: "short", month: "short", day: "numeric" });
@@ -78,19 +102,26 @@ export async function GET() {
   const months = Math.min(3, Math.max(1, monthsSeen));
   const used = new Map<string, number>();
   for (const u of uses) used.set(u.part_id, (used.get(u.part_id) ?? 0) + Math.abs(Number(u.qty)));
+  const { normPart } = await import("@/lib/os/addon-needs");
   const restock = parts.flatMap((p) => {
     const perMonth = (used.get(p.id) ?? 0) / months;
-    if (perMonth <= 0) return [];
-    const short = perMonth + Number(p.reorder_at ?? 0) - Number(p.on_hand);
+    // next month needs what's booked for it, or what we've been using, whichever is more
+    const group = sameParts(p.part_number, links).map(normPart);
+    const booked = p.category === "oil"
+      ? (bookedOil[(p.oil_grade ?? "").replace(/^Euro /, "")] ?? 0)
+      : Object.entries(bookedPart).filter(([pn]) => group.includes(normPart(pn))).reduce((t, [, q]) => t + q, 0);
+    const need = Math.max(perMonth, booked);
+    if (need <= 0) return [];
+    const short = need + Number(p.reorder_at ?? 0) - Number(p.on_hand);
     if (short <= 0) return [];
     const isOil = p.category === "oil";
     const buy = isOil ? Math.ceil(short / boxL) : Math.ceil(short);
     const unit = isOil ? "boxes" : p.unit === "L" ? "L" : p.unit === "towels" ? "towels" : p.unit === "box" ? "boxes" : "each";
     return [{ part: p.part_number, name: isOil ? `${p.oil_grade} oil` : (p.description || p.part_number), category: p.category ?? "other",
-      buy, unit, perMonth: Math.round(perMonth * 10) / 10, onHand: Math.round(Number(p.on_hand) * 10) / 10,
+      buy, unit, perMonth: Math.round(need * 10) / 10, booked: Math.round(booked * 10) / 10, onHand: Math.round(Number(p.on_hand) * 10) / 10,
       boxSize: isOil ? boxL : null }];
   });
-  return NextResponse.json({ parts, toBuy, missing, restock, restockMonths: months, bookingsCounted: upcoming.length });
+  return NextResponse.json({ parts, toBuy, missing, restock, restockMonths: months, nextMonthBookings: nextBookings.length, bookingsCounted: upcoming.length });
 }
 
 const STOCK_CATS = ["oil_filter", "cabin_filter", "engine_filter", "wiper", "battery", "oil", "fluid", "washer_fluid", "coolant", "gloves", "shop_towels", "other"];
