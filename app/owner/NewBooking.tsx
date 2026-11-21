@@ -23,7 +23,7 @@ type Quote = { lines: { label: string; amount: number }[]; subtotal: number; tot
 
 const field = "h-12 rounded-xl border border-[#c8d0e0] px-3 text-base w-full bg-white";
 const lbl = "flex flex-col gap-1 text-sm font-semibold";
-const ADDONS: [string, string][] = [["tires", "Tire change"], ["wipers", "Wipers"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid top-up"]];
+const ADDONS: [string, string][] = [["oil_change", "Oil change"], ["rotation", "Tire rotation"], ["tires", "Tire change"], ["wipers", "Wipers"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid top-up"]];
 type JobKind = "oil_change" | "seasonal" | "parts" | "diagnostic" | "tires" | "rotation";
 
 function halifaxIso(date: string, hhmm: string) {

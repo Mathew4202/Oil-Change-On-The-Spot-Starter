@@ -47,7 +47,7 @@ const shortDay = (d: string) => { const [y, m, dd] = d.split("-").map(Number); c
 const money = (n: number | null | undefined) => n == null ? "" : `$${n.toFixed(n % 1 ? 2 : 0)}`;
 const ago = (iso: string) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 
-const ADDON_WORD: Record<string, string> = { cabin_filter: "cabin filter", engine_filter: "engine air filter", wipers: "wipers", battery: "battery" };
+const ADDON_WORD: Record<string, string> = { cabin_filter: "cabin filter", engine_filter: "engine air filter", wipers: "wipers", battery: "battery", rotation: "tire rotation", tires: "tire change" };
 
 export default function Calendar({ owner, initialDate, bookFor }: { owner: string; initialDate?: string; bookFor?: string }) {
   const { can } = useRole();

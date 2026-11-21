@@ -16,7 +16,7 @@ import { pushToOwners } from "@/lib/os/push";
 import { newManageToken, sendBookingConfirmation } from "@/lib/os/customer-texts";
 import { halifaxDate, label } from "@/lib/os/slots";
 import { addLines } from "@/lib/os/deals";
-import { keepAddons } from "@/lib/os/addons";
+import { keepAddons, canonicalVisit } from "@/lib/os/addons";
 import { geocode } from "@/lib/os/geo";
 import { findReferrer, setReferredBy, takeCredits, markCreditsUsed } from "@/lib/os/referrals";
 
@@ -28,7 +28,7 @@ export const BookingBody = z.object({
   address: z.string().trim().min(4).max(200),
   car: z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1), model: z.string().trim().min(1), engine: z.string().trim().optional() }),
   job: z.enum(["oil_change", "seasonal", "parts", "diagnostic", "tires", "rotation"]).optional().default("oil_change"),
-  addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires", "coolant", "washer_fluid"])).optional().default([]),
+  addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires", "rotation", "oil_change", "coolant", "washer_fluid"])).optional().default([]),
   own: z.enum(["both", "oil", "filter"]).nullable().optional(),
   start: z.string().datetime(),
   cars: z.number().int().min(1).max(5).optional().default(1),
@@ -46,7 +46,7 @@ export const BookingBody = z.object({
   moreCars: z.array(z.object({
     car: z.object({ year: z.number().int().min(1980).max(2030), make: z.string().trim().min(1), model: z.string().trim().min(1), engine: z.string().trim().optional() }),
     job: z.enum(["oil_change", "seasonal", "parts", "diagnostic", "tires", "rotation"]).default("oil_change"),
-    addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires", "coolant", "washer_fluid"])).default([]),
+    addons: z.array(z.enum(["wipers", "cabin_filter", "engine_filter", "battery", "tires", "rotation", "oil_change", "coolant", "washer_fluid"])).default([]),
     own: z.enum(["both", "oil", "filter"]).nullable().optional(),
     notes: z.string().max(600).optional(),
     vin: z.string().max(25).optional(),        // snapped or typed for this car
@@ -101,8 +101,8 @@ async function createBookingInner(b: BookingInput, opts: Opts): Promise<BookingR
   const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((x) => [x.key, Number(x.value)]));
   const cars: BookingInput[] = [{ ...b, moreCars: undefined, cars: 1 },
     ...b.moreCars.map((m) => ({ ...b, car: m.car, job: m.job, addons: m.addons, own: m.own ?? null, notes: m.notes, photos: undefined, vin: m.vin, moreCars: undefined, cars: 1 }))];
-  const clean = (x: BookingInput) => keepAddons(x.job, x.addons);
-  const total = cars.reduce((t, x) => t + minutesFor(x.job, rules, clean(x)), 0);
+  const clean = (x: BookingInput) => canonicalVisit(x.job, keepAddons(x.job, x.addons));
+  const total = cars.reduce((t, x) => t + minutesFor(clean(x).job, rules, clean(x).addons), 0);
   const start = new Date(b.start);
   const date = halifaxDate(start);
   let when = label(halifaxMinutes(start));
@@ -152,7 +152,8 @@ async function createOne(b: BookingInput, opts: Opts & {
   customerId?: string | null;    // owners picked an existing customer: update them instead of making a duplicate
 }): Promise<BookingResult> {
   // 1) Price, worked out on the server
-  b = { ...b, addons: keepAddons(b.job, b.addons) };   // every service takes the small add-ons; tires only add on to an oil change
+  const visit = canonicalVisit(b.job, keepAddons(b.job, b.addons));
+  b = { ...b, job: visit.job as BookingInput["job"], addons: visit.addons as BookingInput["addons"] };   // every service takes the small add-ons; tires only add on to an oil change; rotation + oil is one oil visit
   const inSeason = !!seasonFor(halifaxDate(new Date(b.start)), await seasonWindows());
   if (b.job === "seasonal" && !opts.anyTime && !inSeason) {
     return { ok: false, status: 400, error: "The seasonal package is only offered at the start of winter and summer. Book an oil change or a tire change instead." };
@@ -163,7 +164,7 @@ async function createOne(b: BookingInput, opts: Opts & {
   // Travel: worked out here from the address, never trusted from the browser. Without a maps key it falls back to what was sent.
   const dist = mapsReady() ? await drivingDistance(b.placeId ? { placeId: b.placeId } : { address: b.address }).catch(() => null) : null;
   const km = opts.noTravel ? null : mapsReady() ? dist?.km ?? null : b.km ?? null;   // travel is charged once per visit
-  const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons, own: withOil ? b.own ?? null : null, km, cars: b.cars, inSeason,
+  const { quote, spec, rules } = await buildQuote({ ...b.car, job: b.job, addons: b.addons.filter((a): a is Exclude<typeof a, "oil_change"> => a !== "oil_change"), own: withOil ? b.own ?? null : null, km, cars: b.cars, inSeason,
     date: opts.fleetAccountId ? null : halifaxDate(new Date(b.start)) });   // the Christmas deal goes by the visit date (fleets have their own prices)
   const noDistance = mapsReady() && !dist && !opts.noTravel;
   if (opts.priceOverride != null && opts.priceOverride >= 0) {

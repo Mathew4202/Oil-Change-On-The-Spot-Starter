@@ -8,7 +8,7 @@ import { ExtraPricer, extraName, type Extra, type ExtraJob } from "@/components/
 
 const NAVY = "#0d1b3e", LINE = "#c8d0e0";
 const JOBS: [ExtraJob, string][] = [["oil_change", "Oil change"], ["seasonal", "Seasonal package"], ["tires", "Tire change"], ["rotation", "Tire rotation"], ["parts", "Parts only"], ["diagnostic", "Diagnostic"]];
-const ADDONS: [string, string][] = [["tires", "Tire change"], ["wipers", "Wipers"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid"]];
+const ADDONS: [string, string][] = [["oil_change", "Oil change"], ["rotation", "Tire rotation"], ["tires", "Tire change"], ["wipers", "Wipers"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid"]];
 
 export default function HqExtraCar({ n, value: e, onPatch, onRemove, date }: { n: number; value: Extra; onPatch: (p: Partial<Extra>) => void; onRemove: () => void; date: string }) {
   const chip = (on: boolean) => ({ background: on ? NAVY : "#fff", color: on ? "#fff" : NAVY, borderColor: on ? NAVY : LINE });

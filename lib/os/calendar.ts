@@ -1,4 +1,5 @@
 // Loads hours, bookings, time off and holidays, then asks slots.ts what is free.
+export { jobMinutes } from "./job-minutes";
 import { sbGet } from "@/lib/os/db";
 import { DEFAULT_WINDOWS, type SeasonWindow } from "@/lib/os/seasons";
 import { slotsForDay, halifaxToDate, driveMin, DEFAULT_SLOT_RULES, type Hours, type Busy } from "@/lib/os/slots";
@@ -74,17 +75,6 @@ export function fleetWindow(date: string, r: Record<string, number>, now: Date, 
   const start = halifaxToDate(date, startMin);
   if (start.getTime() - now.getTime() <= (r.fleet_release_hours ?? 48) * 3600000) return null;   // released: anyone can book it now
   return { start, end: new Date(start.getTime() + len * 60000) };
-}
-
-/** Minutes in the calendar per car for each job type (settings can override). */
-export function jobMinutes(job: string | undefined, r: Record<string, number>, addons: string[] = []): number {
-  if (job === "parts") return r.job_minutes_parts ?? 45;
-  if (job === "diagnostic") return r.job_minutes_diagnostic ?? 60;
-  if (job === "tires") return r.job_minutes_tires ?? 60;
-  if (job === "rotation") return r.job_minutes_rotation ?? 60;
-  if (job === "seasonal") return (r.job_minutes ?? 45) + (r.job_minutes_tires_addon ?? 45);
-  // oil change, plus extra time when tires are swapped on the same visit
-  return (r.job_minutes ?? 45) + (addons.includes("tires") ? r.job_minutes_tires_addon ?? 45 : 0);
 }
 
 /** Seasonal package windows from the database (falls back to the defaults). */

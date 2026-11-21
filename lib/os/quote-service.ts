@@ -27,6 +27,7 @@ import { lookupOilSpec } from "@/lib/os/spec-lookup-run";
 import { gasPerJob } from "@/lib/os/gas";
 import { addLines, christmasLine } from "@/lib/os/deals";
 import { detectClassFromModel } from "@/data/vehicleClass";
+import { canonicalVisit } from "@/lib/os/addons";
 
 export type Spec = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_grade: string;
   capacity_l: number; oil_filter_part: string | null; verified: boolean; source: string; confidence: string | null; oil_spec: string | null; fuel?: string | null;
@@ -197,7 +198,10 @@ async function filterCostFor(part: string | null, before?: string | null): Promi
   return pickCost(part, links, one, (pn) => stock.filter((x) => normPart(x.part_number) === normPart(pn)).reduce((t, x) => t + Number(x.on_hand), 0));
 }
 
-export async function buildQuote(req: QuoteRequest) {
+export async function buildQuote(reqIn: QuoteRequest) {
+  // a rotation with an oil change is one oil-change visit with a rotation add-on
+  const canon = canonicalVisit(reqIn.job ?? "oil_change", reqIn.addons ?? []);
+  const req: QuoteRequest = { ...reqIn, job: canon.job as QuoteRequest["job"], addons: canon.addons as QuoteRequest["addons"] };
   if (req.job && req.job !== "oil_change" && req.job !== "seasonal") {
     // No oil change: no need to look up the oil (saves the lookup cost)
     const rules = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value");
