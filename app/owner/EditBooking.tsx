@@ -1,6 +1,7 @@
 "use client";
 // Owners: fix a booking's details (name, phone, email, address, car, note). Moving the time and the price have their own buttons.
 import { useEffect, useState } from "react";
+import { addonsFor } from "@/lib/os/addons";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
 const field = "h-12 rounded-xl border px-3 text-base w-full bg-white font-normal";
@@ -10,9 +11,9 @@ type Car = { year: string; make: string; model: string; engine: string };
 type Oil = { grade: string; litres: string; filter: string };
 type Parts = { cabin: string; air: string; wiperDriver: string; wiperPassenger: string };
 type Details = { firstName: string; lastName: string; phone: string; email: string; address: string; notes: string; hasCustomer: boolean; fleet: boolean; car: Car;
-  withOil: boolean; cars: number; oil: Oil; addons: string[]; parts: Parts; lines: { label: string; amount: number }[]; allAddons?: string[]; stock: { filter: number | null; oil: number | null } };
+  withOil: boolean; job: string; cars: number; oil: Oil; addons: string[]; parts: Parts; lines: { label: string; amount: number }[]; allAddons?: string[]; stock: { filter: number | null; oil: number | null } };
 
-const ADD_CHOICES: [string, string][] = [["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["wipers", "Wipers"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid top-up"], ["tires", "Tire change"]];
+const ADD_CHOICES: [string, string][] = [["oil_change", "Oil change"], ["rotation", "Tire rotation"], ["cabin_filter", "Cabin filter"], ["engine_filter", "Engine air filter"], ["wipers", "Wipers"], ["battery", "Battery"], ["coolant", "Coolant top-up"], ["washer_fluid", "Washer fluid top-up"], ["tires", "Tire change"]];
 
 export default function EditBooking({ bookingId, onClose }: { bookingId: string; onClose: (saved: boolean) => void }) {
   const [d, setD] = useState<Details | null>(null); const [start, setStart] = useState<Details | null>(null);
@@ -85,7 +86,7 @@ export default function EditBooking({ bookingId, onClose }: { bookingId: string;
                 })}
                 {/* add a service: priced for their car (the same price the website gives) when you save */}
                 {(() => {
-                  const can = ADD_CHOICES.filter(([k]) => !(d.allAddons ?? []).includes(k));
+                  const can = ADD_CHOICES.filter(([k]) => addonsFor(d.job).includes(k) && !(d.allAddons ?? []).includes(k));
                   return can.length > 0 && (
                     <div className="flex flex-col gap-1.5 mt-1">
                       <p className="text-sm font-bold" style={{ color: NAVY }}>Add a service</p>

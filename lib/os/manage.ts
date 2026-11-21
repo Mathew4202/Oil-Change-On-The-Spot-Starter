@@ -2,6 +2,7 @@
 import { sbGet, sbPatch, sbInsert, sbRpc, enc } from "@/lib/os/db";
 import { dayAvailability, driveClash, jobMinutes } from "@/lib/os/calendar";
 import { halifaxDate } from "@/lib/os/slots";
+import { canonicalVisit } from "@/lib/os/addons";
 import { pushToOwners } from "@/lib/os/push";
 import crypto from "crypto";
 import { textCustomer, when, payLink } from "@/lib/os/customer-texts";
@@ -254,7 +255,7 @@ export async function bookingForEdit(id: string) {
   // the add-ons they picked that take a part we can note (battery and top-ups don't)
   const addons = (b.services?.addons ?? []).filter((a) => a === "cabin_filter" || a === "engine_filter" || a === "wipers");
   const parts = { cabin: sp?.cabin_filter_part ?? "", air: sp?.air_filter_part ?? "", wiperDriver: sp?.wiper_driver ?? "", wiperPassenger: sp?.wiper_passenger ?? "" };
-  return { withOil: !job || job === "oil_change" || job === "seasonal", cars: b.cars || 1, addons, parts, lines: b.quote_breakdown?.lines ?? [], allAddons: b.services?.addons ?? [],
+  return { withOil: !job || job === "oil_change" || job === "seasonal", job: job ?? "oil_change", cars: b.cars || 1, addons, parts, lines: b.quote_breakdown?.lines ?? [], allAddons: b.services?.addons ?? [],
     oil: { grade: sp?.oil_grade ?? "", litres: sp?.capacity_l != null ? String(Number(sp.capacity_l)) : "", filter: sp?.oil_filter_part ?? "" },
     stock: await stockFor(sp?.oil_filter_part ?? null, sp?.oil_grade ?? null), firstName: c?.first_name ?? "", lastName: c?.last_name ?? "", phone: (c?.phone ?? "").replace(/^\+1/, ""), email: c?.email ?? "",
     address: b.address ?? "", notes: b.notes ?? "", hasCustomer: !!c, fleet: !!b.fleet_account_id,
@@ -271,11 +272,11 @@ export async function bookingForEdit(id: string) {
 async function addAddons(id: string, kinds: string[], by: string) {
   type L = { label: string; amount: number };
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  const OK = ["tires", "wipers", "cabin_filter", "engine_filter", "battery", "coolant", "washer_fluid"];
-  const [b] = await sbGet<{ status: string; starts_at: string; cars: number | null; services: { job?: string; addons?: string[]; own?: string | null } & Record<string, unknown> | null;
+  const OK = ["tires", "rotation", "oil_change", "wipers", "cabin_filter", "engine_filter", "battery", "coolant", "washer_fluid"];
+  const [b] = await sbGet<{ status: string; starts_at: string; ends_at: string; cars: number | null; services: { job?: string; addons?: string[]; own?: string | null } & Record<string, unknown> | null;
     quote_breakdown: Record<string, unknown> & { lines?: L[]; subtotal?: number; hst?: number; total?: number } | null;
     vehicles: { year: number | null; make: string | null; model: string | null; engine: string | null } | null }>(
-    `bookings?select=status,starts_at,cars,services,quote_breakdown,vehicles(year,make,model,engine)&id=eq.${enc(id)}`);
+    `bookings?select=status,starts_at,ends_at,cars,services,quote_breakdown,vehicles(year,make,model,engine)&id=eq.${enc(id)}`);
   if (!b) return { ok: false as const, error: "Booking not found" };
   if (b.status === "done") return { ok: false as const, error: "This job is already finished. Add it on the job sheet instead" };
   const have = b.services?.addons ?? [];
@@ -301,8 +302,15 @@ async function addAddons(id: string, kinds: string[], by: string) {
   const subtotal = r2(lines.reduce((t, l) => t + Number(l.amount), 0));
   const bd = { ...q, lines, subtotal, hst: r2(subtotal * rate), total: r2(subtotal * (1 + rate)),
     added: [...((q.added as unknown[]) ?? []), ...newLines.map((l) => ({ ...l, by, at: new Date().toISOString() }))] };
-  const services = { ...(b.services ?? {}), addons: [...have, ...add] };
-  const ok = await sbPatch("bookings", `id=eq.${enc(id)}`, { quote_breakdown: bd, quoted_total: bd.total, services });
+  // a rotation with an oil change becomes an oil visit with the rotation add-on: the job and its time change with it
+  const visit = canonicalVisit(base.job as string, [...have, ...add]);
+  const services = { ...(b.services ?? {}), job: visit.job, addons: visit.addons };
+  const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((x) => [x.key, Number(x.value)]));
+  const cars = b.cars || 1;
+  const oldMin = jobMinutes(base.job as string, rules, have) * cars, newMin = jobMinutes(visit.job, rules, visit.addons) * cars;
+  const patch: Record<string, unknown> = { quote_breakdown: bd, quoted_total: bd.total, services };
+  if (newMin > oldMin) patch.ends_at = new Date(new Date(b.starts_at).getTime() + newMin * 60000).toISOString();   // the visit runs longer now
+  const ok = await sbPatch("bookings", `id=eq.${enc(id)}`, patch);
   return ok ? { ok: true as const, total: bd.total as number, oldTotal: q.total != null ? Number(q.total) : null, added: andList(newLines.map((l) => `the ${l.label.replace(/^(.)/, (c) => c.toLowerCase())}`)) }
     : { ok: false as const, error: "Couldn't save the price" };
 }

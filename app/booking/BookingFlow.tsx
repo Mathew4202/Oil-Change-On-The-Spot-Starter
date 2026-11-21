@@ -3,7 +3,7 @@
 import VinPhoto, { type VinResult, type Decoded } from "@/components/VinPhoto";
 import { ExtraCarFields, ExtraCarServices, ExtraPricer, newExtra, extraMissing, extraCarMissing, extraName, extraAddons, type Extra } from "@/components/ExtraCar";
 import { matchEngine } from "@/lib/os/vin";
-import { addonsFor, keepAddons } from "@/lib/os/addons";
+import { addonsFor, keepAddons, canonicalVisit } from "@/lib/os/addons";
 import { useEffect, useMemo, useState } from "react";
 import AddressField, { type Place } from "@/components/AddressField";
 import type { Profile } from "@/lib/os/customer-account";
@@ -28,7 +28,7 @@ const STEPS = ["Your car", "Services", "Date and time", "Your details", "Review"
 const ADDON_NOTES: Record<string, string> = {
   tires: "Tires already on rims", wipers: "$85 for both, installed", cabin_filter: "From $40 installed (the part for your car + $10)",
   engine_filter: "From $40 installed (the part for your car + $10)", battery: "$20 install + battery", coolant: "Top-up with the right type",
-  washer_fluid: "Top-up",
+  washer_fluid: "Top-up", rotation: "Wheels moved front to back", oil_change: "Full synthetic, new filter, quick check-up",
 };
 const PARTS_ONLY = ["wipers", "cabin_filter", "engine_filter", "battery", "coolant", "washer_fluid"];
 const money = (n: number) => `${n < 0 ? "−" : ""}$${Math.abs(n).toFixed(2)}`;
@@ -220,9 +220,11 @@ export default function BookingFlow() {
     if (step !== 2) return;
     if (hold) { setSlot({ time: "", label: hold.label, start: hold.start }); return; }   // the held time is already theirs
     setSlots(null); setSlot(null); setDayNote("");
-    const tires = job === "oil_change" && addons.includes("tires") ? "tires" : "";
+    // a rotation with an oil change is an oil visit with the rotation added: the slot length follows that
+    const visit = canonicalVisit(job, addons);
+    const extraQ = visit.job === "oil_change" ? visit.addons.filter((a) => a === "tires" || a === "rotation").join(",") : "";
     const moreQ = more.map((x) => `${x.job}:${extraAddons(x).join("+")}`).join(",");
-    fetch(`/api/os/slots?date=${date}&job=${job}&addons=${tires}${moreQ ? `&more=${moreQ}` : ""}`).then((r) => r.json())
+    fetch(`/api/os/slots?date=${date}&job=${visit.job}&addons=${extraQ}${moreQ ? `&more=${moreQ}` : ""}`).then((r) => r.json())
       .then((d) => { setSlots(d.slots || []); if (!d.open) setDayNote(d.reason || "No open times this day"); })
       .catch(() => setSlots([]));
   }, [step, date, job, addons, hold]);
@@ -231,7 +233,7 @@ export default function BookingFlow() {
   const days = useMemo(() => Array.from({ length: 30 }, (_, i) => addDays(today(), i)), []);
 
   const jobsShown = services?.jobs ?? [{ id: "oil_change" as JobId, name: "Oil change", note: "" }];
-  const addonList = job === "parts" ? PARTS_ONLY : addonsFor(job).filter((a) => a === "tires" || PARTS_ONLY.includes(a));
+  const addonList = job === "parts" ? PARTS_ONLY : addonsFor(job).filter((a) => a === "tires" || a === "rotation" || a === "oil_change" || PARTS_ONLY.includes(a));
 
   function next() {
     setErr("");
@@ -431,7 +433,8 @@ export default function BookingFlow() {
                     {addonList.map((id) => {
                       const on = addons.includes(id);
                       const nameOf = services?.addons.find((a) => a.id === id)?.name ?? (id === "tires" ? "Tire change" : id);
-                      const priced = quote?.lines.find((l) => l.label.toLowerCase().startsWith(id === "tires" ? "tire change" : nameOf.toLowerCase().split(" ")[0]));
+                      const want = id === "tires" ? "tire change" : id === "rotation" ? "tire rotation" : id === "oil_change" ? "oil change" : nameOf.toLowerCase().split(" ")[0];
+                      const priced = quote?.lines.find((l) => l.label.toLowerCase().includes(want));
                       return (
                         <button key={id} aria-pressed={on} onClick={() => setAddons((a) => on ? a.filter((x) => x !== id) : [...a, id])}
                           className="min-h-16 w-full rounded-xl px-3.5 py-3 flex items-center justify-between gap-3 text-left border" style={card(on)}>

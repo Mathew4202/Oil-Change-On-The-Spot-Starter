@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
       { id: "wipers", name: "Wiper blades" }, { id: "cabin_filter", name: "Cabin air filter" },
       { id: "engine_filter", name: "Engine air filter" }, { id: "battery", name: "Battery" },
       { id: "coolant", name: "Coolant top-up" }, { id: "washer_fluid", name: "Washer fluid top-up" },
+      { id: "rotation", name: "Tire rotation" }, { id: "oil_change", name: "Oil change" },
     ],
     windows,
   });
