@@ -231,25 +231,6 @@ export default function MoneyScreen() {
         {s && data && (
           <>
             <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
-                <div>
-                  <p className="font-extrabold text-lg">Projected</p>
-                  <p className="text-xs text-[#4a5878]">{data.projection.note} Money in is jobs × average price. Profit is jobs × profit per job, less fixed costs.</p>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {(["week", "month", "year", "nextWeek", "nextMonth", "nextYear"] as const).map((k) => {
-                    const p = data.projection!.periods[k];
-                    return (
-                      <div key={k} className="rounded-xl p-3 bg-[#f4f6fa]">
-                        <p className="text-xs font-semibold" style={{ color: MUTED }}>{p.label} · {p.jobs} jobs</p>
-                        <p className="text-lg font-extrabold">{money(p.sales)} in</p>
-                        <p className="text-sm font-bold" style={{ color: p.profit < 0 ? BAD : NAVY }}>{money(p.profit)} profit</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
-            <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
               <div>
                 <p className="text-sm font-semibold" style={{ color: MUTED }}>Profit</p>
                 <p className="text-[44px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)", color: s.profit < 0 ? BAD : NAVY }}>{money(s.profit)}</p>
