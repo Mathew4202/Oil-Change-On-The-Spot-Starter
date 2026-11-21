@@ -321,16 +321,24 @@ const andList = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0,
 async function removeLines(id: string, idx: number[], by: string) {
   type L = { label: string; amount: number };
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  const [b] = await sbGet<{ status: string; services: { addons?: string[] } & Record<string, unknown> | null; quote_breakdown: Record<string, unknown> & { lines?: L[]; family?: L[] } | null }>(
-    `bookings?select=status,services,quote_breakdown&id=eq.${enc(id)}`);
+  const [b] = await sbGet<{ status: string; starts_at: string; ends_at: string; cars: number | null; services: { job?: string; addons?: string[] } & Record<string, unknown> | null; quote_breakdown: Record<string, unknown> & { lines?: L[]; family?: L[] } | null }>(
+    `bookings?select=status,starts_at,ends_at,cars,services,quote_breakdown&id=eq.${enc(id)}`);
   if (!b?.quote_breakdown?.lines?.length) return { ok: false as const, error: "No price on this booking" };
   if (b.status === "done") return { ok: false as const, error: "This job is already finished" };
   const q = b.quote_breakdown, lines = q.lines!;
   const drop = new Set(idx.filter((i) => Number.isInteger(i) && i >= 0 && i < lines.length));
   if (drop.size >= lines.length) return { ok: false as const, error: "Can't take everything off. Use Move or cancel instead" };
   const { ADDON_NAMES } = await import("@/lib/os/addon-needs");
-  const kindOf = (l: L) => Object.keys(ADDON_NAMES).find((k) => ADDON_NAMES[k].test(l.label)) ?? null;
+  // a tire rotation line is the rotation add-on; an oil change line is the oil change (on a rotation visit it's the add-on)
+  const isRot = (l: L) => /^Tire rotation/i.test(l.label), isOil = (l: L) => /^(Full synthetic|Diesel) oil change/i.test(l.label);
+  const kindOf = (l: L) => isRot(l) ? "rotation" : isOil(l) ? "oil_change" : Object.keys(ADDON_NAMES).find((k) => ADDON_NAMES[k].test(l.label)) ?? null;
   const gone = lines.filter((_, i) => drop.has(i));
+  const job = b.services?.job ?? "oil_change";
+  const have = b.services?.addons ?? [];
+  // the job itself can't come off: a tire rotation visit loses its rotation, an oil visit loses its oil only when it's a rotation + oil visit (it becomes a rotation visit)
+  if (gone.some(isRot) && job === "rotation") return { ok: false as const, error: "The rotation is the job here. Use Move or cancel instead" };
+  if (gone.some(isOil) && !(job === "oil_change" && have.includes("rotation"))) return { ok: false as const, error: "The oil change is the job here. Use Move or cancel instead" };
+  if (gone.some(isOil) && gone.some(isRot)) return { ok: false as const, error: "Take off one of them at a time" };
   const goneKinds = new Set(gone.map(kindOf).filter(Boolean) as string[]);
   const kept = lines.filter((_, i) => !drop.has(i));
   const rate = Number(q.hst ?? 0) > 0 && Number(q.subtotal ?? 0) > 0 ? Math.round((Number(q.hst) / Number(q.subtotal)) * 100) / 100 : 0.14;
@@ -339,8 +347,16 @@ async function removeLines(id: string, idx: number[], by: string) {
     removed: [...((q.removed as unknown[]) ?? []), ...gone.map((l) => ({ ...l, by, at: new Date().toISOString() }))] };
   // family price keeps the regular lines for "back to regular": take the same add-on off those too
   if (q.family && goneKinds.size) bd.family = q.family.filter((l) => { const k = kindOf(l); return !k || !goneKinds.has(k); });
-  const services = { ...(b.services ?? {}), addons: (b.services?.addons ?? []).filter((a) => !goneKinds.has(a)) };
-  const ok = await sbPatch("bookings", `id=eq.${enc(id)}`, { quote_breakdown: bd, quoted_total: bd.total, services });
+  // rotation + oil with the oil taken off: what's left is a rotation visit (the rotation line stays as its price)
+  const newJob = gone.some(isOil) ? "rotation" : job;
+  const newAddons = have.filter((a) => !goneKinds.has(a));
+  const services = { ...(b.services ?? {}), job: newJob, addons: newAddons };
+  const patch: Record<string, unknown> = { quote_breakdown: bd, quoted_total: bd.total, services };
+  const rules = Object.fromEntries((await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value")).map((x) => [x.key, Number(x.value)]));
+  const cars = b.cars || 1;
+  const oldMin = jobMinutes(job, rules, have) * cars, newMin = jobMinutes(newJob, rules, newAddons) * cars;
+  if (newMin < oldMin) patch.ends_at = new Date(new Date(b.starts_at).getTime() + newMin * 60000).toISOString();   // the visit is shorter now
+  const ok = await sbPatch("bookings", `id=eq.${enc(id)}`, patch);
   return ok ? { ok: true as const, total: bd.total as number, removed: andList(gone.map((l) => `the ${l.label.replace(/^(.)/, (c) => c.toLowerCase())}`)), oldTotal: q.total != null ? Number(q.total) : null } : { ok: false as const, error: "Couldn't save the price" };
 }
 
