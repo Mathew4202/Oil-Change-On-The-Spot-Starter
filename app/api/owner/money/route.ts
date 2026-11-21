@@ -6,6 +6,7 @@ import { halifaxDate, halifaxToDate } from "@/lib/os/slots";
 import { periodFor, summarize, byMonth, groupOf, beforeHst, isRealJob, type JobRow, type ExpRow, type Period } from "@/lib/os/money";
 import { moneyPerHour, dayDrives, type HourJob } from "@/lib/os/money-hour";
 import { cachedPoints, geoKey, geocode } from "@/lib/os/geo";
+import { project } from "@/lib/os/projection";
 import { bases } from "@/lib/os/maps";
 
 export const dynamic = "force-dynamic";
@@ -133,6 +134,18 @@ export async function GET(req: NextRequest) {
     perHour(p.from, p.to).catch(() => null),
   ]);
   const holeNow = await hole(today).catch(() => null);
+  // projection: last year's and this year's real jobs, each job's profit (from "out of the hole") and fixed costs a month
+  const Y = +today.slice(0, 4);
+  const [yearJobs, fixedRow] = await Promise.all([
+    jobsBetween(`${Y - 1}-01-01`, `${Y}-12-31`).catch(() => []),
+    sbGet<{ value: number }>("pricing_rules?select=value&key=eq.fixed_monthly").catch(() => []),
+  ]);
+  const projection = project({
+    today,
+    jobs: yearJobs.filter(isRealJob).map((j) => ({ day: halifaxDate(new Date(j.done_at)), revenue: Number(j.revenue ?? 0) })),
+    perJob: holeNow?.perJob ?? 0,
+    fixedMonthly: Number(fixedRow[0]?.value ?? 0),
+  });
 
   return NextResponse.json({
     period: p,
@@ -142,6 +155,7 @@ export async function GET(req: NextRequest) {
       amount: Number(b.jobs?.[0]?.total ?? b.quoted_total ?? 0), fee: b.status === "cancelled" })),
     hourly,
     hole: holeNow,
+    projection,
     bank: { needsLook: needs.length, lastStatement: lastImport[0]?.to_date ?? null, today },
   });
 }

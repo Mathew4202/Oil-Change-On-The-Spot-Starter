@@ -13,7 +13,8 @@ type Summary = { jobs: number; sales: number; hstCollected: number; spending: nu
 type Month = { month: string; sales: number; spending: number; profit: number };
 type Data = { period: { kind: Kind; label: string; from: string; to: string; offset: number }; summary: Summary; months: Month[];
   unpaid: { id: string; date: string; name: string; amount: number; fee?: boolean }[]; bank: { needsLook: number; lastStatement: string | null; today: string };
-  hourly: Hourly | null; hole: Hole | null };
+  hourly: Hourly | null; hole: Hole | null;
+  projection?: { note: string; periods: Record<string, { label: string; jobs: number; sales: number; profit: number; current: boolean }> } };
 type Hole = { sales: number; spending: number; profit: number; shortBy: number; needed: number; perJob: number; gasPerJob: number; jobsThisMonth: number; onPace: number; booked?: number; basis?: "month" | "30days"; daysLeft: number; recentJobs: number };
 type Bucket = { name: string; jobs: number; revenue: number; profit: number; hours: number | null; perHour: number | null };
 type Hourly = { all: Bucket | null; areas: Bucket[]; services: Bucket[]; addons: { name: string; count: number; revenue: number }[]; untimed: number };
@@ -229,6 +230,26 @@ export default function MoneyScreen() {
 
         {s && data && (
           <>
+            {data.projection && (
+              <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
+                <div>
+                  <p className="font-extrabold text-lg">Projected</p>
+                  <p className="text-xs text-[#4a5878]">{data.projection.note} Money in is jobs × average price. Profit is jobs × profit per job, less fixed costs.</p>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {(["week", "month", "year", "nextWeek", "nextMonth", "nextYear"] as const).map((k) => {
+                    const p = data.projection!.periods[k];
+                    return (
+                      <div key={k} className="rounded-xl p-3 bg-[#f4f6fa]">
+                        <p className="text-xs font-semibold" style={{ color: MUTED }}>{p.label} · {p.jobs} jobs</p>
+                        <p className="text-lg font-extrabold">{money(p.sales)} in</p>
+                        <p className="text-sm font-bold" style={{ color: p.profit < 0 ? BAD : NAVY }}>{money(p.profit)} profit</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
             <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
               <div>
                 <p className="text-sm font-semibold" style={{ color: MUTED }}>Profit</p>
