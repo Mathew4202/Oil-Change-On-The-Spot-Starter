@@ -230,8 +230,7 @@ export default function MoneyScreen() {
 
         {s && data && (
           <>
-            {data.projection && (
-              <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
+            <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
                 <div>
                   <p className="font-extrabold text-lg">Projected</p>
                   <p className="text-xs text-[#4a5878]">{data.projection.note} Money in is jobs × average price. Profit is jobs × profit per job, less fixed costs.</p>
@@ -267,6 +266,27 @@ export default function MoneyScreen() {
               )}
               <p className="text-xs" style={{ color: MUTED }}>All amounts before HST. Money out is everything spent: receipts, bank fees and lines added from the bank statement.</p>
             </section>
+
+            {data.projection && offset === 0 && (
+              <section className="bg-white rounded-2xl p-4 flex flex-col gap-3">
+                <div>
+                  <p className="font-extrabold text-lg">Projected</p>
+                  <p className="text-xs text-[#4a5878]">{data.projection.note} Money in is jobs × average price. Profit is jobs × profit per job, less fixed costs.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(kind === "week" ? ["week", "nextWeek"] : kind === "month" ? ["month", "nextMonth"] : ["year", "nextYear"]).map((k) => {
+                    const p = data.projection!.periods[k];
+                    return (
+                      <div key={k} className="rounded-xl p-3 bg-[#f4f6fa]">
+                        <p className="text-xs font-semibold" style={{ color: MUTED }}>{p.label} · about {Math.round(p.jobs)} jobs</p>
+                        <p className="text-lg font-extrabold">{money(p.sales)} in</p>
+                        <p className="text-sm font-bold" style={{ color: p.profit < 0 ? BAD : NAVY }}>{money(p.profit)} profit</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {data.hole && <HoleCard h={data.hole} />}
 
