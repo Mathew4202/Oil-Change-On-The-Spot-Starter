@@ -6,7 +6,6 @@ import { planPrice } from "@/lib/os/plan";
 import { sbInsert } from "@/lib/os/db";
 import { e164 } from "@/lib/os/booking";
 import { pushToOwners } from "@/lib/os/push";
-import { loadPrices } from "@/lib/os/prices";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,7 +13,6 @@ export const maxDuration = 60;
 async function price(sp: URLSearchParams) {
   const year = Number(sp.get("year")), make = sp.get("make") || "", model = sp.get("model") || "";
   if (!year || !make || !model) return null;
-  await loadPrices();
   const { quote, vehicleClass, rules, engines, spec } = await buildQuote({ year, make, model, engine: sp.get("engine") || null, job: "oil_change", addons: [], own: null, km: null, cars: 1 });
   const regular = Number(quote.lines[0]?.amount ?? quote.subtotal);
   const plan = planPrice({ regular, profit: quote.profit, visits: Number(sp.get("visits") || 6), swaps: Number(sp.get("swaps") || 0),

@@ -209,10 +209,7 @@ export default function MoneyScreen() {
         <p className="text-sm text-[#c9d3ea] font-semibold">Profit, HST and the bank</p>
         <div className="flex items-end justify-between gap-2">
           <h1 className="text-[30px] leading-none font-extrabold" style={{ fontFamily: "var(--font-condensed)" }}>Money</h1>
-          <div className="flex gap-2">
-            <Link href={"/owner/prices" as Route} className="h-9 px-3 rounded-lg border border-[#3b4d7a] text-sm font-bold flex items-center no-underline text-white">Prices</Link>
-            {can.team && <Link href={"/owner/team" as Route} className="h-9 px-3 rounded-lg border border-[#3b4d7a] text-sm font-bold flex items-center no-underline text-white">Team logins</Link>}
-          </div>
+          {can.team && <Link href={"/owner/team" as Route} className="h-9 px-3 rounded-lg border border-[#3b4d7a] text-sm font-bold flex items-center no-underline text-white">Team logins</Link>}
         </div>
         <div className="mt-3 grid grid-cols-3 gap-1 bg-white/10 rounded-xl p-1" role="tablist" aria-label="Time period">
           {(["week", "month", "year"] as Kind[]).map((k) => (
