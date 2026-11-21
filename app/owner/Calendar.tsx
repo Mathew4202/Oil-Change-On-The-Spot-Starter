@@ -495,7 +495,7 @@ function BlockTime({ date, onClose }: { date: string; onClose: (saved: boolean) 
   );
 }
 
-/** Change a job's price (before HST) when the quote wasn't right: the difference shows as its own line and moves the profit. */
+/** Change a job's price (before HST) when the quote wasn't right: the service line itself takes the new price, and the profit moves with it. */
 function EditPrice({ id, subtotal, onSaved }: { id: string; subtotal: number; onSaved: () => void }) {
   const [open, setOpen] = useState(false); const [val, setVal] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const [tell, setTell] = useState(true); const [note, setNote] = useState("");

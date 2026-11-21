@@ -183,11 +183,20 @@ export async function setPrice(id: string, subtotalIn: number, by: string, tell 
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const who = by ? by.charAt(0).toUpperCase() + by.slice(1) : "HQ";
   const q = b.quote_breakdown;
-  // earlier price changes are folded into the new one, so there's only ever one line for it
+  // earlier "Price changed/set by" lines (from before this rule) are folded into the service line
   const lines = (q?.lines ?? []).filter((l) => !/^Price (changed|set) by /.test(l.label));
   const base = r2(lines.reduce((t, l) => t + Number(l.amount), 0));
   const diff = r2(subtotal - base);
-  const newLines = lines.length ? [...lines, ...(diff ? [{ label: `Price changed by ${who}`, amount: diff }] : [])] : [{ label: `Price set by ${who}`, amount: subtotal }];
+  // the change goes on the service itself (the biggest charge: oil, tire change, rotation, diagnostic...), not on a separate line
+  const serviceIdx = lines.reduce((best, l, i) => (Number(l.amount) > 0 && !/^(Travel|Mobile service call)|discount/i.test(l.label) && (best < 0 || Number(l.amount) > Number(lines[best].amount)) ? i : best), -1);
+  let newLines: { label: string; amount: number }[];
+  if (!lines.length) newLines = [{ label: "Service", amount: subtotal }];
+  else if (serviceIdx < 0) return { ok: false as const, error: "No service line to change on this job" };
+  else {
+    const amt = r2(Number(lines[serviceIdx].amount) + diff);
+    if (amt < 0) return { ok: false as const, error: "That's less than the other charges on this job. Lower an add-on or the travel first." };
+    newLines = lines.map((l, i) => (i === serviceIdx ? { ...l, amount: amt } : l));
+  }
   const hst = r2(subtotal * rate);
   const oldProfit = q?.profit ?? null;
   const oldDiff = r2((q?.lines ?? []).filter((l) => /^Price (changed|set) by /.test(l.label)).reduce((t, l) => t + Number(l.amount), 0));
