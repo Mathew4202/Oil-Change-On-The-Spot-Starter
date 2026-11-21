@@ -27,6 +27,7 @@ import { lookupOilSpec } from "@/lib/os/spec-lookup-run";
 import { gasPerJob } from "@/lib/os/gas";
 import { addLines, christmasLine } from "@/lib/os/deals";
 import { detectClassFromModel } from "@/data/vehicleClass";
+import { loadPrices } from "@/lib/os/prices";
 
 export type Spec = { id: string; year_from: number; make: string; model: string; engine: string | null; oil_grade: string;
   capacity_l: number; oil_filter_part: string | null; verified: boolean; source: string; confidence: string | null; oil_spec: string | null; fuel?: string | null;
@@ -198,6 +199,7 @@ async function filterCostFor(part: string | null, before?: string | null): Promi
 }
 
 export async function buildQuote(req: QuoteRequest) {
+  await loadPrices();   // the owner's saved service prices (Prices page)
   if (req.job && req.job !== "oil_change" && req.job !== "seasonal") {
     // No oil change: no need to look up the oil (saves the lookup cost)
     const rules = await sbGet<{ key: string; value: number }>("pricing_rules?select=key,value");

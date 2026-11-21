@@ -78,7 +78,7 @@ export const SERVICE_PRICES = {
   batteryWithOilChange: 20,   // install fee when we are already there
   addonWipers: 15,            // with an oil change, plus parts
   addonFilter: 10,            // cabin or engine air filter with an oil change, plus parts
-} as const;
+};
 
 export type Addon = { kind: "wipers" | "cabin_filter" | "engine_filter" | "battery" | "tires" | "coolant" | "washer_fluid"; partCost: number; partRetail?: number };
 export const SEASONAL_DISCOUNT = 15;   // oil change + tire change on the same visit
@@ -316,4 +316,31 @@ export function quoteVisit(opts: { job: Exclude<JobType, "oil_change" | "seasona
     : opts.job === "rotation" ? ROTATION[opts.vehicleClass ?? "Sedan"] : SERVICE_PRICES.standaloneCallout;
   const partsTotal = r2(lines.filter((l) => !/^Travel|^Mobile service call|^Diagnostic|^Tire change|^Tire rotation/.test(l.label)).reduce((t, l) => t + l.amount, 0) - addonLabour);
   return { lines, subtotal, hst, total: r2(subtotal + hst), cost: partsTotal, profit: r2(fee + addonLabour), raised: false, needsReview };
+}
+
+// Prices the owner can change on the Prices page. Each is stored in pricing_rules as svc_<key>; a missing row keeps the default in this file.
+type PriceField = { key: string; label: string; group: string; def: number; get: () => number; set: (v: number) => void };
+const SLUG: Record<VehicleClass, string> = { Sedan: "sedan", "SUV/Crossover": "suv", "Large SUV": "large_suv", Truck: "truck", "Sports Car": "sports" };
+const CLASSES = Object.keys(SLUG) as VehicleClass[];
+function field(key: string, label: string, group: string, obj: Record<string, number>, prop: string): PriceField {
+  return { key, label, group, def: obj[prop], get: () => obj[prop], set: (v) => { obj[prop] = v; } };
+}
+export const PRICE_FIELDS: PriceField[] = [
+  ...CLASSES.map((c) => field(`svc_oil_${SLUG[c]}`, c, "Oil change", OIL_BASE, c)),
+  ...CLASSES.map((c) => field(`svc_tire_${SLUG[c]}`, c, "Tire change (on rims)", TIRE_CHANGE, c)),
+  ...CLASSES.map((c) => field(`svc_rotation_${SLUG[c]}`, c, "Tire rotation", ROTATION, c)),
+  field("svc_diagnostic", "Diagnostic", "Other services", SERVICE_PRICES, "diagnostic"),
+  field("svc_labour_hour", "Repair labour per hour", "Other services", SERVICE_PRICES, "labourPerHour"),
+  field("svc_callout", "Standalone visit (battery, wipers, filters on their own)", "Other services", SERVICE_PRICES, "standaloneCallout"),
+  field("svc_battery_add", "Battery install with an oil change", "Add-ons", SERVICE_PRICES, "batteryWithOilChange"),
+  field("svc_wipers_add", "Wipers with an oil change (plus parts)", "Add-ons", SERVICE_PRICES, "addonWipers"),
+  field("svc_filter_add", "Air filter with an oil change (plus parts)", "Add-ons", SERVICE_PRICES, "addonFilter"),
+];
+
+/** Apply the saved prices (key -> value). Keys not saved go back to the default in this file. */
+export function applyPriceOverrides(saved: Record<string, number>) {
+  for (const f of PRICE_FIELDS) {
+    const v = saved[f.key];
+    f.set(typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : f.def);
+  }
 }

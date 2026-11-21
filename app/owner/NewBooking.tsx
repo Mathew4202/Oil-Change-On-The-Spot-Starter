@@ -83,6 +83,8 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
 
   // opened from a customer's page: start with them picked
   useEffect(() => { if (preset) pick(preset); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [px, setPx] = useState<Record<string, number>>({});
+  useEffect(() => { fetch("/api/owner/prices").then((r) => r.json()).then((j) => { if (j.fields) setPx(Object.fromEntries(j.fields.map((f: { key: string; value: number }) => [f.key, f.value]))); }).catch(() => {}); }, []);
 
   // opened from a call ("Book this person"): fill in everything we heard, then they check it and fill the rest
   useEffect(() => {
@@ -305,8 +307,8 @@ export default function NewBooking({ date: initialDate, onClose, customer: prese
               <p className="text-sm text-[#4a5878]">Oil change + tire change on rims, $15 off.{!season && <span className="text-[#8a5a00] font-semibold"> Out of season on this day: customers can&apos;t book it online, but you can.</span>}</p>
             )}
             {job === "diagnostic" && <p className="text-sm text-[#4a5878]">$100 to find the problem. Any repair is quoted after.</p>}
-            {job === "tires" && <p className="text-sm text-[#4a5878]">Tires already on rims: sedan ${TIRE_CHANGE.Sedan}, SUV ${TIRE_CHANGE["SUV/Crossover"]}, large SUV ${TIRE_CHANGE["Large SUV"]}, truck ${TIRE_CHANGE.Truck}, sports car ${TIRE_CHANGE["Sports Car"]}.</p>}
-            {job === "rotation" && <p className="text-sm text-[#4a5878]">Tire rotation: ${ROTATION.Sedan}.</p>}
+            {job === "tires" && <p className="text-sm text-[#4a5878]">Tires already on rims: sedan ${px.svc_tire_sedan ?? TIRE_CHANGE.Sedan}, SUV ${px.svc_tire_suv ?? TIRE_CHANGE["SUV/Crossover"]}, large SUV ${px.svc_tire_large_suv ?? TIRE_CHANGE["Large SUV"]}, truck ${px.svc_tire_truck ?? TIRE_CHANGE.Truck}, sports car ${px.svc_tire_sports ?? TIRE_CHANGE["Sports Car"]}.</p>}
+            {job === "rotation" && <p className="text-sm text-[#4a5878]">Tire rotation: sedan ${px.svc_rotation_sedan ?? ROTATION.Sedan}, SUV ${px.svc_rotation_suv ?? ROTATION["SUV/Crossover"]}, large SUV ${px.svc_rotation_large_suv ?? ROTATION["Large SUV"]}, truck ${px.svc_rotation_truck ?? ROTATION.Truck}, sports car ${px.svc_rotation_sports ?? ROTATION["Sports Car"]}.</p>}
             {(
               <>
                 <p className="text-sm font-semibold">{job === "parts" ? "What do they need? ($50 visit + parts)" : "Add-ons"}</p>

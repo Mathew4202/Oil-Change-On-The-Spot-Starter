@@ -2,6 +2,7 @@
 // Prices come from the pricing engine so this page can't drift from what the booking page charges.
 import Link from "next/link";
 import { OIL_BASE, TIRE_CHANGE, ROTATION, SERVICE_PRICES } from "@/lib/os/pricing-engine";
+import { loadPrices } from "@/lib/os/prices";
 import { NAVY, GOLD, MUTED, LIGHT, PHONE, PHONE_TEL } from "@/components/site/brand";
 
 export const metadata = {
@@ -12,8 +13,7 @@ export const metadata = {
 const cond = { fontFamily: "var(--font-condensed)" } as const;
 const SIZES = ["Sedan", "SUV / crossover", "3-row SUV", "Truck"] as const;
 const OWN = { both: [50, 60, 70, 80], oil: [60, 70, 80, 90], filter: [80, 100, 110, 120] };
-const SEASONAL = [OIL_BASE.Sedan + TIRE_CHANGE.Sedan - 15, OIL_BASE["SUV/Crossover"] + TIRE_CHANGE["SUV/Crossover"] - 15,
-  OIL_BASE["Large SUV"] + TIRE_CHANGE["Large SUV"] - 15, OIL_BASE.Truck + TIRE_CHANGE.Truck - 15];
+export const dynamic = "force-dynamic";
 
 function Book({ job, add, children = "Book" }: { job: string; add?: string; children?: React.ReactNode }) {
   return <Link href={`/booking?job=${job}${add ? `&add=${add}` : ""}` as never} className="inline-block rounded-xl px-5 py-3 text-[16px] font-extrabold no-underline" style={{ background: GOLD, color: NAVY }}>{children}</Link>;
@@ -45,7 +45,10 @@ function Card({ id, title, intro, children, cta }: { id: string; title: string; 
   );
 }
 
-export default function Services() {
+export default async function Services() {
+  await loadPrices();
+  const SEASONAL = [OIL_BASE.Sedan + TIRE_CHANGE.Sedan - 15, OIL_BASE["SUV/Crossover"] + TIRE_CHANGE["SUV/Crossover"] - 15,
+    OIL_BASE["Large SUV"] + TIRE_CHANGE["Large SUV"] - 15, OIL_BASE.Truck + TIRE_CHANGE.Truck - 15];
   return (
     <div className="text-[#0d1b3e]">
       <section className="text-white" style={{ background: NAVY }}>
