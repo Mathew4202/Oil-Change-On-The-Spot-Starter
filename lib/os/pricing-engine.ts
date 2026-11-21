@@ -67,10 +67,8 @@ export const TIRE_CHANGE: Record<VehicleClass, number> = {
   Sedan: 80, "SUV/Crossover": 90, "Large SUV": 100, Truck: 110, "Sports Car": 100,   // owners confirmed Oct 24: truck $110 (seasonal truck package $225); sports: low and riskier to lift
 };
 
-// Tire rotation (wheels moved around on the car): listed "starting at $90" in the business plan
-export const ROTATION: Record<VehicleClass, number> = {
-  Sedan: 90, "SUV/Crossover": 90, "Large SUV": 90, Truck: 90, "Sports Car": 90,
-};
+// Tire rotation (wheels moved around on the car): same price as a tire swap, per vehicle class
+export const ROTATION: Record<VehicleClass, number> = { ...TIRE_CHANGE };
 
 // Prices agreed Oct 24
 export const SERVICE_PRICES = {
