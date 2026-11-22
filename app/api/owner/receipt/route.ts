@@ -37,14 +37,7 @@ export async function POST(req: NextRequest) {
         unit_price: i.unitPrice, line_total: i.lineTotal, category: i.category, litres_per_unit: i.litresPerUnit, oil_grade: i.oilGrade, units_per_pack: i.unitsPerPack,
         list_price: i.listPrice, car: i.car, alt_part_number: i.altPartNumber })) } : null);
     if (!scan) return NextResponse.json({ error: "Nothing to save" }, { status: 400 });
-    // "Same as 27356" typed on a filter: link it first, so it isn't asked about again
     const linked: string[] = [];
-    for (const i of (body.scan.items || []) as { partNumber?: string | null; sameAs?: string | null }[]) {
-      if (!i.partNumber || !i.sameAs || !String(i.sameAs).trim()) continue;
-      const { linkPart } = await import("@/lib/os/part-alias");
-      const l = await linkPart(String(i.partNumber), String(i.sameAs), owner);
-      linked.push(l.ok ? `${i.partNumber} = ${l.to}` : `${i.partNumber}: ${l.error}`);
-    }
     // PartSource's other number for the same part (PART NO, e.g. CPH9688 next to PROD NO 0179939): link it, so both mean one part
     for (const i of (body.scan.items || []) as { partNumber?: string | null; altPartNumber?: string | null }[]) {
       if (!i.partNumber || !i.altPartNumber) continue;
@@ -57,10 +50,10 @@ export async function POST(req: NextRequest) {
     // the invoice says which car a filter is for: save it to that car (or link it to the number the car already has)
     const fitted: string[] = [], fittedParts = new Set<string>();
     const { fitFromReceipt } = await import("@/lib/os/part-alias");
-    for (const i of (body.scan.items || []) as { partNumber?: string | null; sameAs?: string | null; category?: string; car?: unknown }[]) {
+    for (const i of (body.scan.items || []) as { partNumber?: string | null; category?: string; car?: unknown }[]) {
       const { cleanCar } = await import("@/lib/os/receipt-scan");
       const car = cleanCar(i.car);
-      if (!i.partNumber || !car || !i.category || (i.sameAs && String(i.sameAs).trim())) continue;
+      if (!i.partNumber || !car || !i.category) continue;   // the car the receipt names, for any store
       const m = await fitFromReceipt(String(i.partNumber), i.category, car, owner).catch(() => null);
       if (m) { fitted.push(m); fittedParts.add(String(i.partNumber).toUpperCase()); }
     }

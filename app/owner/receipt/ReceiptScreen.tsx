@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import OwnerNav from "../OwnerNav";
 
 const NAVY = "#0d1b3e", GOLD = "#f2b01e", LINE = "#c8d0e0";
-type Item = { description: string; partNumber: string | null; brand: string | null; qty: number; unitPrice: number; lineTotal: number; category: string; litresPerUnit: number | null; oilGrade: string | null; unitsPerPack?: number | null; listPrice?: number | null; sameAs?: string | null; car?: { year: number; make: string; model: string; engine: string | null } | null };
+type Item = { description: string; partNumber: string | null; brand: string | null; qty: number; unitPrice: number; lineTotal: number; category: string; litresPerUnit: number | null; oilGrade: string | null; unitsPerPack?: number | null; listPrice?: number | null; car?: { year: number; make: string; model: string; engine: string | null } | null };
 type Scan = { vendor: string; supplier: string; date: string | null; invoiceNo: string | null; subtotal: number | null; hst: number | null; total: number; paidWith: string; category: string; items: Item[]; warnings: string[] };
 type Exp = { id: string; vendor: string | null; description: string | null; total: number; hst: number | null; spent_at: string; category: string | null; paid_with: string | null; added_by: string | null };
 // what an expense counts as on the Money page
@@ -109,8 +109,7 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
             {result.stock.length > 0 && <p className="text-sm">Stock: {result.stock.join(", ")}</p>}
             {result.prices.length > 0 && <p className="text-sm">Prices updated: {result.prices.join(", ")}</p>}
             {(result.fitted ?? []).map((f) => <p key={f} className="text-sm font-semibold text-[#1e6b3a]">{f}.</p>)}
-            {(result.linked?.length ?? 0) > 0 && <p className="text-sm">Same as: {result.linked!.join(", ")}. The Bring list will say either one.</p>}
-            {(result.unknown ?? []).map((u) => <SameAs key={u.part} part={u.part} category={u.category} />)}
+            {(result.linked?.length ?? 0) > 0 && <p className="text-sm">Linked as the same part: {result.linked!.join(", ")}. The Bring list will say either one.</p>}
             {result.banked && <p className="text-sm">Matched to its line on the bank statement.</p>}
             {result.converted && <p className="text-sm">It was in US dollars: saved as ${result.converted.cad.toFixed(2)} CAD (US${"$"}{result.converted.usd.toFixed(2)} at the Bank of Canada rate).</p>}
           </div>
@@ -156,12 +155,6 @@ export default function ReceiptScreen({ owner }: { owner: string }) {
                   {it.car && ["oil_filter", "cabin_filter", "engine_filter"].includes(it.category) && (
                     <p className="text-xs font-semibold text-[#1e6b3a] flex items-center gap-2">For {it.car.year} {it.car.make} {it.car.model}{it.car.engine ? ` ${it.car.engine}` : ""}: saved to that car
                       <button type="button" onClick={() => updItem(i, { car: null })} className="underline text-[#4a5878] font-normal">not this car</button></p>
-                  )}
-                  {["oil_filter", "cabin_filter", "engine_filter"].includes(it.category) && it.partNumber && (
-                    <label className="text-xs font-semibold flex items-center gap-2 text-[#4a5878]">Same as (optional)
-                      <input value={it.sameAs ?? ""} onChange={(e) => updItem(i, { sameAs: e.target.value.toUpperCase() || null })} placeholder="e.g. 27356" autoCapitalize="characters"
-                        className="h-9 flex-1 min-w-0 rounded-lg border px-2 font-mono bg-white text-base" style={{ borderColor: LINE }} />
-                    </label>
                   )}
                   {it.category === "shop_towels" && (
                     <label className="text-xs font-semibold flex items-center gap-2">Towels in each pack or roll
@@ -272,52 +265,3 @@ function DecimalInput({ value, onChange, className, style }: { value: number | n
     onChange={(e) => { const t = e.target.value.replace(/,/g, ".").replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1"); setText(t); onChange(t === "" || t === "." ? null : Number(t)); }} />;
 }
 
-const KIND: Record<string, string> = { oil_filter: "oil filter", cabin_filter: "cabin filter", engine_filter: "air filter" };
-/** A filter no car of ours uses yet (another brand's number): link it to the number our cars use, like NAPA 27356. */
-function SameAs({ part, category }: { part: string; category: string }) {
-  const [to, setTo] = useState(""); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(""); const [done, setDone] = useState(false);
-  async function link() {
-    setBusy(true); setMsg("");
-    const r = await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "link", from: part, to }) });
-    const j = await r.json().catch(() => ({})); setBusy(false);
-    if (!r.ok || !j.ok) return setMsg(j.error || "Couldn't link it");
-    setDone(true); setMsg(`Done. ${part} stays its own part in Stock, but cars that use ${j.to} count it too, and the Bring list will say "${j.to} or ${part}".`);
-  }
-  return (
-    <div className="rounded-lg border p-2.5 flex flex-col gap-1.5 text-sm" style={{ borderColor: "#f2b01e", background: "#fff6dd" }}>
-      <p><strong>{part}</strong> isn&apos;t a {KIND[category] ?? "part"} any of our cars use yet. If it&apos;s the same as one they use (a different brand of NAPA 27356, say), type that number. It stays as {part} in Stock, and the Bring list will say either one.</p>
-      {!done && <div className="flex gap-2">
-        <input value={to} onChange={(e) => setTo(e.target.value.toUpperCase())} placeholder="e.g. 27356" autoCapitalize="characters" className="h-10 flex-1 min-w-0 rounded-lg border border-[#c8d0e0] px-2 text-base bg-white font-mono" />
-        <button disabled={busy || !to.trim()} onClick={link} className="h-10 px-3 rounded-lg font-extrabold disabled:opacity-60" style={{ background: "#0d1b3e", color: "#fff" }}>{busy ? "…" : "Same as"}</button>
-      </div>}
-      {msg && <p className={done ? "text-[#1d6b3a] font-semibold" : "text-[#9b1c1c] font-semibold"}>{msg}</p>}
-      {!done && <FitsCar part={part} category={category} onDone={(m) => { setDone(true); setMsg(m); }} />}
-    </div>
-  );
-}
-
-/** Or: which car it fits (2016-2021 Honda Civic), so that car's price uses this filter's retail price. */
-function FitsCar({ part, category, onDone }: { part: string; category: string; onDone: (msg: string) => void }) {
-  const [y, setY] = useState(""); const [mk, setMk] = useState(""); const [md, setMd] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
-  const box = "h-10 min-w-0 rounded-lg border border-[#c8d0e0] px-2 text-base bg-white";
-  async function save() {
-    setBusy(true); setErr("");
-    const r = await fetch("/api/owner/stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "fits", part, category, years: y, make: mk, model: md }) });
-    const j = await r.json().catch(() => ({})); setBusy(false);
-    if (!r.ok || !j.ok) return setErr(j.error || "Couldn't save it");
-    onDone(`Done. ${part} is now the ${KIND[category] ?? "part"} for the ${j.label}, so its price uses this filter's retail price and the Bring list knows it.`);
-  }
-  return (
-    <div className="flex flex-col gap-1.5 border-t border-[#f2d58a] pt-2">
-      <p>Or tell HQ which car it fits:</p>
-      <div className="grid grid-cols-[5.5rem_1fr_1fr] gap-1.5">
-        <input value={y} onChange={(e) => setY(e.target.value)} placeholder="2019" inputMode="numeric" className={box} />
-        <input value={mk} onChange={(e) => setMk(e.target.value)} placeholder="Honda" className={box} />
-        <input value={md} onChange={(e) => setMd(e.target.value)} placeholder="Civic" className={box} />
-      </div>
-      <p className="text-xs text-[#4a5878]">A range works too, like 2016-2021.</p>
-      <button disabled={busy || !y || !mk || !md} onClick={save} className="h-10 rounded-lg font-extrabold disabled:opacity-60" style={{ background: "#0d1b3e", color: "#fff" }}>{busy ? "…" : "It fits this car"}</button>
-      {err && <p className="text-[#9b1c1c] font-semibold">{err}</p>}
-    </div>
-  );
-}
