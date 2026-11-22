@@ -128,6 +128,24 @@ export async function fitFromReceipt(part: string, category: string, car: { year
   const label = `${car.year} ${car.make} ${car.model}${car.engine ? ` ${car.engine}` : ""}`;
   const word = col === "oil_filter_part" ? "oil filter" : col === "cabin_filter_part" ? "cabin filter" : "engine air filter";
   const litres = (e: string | null | undefined) => (e ?? "").match(/(\d\.\d)/)?.[1] ?? null;
+  // the car's own record first: the filter the Monday list and the job sheet use (vehicles.spec_id). A receipt for this car
+  // links to what that record already has, instead of writing the number to some other record for the same make and model.
+  const owned = await sbGet<{ spec_id: string | null; engine: string | null }>(
+    `vehicles?select=spec_id,engine&year=eq.${car.year}&make=ilike.${enc(car.make)}&model=ilike.${enc(car.model)}&spec_id=not.is.null&limit=50`).catch(() => []);
+  const mine = owned.filter((v) => !litres(car.engine) || !litres(v.engine) || litres(car.engine) === litres(v.engine)).map((v) => v.spec_id!);
+  if (mine.length) {
+    const rows = await sbGet<Record<string, string | null>>(`vehicle_specs?select=id,${col}&id=in.(${mine.join(",")})`).catch(() => []);
+    const have = rows.map((r) => r[col]).find((x) => x && normPart(String(x)) !== "") ?? null;
+    if (have) {
+      if (normPart(String(have)) === normPart(pn)) return `${pn} was already on file for ${label}`;
+      const links = await loadLinks();
+      if (sameParts(String(have), links).some((x) => normPart(x) === normPart(pn))) return `${pn} was already on file for ${label}`;
+      const l = await linkPart(pn, String(have), by);
+      return l.ok ? `${pn} linked as the same ${word} as ${l.to} for ${label}` : null;
+    }
+    const first = rows[0]?.id;
+    if (first) { await sbPatch("vehicle_specs", `id=eq.${first}`, { [col]: pn }); return `${pn} saved as the ${word} for ${label}`; }
+  }
   const specs = await sbGet<{ id: string; year_from: number | null; year_to: number | null; engine: string | null } & Record<string, string | number | null>>(
     `vehicle_specs?select=id,year_from,year_to,engine,${col}&make=ilike.${enc(car.make)}&model=ilike.${enc(car.model)}&limit=200`).catch(() => []);
   // same year, and the same engine when both say one (a 1.5L and a 2.0L CR-V take different filters)
