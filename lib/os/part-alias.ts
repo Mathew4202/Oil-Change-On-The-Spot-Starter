@@ -21,6 +21,17 @@ export function sameParts(pn: string, links: Link[]): string[] {
   return out;
 }
 
+/** Stock rows that are the same part (PART NO and PROD NO, or linked brands) become one row: the main number, counts added. */
+export function mergeSameParts<T extends { part_number: string; on_hand: number }>(rows: T[], links: Link[]): T[] {
+  const main = (pn: string) => links.find((l) => normPart(l.alias) === normPart(pn))?.part_number ?? pn;
+  const groups = new Map<string, T[]>();
+  for (const r of rows) { const k = normPart(main(r.part_number)); groups.set(k, [...(groups.get(k) ?? []), r]); }
+  return [...groups.values()].map((g) => {
+    const base = g.find((r) => normPart(r.part_number) === normPart(main(r.part_number))) ?? g[0];
+    return { ...base, part_number: main(base.part_number), on_hand: g.reduce((t, r) => t + Number(r.on_hand), 0) };
+  });
+}
+
 /** On hand for pn and every part linked to it. */
 export function onHandAll(pn: string, links: Link[], parts: { part_number: string; on_hand: number }[]) {
   const set = new Set(sameParts(pn, links).map(normPart));
@@ -132,7 +143,9 @@ export async function fitFromReceipt(part: string, category: string, car: { year
   // links to what that record already has, instead of writing the number to some other record for the same make and model.
   const owned = await sbGet<{ spec_id: string | null; engine: string | null }>(
     `vehicles?select=spec_id,engine&year=eq.${car.year}&make=ilike.${enc(car.make)}&model=ilike.${enc(car.model)}&spec_id=not.is.null&limit=50`).catch(() => []);
-  const mine = owned.filter((v) => !litres(car.engine) || !litres(v.engine) || litres(car.engine) === litres(v.engine)).map((v) => v.spec_id!);
+  const sameEngine = owned.filter((v) => !litres(car.engine) || !litres(v.engine) || litres(car.engine) === litres(v.engine));
+  // an oil filter is the same for every engine of a model in a year: use the car's record even if the engine label differs
+  const mine = (sameEngine.length || col !== "oil_filter_part" ? sameEngine : owned).map((v) => v.spec_id!);
   if (mine.length) {
     const rows = await sbGet<Record<string, string | null>>(`vehicle_specs?select=id,${col}&id=in.(${mine.join(",")})`).catch(() => []);
     const have = rows.map((r) => r[col]).find((x) => x && normPart(String(x)) !== "") ?? null;

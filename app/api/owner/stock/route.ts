@@ -19,7 +19,7 @@ export async function GET() {
   if (!currentOwner()) return NextResponse.json({ error: "Please sign in" }, { status: 401 });
   const today = halifaxDate(new Date());
   const from = new Date().toISOString(), to = new Date(halifaxToDate(today, 0).getTime() + 8 * 86400000).toISOString();
-  const [parts, upcoming] = await Promise.all([
+  const [rawParts, upcoming] = await Promise.all([
     sbGet<Part>("parts?select=id,part_number,brand,description,category,on_hand,unit,oil_grade,reorder_at&order=category,part_number"),
     sbGet<{ cars: number; starts_at: string; quote_breakdown: { lines?: { label: string }[] } | null; services: { job?: string; own?: string | null; addons?: string[] } | null; vehicles: { year?: number | null; make?: string | null; model?: string | null; engine?: string | null; vehicle_specs: { oil_grade: string; capacity_l: number; oil_filter_part: string | null;
       cabin_filter_part?: string | null; air_filter_part?: string | null; wiper_driver?: string | null; wiper_passenger?: string | null } | null } | null }>(
@@ -68,9 +68,11 @@ export async function GET() {
   // the add-ons they picked (cabin and air filters, wipers, battery, top-ups), for every kind of job
   const addons = sumNeeds(upcoming.map((b) => addonNeeds(b.services?.addons, b.vehicles?.vehicle_specs, b.cars)));
   // a filter linked as the same part (Parts Source vs NAPA) counts too
-  const { loadLinks, onHandAll, eitherOf, sameParts, loadStores } = await import("@/lib/os/part-alias");
+  const { loadLinks, onHandAll, eitherOf, sameParts, loadStores, mergeSameParts } = await import("@/lib/os/part-alias");
   const { tagAll, tag, storeKey, storeName } = await import("@/lib/os/store-tag");
   const [links, stores] = await Promise.all([loadLinks(), loadStores()]);
+  // PART NO and PROD NO for one filter count as one line in stock (the main number)
+  const parts = mergeSameParts(rawParts, links);
   // a filter number off a spec we've never bought (and nothing linked to it has a store): those come from NAPA's lookup
   const either = (pn: string) => { const grp = sameParts(pn, links); const known = grp.some((p) => stores[storeKey(p)]); return grp.map((p, i) => tag(p, stores, !known && i === 0 ? "NAPA" : null)).join(" or "); };
   const have = (pn: string) => onHandAll(pn, links, parts);
