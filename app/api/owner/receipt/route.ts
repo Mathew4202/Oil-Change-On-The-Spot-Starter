@@ -44,8 +44,9 @@ export async function POST(req: NextRequest) {
       const { linkPart, loadLinks, sameParts } = await import("@/lib/os/part-alias");
       const alt = String(i.altPartNumber).toUpperCase();
       if (sameParts(String(i.partNumber), await loadLinks()).some((x) => x.toUpperCase() === alt)) continue;
-      const l = await linkPart(alt, String(i.partNumber), owner);
-      linked.push(l.ok ? `${alt} = ${l.to}` : `${alt}: ${l.error}`);
+      // the PART NO (on the box) is the main number; the PROD NO links to it
+      const l = await linkPart(String(i.partNumber), alt, owner);
+      linked.push(l.ok ? `${i.partNumber} = ${l.to}` : `${i.partNumber}: ${l.error}`);
     }
     // the invoice says which car a filter is for: save it to that car (or link it to the number the car already has)
     const fitted: string[] = [], fittedParts = new Set<string>();

@@ -10,13 +10,13 @@ export async function loadLinks(): Promise<Link[]> {
   return sbGet<Link>("part_aliases?select=alias,part_number&limit=2000").catch(() => []);
 }
 
-/** Every number that's the same part as pn, pn first (just [pn] if nothing is linked). */
+/** Every number that's the same part as pn, the main number first (the PART NO on PartSource, the one on the box). Just [pn] if nothing is linked. */
 export function sameParts(pn: string, links: Link[]): string[] {
   const n = normPart(pn);
   const main = links.find((l) => normPart(l.alias) === n)?.part_number ?? pn;
   const m = normPart(main);
   const all = [main, ...links.filter((l) => normPart(l.part_number) === m).map((l) => l.alias)];
-  const out: string[] = [pn];
+  const out: string[] = [];
   for (const x of all) if (!out.some((y) => normPart(y) === normPart(x))) out.push(x);
   return out;
 }
@@ -55,6 +55,7 @@ export async function linkPart(from: string, to: string, by: string) {
   if (normPart(f) === normPart(t)) return { ok: false as const, error: "That's the same number" };
   const links = await loadLinks();
   const main = links.find((l) => normPart(l.alias) === normPart(t))?.part_number ?? t;   // "to" is itself linked: use its main number
+  if (normPart(main) === normPart(f)) return { ok: false as const, error: "These two are linked the other way round. Run the link fix in Supabase first" };
   const r = await sbInsert("part_aliases", { alias: f, part_number: main, created_by: by }, { upsertOn: "alias" });
   if (!r.ok) return { ok: false as const, error: "Couldn't link it. Was the part_aliases SQL run in Supabase?" };
   const [p] = await sbGet<{ on_hand: number }>(`parts?select=on_hand&part_number=eq.${enc(f)}&limit=1`).catch(() => []);
