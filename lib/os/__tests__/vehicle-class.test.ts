@@ -14,7 +14,7 @@ test("price group from the model: whole words only, real models from our custome
     ["Mercedes-Benz", "AMG C 63", "Sports Car"], ["Audi", "A4", "Sedan"], ["Audi", "Q5", "SUV/Crossover"], ["Audi", "RS5", "Sports Car"],
     ["Porsche", "911", "Sports Car"], ["Porsche", "Macan", "SUV/Crossover"], ["Porsche", "Cayenne", "Large SUV"],
     ["Ram", "1500", "Truck"], ["Ram", "", "Truck"], ["GMC", "Sierra 1500", "Truck"], ["Ford", "F-150", "Truck"], ["Toyota", "Tacoma", "Truck"],
-    ["Chevrolet", "Suburban", "Large SUV"], ["Ford", "Expedition Max", "Large SUV"], ["GMC", "Yukon XL", "Large SUV"], ["Kia", "Telluride", "Large SUV"],
+    ["Chevrolet", "Suburban", "Large SUV"], ["GMC", "Savana", "Large SUV"], ["GMC", "Savanna", "Large SUV"], ["Chevrolet", "Express", "Large SUV"], ["Ford", "Transit", "Large SUV"], ["Ford", "Expedition Max", "Large SUV"], ["GMC", "Yukon XL", "Large SUV"], ["Kia", "Telluride", "Large SUV"],
     ["Hyundai", "Santa Fe", "SUV/Crossover"], ["Hyundai", "Santa Fe XL", "Large SUV"], ["Toyota", "Corolla Cross", "SUV/Crossover"],
     ["Toyota", "Highlander", "Large SUV"], ["Toyota", "Grand Highlander", "Large SUV"], ["Toyota", "RAV4", "SUV/Crossover"], ["Honda", "CR-V", "SUV/Crossover"],
     ["Mazda", "CX-5", "SUV/Crossover"], ["Mazda", "CX-90", "Large SUV"], ["Dodge", "Grand Caravan", "Large SUV"], ["Kia", "Soul", "SUV/Crossover"],

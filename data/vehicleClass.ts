@@ -24,7 +24,7 @@ const LARGE_SUV = ["suburban", "expedition", "yukon", "yukon xl", "escalade", "p
   "range rover", "defender", "discovery", "cayenne", "xc90", "santa fe xl", "ev9", "outlander", "sorento", "tiguan",
   // older and other 3-row ones
   "envoy", "rainier", "aspen", "outlook", "uplander", "venture", "montana", "freestar", "windstar", "quest", "tribeca", "veracruz", "mohave", "borrego",
-  "journey", "flex", "mkt", "lx 570", "lx570", "lx 600", "lx600", "gl350", "gl450", "gl550", "q8", "x6", "touareg", "model x", "xl-7", "xl7", "montero", "endeavor", "sequoia", "transit connect", "sienna", "routan"];   // Outlander, Sorento, Tiguan: 3-row options, priced as 3-row
+  "savana", "savanna", "express", "sprinter", "econoline", "promaster", "transit", "journey", "flex", "mkt", "lx 570", "lx570", "lx 600", "lx600", "gl350", "gl450", "gl550", "q8", "x6", "touareg", "model x", "xl-7", "xl7", "montero", "endeavor", "sequoia", "transit connect", "sienna", "routan"];   // Outlander, Sorento, Tiguan: 3-row options, priced as 3-row
 const SUV = ["suv", "crossover", "sportage", "tucson", "rav4", "cr-v", "crv", "rogue", "escape", "edge", "equinox", "cx-5", "cx5", "cx-50", "cx50",
   "cx-30", "cx30", "cx-3", "seltos", "kona", "santa fe", "sante fe", "forester", "outback", "crosstrek", "cherokee", "compass",
   "grand cherokee", "renegade", "wrangler", "encore", "terrain", "murano", "kicks", "qashqai", "hr-v", "hrv", "venza", "trailblazer",
